@@ -63,7 +63,7 @@ king square:      64 squares
 Total sparse feature space:
 
 ```text
-6 * 2 * 2 * 64 * 64 = 49152 features
+6 * 2 * 2 * 64 * 64 = 98304 features
 ```
 
 The encoder also adds small auxiliary features:
@@ -210,6 +210,36 @@ build/dataset_export \
 ```
 
 This keeps train data out of disk. Only validation/test baseline files are stored.
+
+## Export NN For C++ Inference
+
+PyTorch is only needed for training and exporting. Runtime inference in the engine uses a small C++ forward pass.
+
+Export a trained checkpoint:
+
+```sh
+.venv/bin/python tools/export_value_net.py \
+  --checkpoint models/value_net_stream_100k.pt \
+  --output models/value_net_stream_100k.bin \
+  --compare-input data/value_test_baseline_1k_stream.jsonl \
+  --compare-output data/nn_value_compare_1000.jsonl \
+  --compare-limit 1000
+```
+
+Build and run the C++ parity test:
+
+```sh
+c++ -std=c++20 -O2 -Wall -Wextra -Wpedantic -Iinclude \
+  src/bitboard.cpp src/position.cpp src/attacks.cpp src/move.cpp \
+  src/board_encoder.cpp src/nn_value.cpp tests/nn_value_tests.cpp \
+  -o build/nn_value_tests
+
+build/nn_value_tests \
+  models/value_net_stream_100k.bin \
+  data/nn_value_compare_1000.jsonl
+```
+
+The test compares C++ inference against Python/PyTorch output on encoded samples.
 
 ## Current Direction
 
