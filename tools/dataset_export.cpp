@@ -21,6 +21,7 @@ struct Options {
     int depth = 2;
     int random_plies = 8;
     int max_plies_per_game = 160;
+    int progress_interval = 100;
     std::uint32_t seed = 1;
     std::string output = "data/value_train.jsonl";
 };
@@ -60,6 +61,8 @@ Options parse_args(int argc, char** argv) {
             options.random_plies = parse_int(require_value(arg), arg);
         } else if (arg == "--max-plies") {
             options.max_plies_per_game = parse_int(require_value(arg), arg);
+        } else if (arg == "--progress-interval") {
+            options.progress_interval = parse_int(require_value(arg), arg);
         } else if (arg == "--seed") {
             options.seed = static_cast<std::uint32_t>(parse_int(require_value(arg), arg));
         } else if (arg == "--output") {
@@ -68,6 +71,7 @@ Options parse_args(int argc, char** argv) {
             std::cout
                 << "Usage: dataset_export [--positions N] [--games N] [--depth D]\n"
                 << "                      [--random-plies N] [--max-plies N]\n"
+                << "                      [--progress-interval N]\n"
                 << "                      [--seed N] [--output path]\n";
             std::exit(0);
         } else {
@@ -89,6 +93,9 @@ Options parse_args(int argc, char** argv) {
     }
     if (options.max_plies_per_game <= 0) {
         throw std::runtime_error("--max-plies must be positive");
+    }
+    if (options.progress_interval <= 0) {
+        throw std::runtime_error("--progress-interval must be positive");
     }
 
     return options;
@@ -130,6 +137,12 @@ int export_position_sample(std::ostream& out, const chess::Position& pos, int de
     return target;
 }
 
+chess::SearchResult export_search_sample(std::ostream& out, const chess::Position& pos, int depth) {
+    const chess::SearchResult result = chess::search_best_move(pos, depth);
+    write_sample(out, chess::encode_position(pos), result.score);
+    return result;
+}
+
 int export_games(std::ostream& out, const Options& options, std::mt19937& rng) {
     int written = 0;
 
@@ -143,20 +156,22 @@ int export_games(std::ostream& out, const Options& options, std::mt19937& rng) {
                 break;
             }
 
-            export_position_sample(out, pos, options.depth);
+            const chess::SearchResult search_result = export_search_sample(out, pos, options.depth);
             ++written;
 
             chess::Move move;
             if (ply < options.random_plies) {
                 move = choose_random_move(moves, rng);
             } else {
-                move = chess::search_best_move(pos, options.depth).best_move;
+                move = search_result.best_move;
             }
             pos.make_move(move);
         }
 
-        std::cerr << "game " << (game + 1) << " / " << options.games
-                  << ", samples " << written << '\n';
+        if ((game + 1) % options.progress_interval == 0 || game + 1 == options.games) {
+            std::cerr << "game " << (game + 1) << " / " << options.games
+                      << ", samples " << written << '\n';
+        }
     }
 
     return written;

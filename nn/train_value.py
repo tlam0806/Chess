@@ -227,6 +227,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Train sparse chess value network")
     parser.add_argument("--train", required=True, help="Training JSONL path")
     parser.add_argument("--val", default=None, help="Validation JSONL path")
+    parser.add_argument("--test", default=None, help="Held-out baseline JSONL path")
     parser.add_argument("--epochs", type=int, default=10)
     parser.add_argument("--batch-size", type=int, default=256)
     parser.add_argument("--lr", type=float, default=1e-3)
@@ -244,6 +245,7 @@ def main() -> None:
 
     train_loader = make_loader(args.train, args.batch_size, shuffle=True)
     val_loader = make_loader(args.val, args.batch_size, shuffle=False) if args.val else None
+    test_loader = make_loader(args.test, args.batch_size, shuffle=False) if args.test else None
 
     model = ChessValueNet().to(device)
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
@@ -289,6 +291,29 @@ def main() -> None:
             if val_loader
             else None
         )
+        test_loss = (
+            evaluate_loss(
+                model,
+                test_loader,
+                loss_fn,
+                device,
+                target_scale=args.target_scale,
+                target_clip=args.target_clip,
+            )
+            if test_loader
+            else None
+        )
+        test_mae_cp = (
+            mean_absolute_error_cp(
+                model,
+                test_loader,
+                device,
+                target_scale=args.target_scale,
+                target_clip=args.target_clip,
+            )
+            if test_loader
+            else None
+        )
         save_checkpoint(
             args.output,
             model,
@@ -309,6 +334,11 @@ def main() -> None:
                 f"val_loss={val_loss:.6f} "
                 f"train_mae_cp={train_mae_cp:.2f} "
                 f"val_mae_cp={val_mae_cp:.2f}"
+                + (
+                    f" test_loss={test_loss:.6f} test_mae_cp={test_mae_cp:.2f}"
+                    if test_loss is not None and test_mae_cp is not None
+                    else ""
+                )
             )
 
 
