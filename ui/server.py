@@ -3,6 +3,7 @@
 import json
 import subprocess
 import threading
+from urllib.parse import parse_qs, unquote, urlparse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -10,6 +11,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 UI_DIR = ROOT / "ui"
 ENGINE = ROOT / "build" / "chess_engine_api"
+MATCH_DIR = ROOT / "data" / "matches"
 
 
 class EngineProcess:
@@ -46,14 +48,27 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(data)
 
     def do_GET(self):
-        if self.path == "/" or self.path == "/index.html":
+        parsed = urlparse(self.path)
+        path = parsed.path
+
+        if path == "/" or path == "/index.html":
             self.serve_file(UI_DIR / "index.html", "text/html")
-        elif self.path == "/app.js":
+        elif path == "/replay.html":
+            self.serve_file(UI_DIR / "replay.html", "text/html")
+        elif path == "/app.js":
             self.serve_file(UI_DIR / "app.js", "application/javascript")
-        elif self.path == "/styles.css":
+        elif path == "/replay.js":
+            self.serve_file(UI_DIR / "replay.js", "application/javascript")
+        elif path == "/styles.css":
             self.serve_file(UI_DIR / "styles.css", "text/css")
-        elif self.path == "/api/state":
+        elif path == "/api/state":
             self.send_json(ENGINE_PROCESS.command("state"))
+        elif path == "/api/replays":
+            self.send_json(list_replays())
+        elif path == "/api/replay":
+            query = parse_qs(parsed.query)
+            name = query.get("file", [""])[0]
+            self.send_json(load_replay(name))
         else:
             self.send_error(404)
 
@@ -86,6 +101,51 @@ class Handler(BaseHTTPRequestHandler):
 
     def log_message(self, fmt, *args):
         return
+
+
+def list_replays():
+    if not MATCH_DIR.exists():
+        return {"ok": True, "replays": []}
+    replays = sorted(path.name for path in MATCH_DIR.glob("*.txt"))
+    return {"ok": True, "replays": replays}
+
+
+def load_replay(name):
+    safe_name = Path(unquote(name)).name
+    if not safe_name or safe_name != name:
+        return {"ok": False, "message": "invalid replay name"}
+
+    path = MATCH_DIR / safe_name
+    if not path.exists() or path.suffix != ".txt":
+        return {"ok": False, "message": "replay not found"}
+
+    lines = path.read_text(encoding="utf-8").splitlines()
+    header = {}
+    moves = []
+    in_moves = False
+
+    for line in lines:
+        if not line.strip():
+            in_moves = True
+            continue
+        if not in_moves:
+            key, _, value = line.partition(" ")
+            header[key] = value
+            continue
+
+        parts = line.split()
+        if len(parts) < 8:
+            continue
+        moves.append({
+            "ply": int(parts[0]),
+            "side": parts[1],
+            "engine": parts[2],
+            "move": parts[3],
+            "score": int(parts[5]),
+            "nodes": int(parts[7]),
+        })
+
+    return {"ok": True, "name": safe_name, "header": header, "moves": moves}
 
 
 def main():

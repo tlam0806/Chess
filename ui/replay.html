@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Chess Replay Viewer</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <main class="app replay-app">
+    <section class="board-wrap">
+      <div class="board-area replay-board-area">
+        <div id="replayBoard" class="board" aria-label="Replay chess board"></div>
+      </div>
+      <div class="files replay-files">
+        <span>a</span><span>b</span><span>c</span><span>d</span>
+        <span>e</span><span>f</span><span>g</span><span>h</span>
+      </div>
+    </section>
+
+    <aside class="panel replay-panel">
+      <div>
+        <h1>Replay</h1>
+        <p id="replayStatus" class="status">Loading...</p>
+      </div>
+
+      <label>
+        Game
+        <select id="replaySelect"></select>
+      </label>
+
+      <div class="replay-controls">
+        <button id="firstMove">|&lt;</button>
+        <button id="prevMove">&lt;</button>
+        <button id="playPause">Play</button>
+        <button id="nextMove">&gt;</button>
+        <button id="lastMove">&gt;|</button>
+      </div>
+
+      <input id="plySlider" type="range" min="0" max="0" value="0">
+
+      <div id="moveInfo" class="move-info"></div>
+      <div id="moveList" class="log move-list"></div>
+    </aside>
+  </main>
+
+  <script src="/replay.js"></script>
+</body>
+</html>

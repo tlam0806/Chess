@@ -259,6 +259,89 @@ label {
   cursor: pointer;
 }
 
+.replay-app {
+  grid-template-columns: minmax(320px, 76vmin) minmax(320px, 460px);
+}
+
+.replay-board-area {
+  display: block;
+}
+
+.replay-files {
+  margin-left: 0;
+}
+
+.replay-panel {
+  max-height: min(86vmin, 820px);
+}
+
+select {
+  height: 38px;
+  border-radius: 6px;
+  border: 1px solid #4b4844;
+  padding: 0 10px;
+  background: #1f1d1b;
+  color: var(--text);
+  font: inherit;
+}
+
+.replay-controls {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.replay-controls button {
+  height: 38px;
+  border-radius: 6px;
+  border: 1px solid #4b4844;
+  background: #3c3935;
+  color: white;
+  font: inherit;
+  cursor: pointer;
+}
+
+#plySlider {
+  width: 100%;
+}
+
+.move-info {
+  min-height: 54px;
+  padding: 10px;
+  border: 1px solid #3d3935;
+  border-radius: 6px;
+  background: #1f1d1b;
+  color: #f5f5f5;
+  font-size: 14px;
+  line-height: 1.35;
+}
+
+.move-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-right: 4px;
+}
+
+.move-row {
+  width: 100%;
+  min-height: 30px;
+  border: 0;
+  border-radius: 4px;
+  padding: 6px 8px;
+  background: transparent;
+  color: #d8d8d8;
+  text-align: left;
+  font: 12px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  cursor: pointer;
+}
+
+.move-row:hover,
+.move-row.active {
+  background: #3c3935;
+  color: #fff;
+}
+
 .controls button:hover {
   background: #4d4944;
 }
