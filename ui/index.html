@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mini Chess Engine</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <main class="app">
+    <section class="board-wrap">
+      <div class="board-area">
+        <div class="eval-bar" aria-label="Evaluation">
+          <span class="eval-label">Black</span>
+          <div class="eval-track">
+            <div id="evalWhite" class="eval-white"></div>
+          </div>
+          <span class="eval-label">White</span>
+          <strong id="evalText" class="eval-text">0.00</strong>
+        </div>
+        <div id="board" class="board" aria-label="Chess board"></div>
+      </div>
+      <div class="files">
+        <span>a</span><span>b</span><span>c</span><span>d</span>
+        <span>e</span><span>f</span><span>g</span><span>h</span>
+      </div>
+    </section>
+
+    <aside class="panel">
+      <div>
+        <h1>Mini Chess</h1>
+        <p id="status" class="status">Loading...</p>
+      </div>
+
+      <div class="controls">
+        <label>
+          Depth
+          <input id="depth" type="number" min="1" max="5" value="4">
+        </label>
+        <button id="undoTurn">Undo turn</button>
+        <button id="undo">Undo move</button>
+        <button id="reset">Reset</button>
+      </div>
+
+      <div class="log" id="log"></div>
+    </aside>
+  </main>
+
+  <script src="/app.js"></script>
+</body>
+</html>
