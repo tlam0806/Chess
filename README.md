@@ -241,6 +241,38 @@ build/nn_value_tests \
 
 The test compares C++ inference against Python/PyTorch output on encoded samples.
 
+## Run NN Search Engine
+
+Build the standalone NN search engine:
+
+```sh
+c++ -std=c++20 -O2 -Wall -Wextra -Wpedantic -Iinclude \
+  src/bitboard.cpp src/position.cpp src/attacks.cpp src/move.cpp \
+  src/board_encoder.cpp src/nn_value.cpp src/nn_search.cpp \
+  tools/nn_engine.cpp -o build/nn_engine
+```
+
+Search one position:
+
+```sh
+build/nn_engine \
+  --model models/value_net_stream_100k.bin \
+  --depth 3 \
+  --go-once
+```
+
+Use a custom FEN:
+
+```sh
+build/nn_engine \
+  --model models/value_net_stream_100k.bin \
+  --depth 3 \
+  --fen "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1" \
+  --go-once
+```
+
+Without `--go-once`, it starts an interactive CLI where the NN engine plays Black.
+
 ## Current Direction
 
 The next serious milestones are:
