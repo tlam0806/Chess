@@ -146,5 +146,7 @@ std::vector<Move> generate_pseudo_legal_moves(const Position& pos);
 
 std::vector<Move> generate_legal_moves(const Position& pos);
 
+bool on_promotion_rank(Square);
+
 
 } // namespace chess

@@ -1,8 +1,9 @@
 #include "attacks.hpp"
 #include "evaluate.hpp"
+#include "game_state.hpp"
+#include "heuristic_searcher.hpp"
 #include "move.hpp"
 #include "position.hpp"
-#include "search.hpp"
 
 #include <algorithm>
 #include <iostream>
@@ -59,7 +60,15 @@ bool is_game_over(const chess::Position& pos) {
     return chess::generate_legal_moves(pos).empty();
 }
 
-std::string game_status(const chess::Position& pos) {
+bool is_game_over(const chess::Position& pos, const std::vector<chess::Position>& history) {
+    return chess::is_threefold_repetition(pos, history) || is_game_over(pos);
+}
+
+std::string game_status(const chess::Position& pos, const std::vector<chess::Position>& history) {
+    if (chess::is_threefold_repetition(pos, history)) {
+        return "threefold repetition";
+    }
+
     const std::vector<chess::Move> moves = chess::generate_legal_moves(pos);
     if (!moves.empty()) {
         return chess::in_check(pos, pos.side_to_move) ? "check" : "playing";
@@ -67,16 +76,18 @@ std::string game_status(const chess::Position& pos) {
     return chess::in_check(pos, pos.side_to_move) ? "checkmate" : "stalemate";
 }
 
-void write_state(const chess::Position& pos, bool ok, const std::string& message = "",
+void write_state(const chess::Position& pos, const std::vector<chess::Position>& history,
+                 bool ok, const std::string& message = "",
                  const std::string& last_move = "") {
     std::cout << "{\"ok\":" << (ok ? "true" : "false");
     std::cout << ",\"message\":\"" << json_escape(message) << "\"";
     std::cout << ",\"lastMove\":\"" << json_escape(last_move) << "\"";
     std::cout << ",\"side\":\"" << (pos.side_to_move == chess::Color::White ? "w" : "b") << "\"";
-    std::cout << ",\"status\":\"" << game_status(pos) << "\"";
+    std::cout << ",\"status\":\"" << game_status(pos, history) << "\"";
     std::cout << ",\"eval\":" << chess::evaluate(pos);
     std::cout << ",\"check\":" << (chess::in_check(pos, pos.side_to_move) ? "true" : "false");
-    std::cout << ",\"gameOver\":" << (is_game_over(pos) ? "true" : "false");
+    std::cout << ",\"gameOver\":" << (is_game_over(pos, history) ? "true" : "false");
+    std::cout << ",\"repetitionCount\":" << chess::repetition_count(pos, history);
 
     std::cout << ",\"board\":[";
     for (int rank = 7; rank >= 0; --rank) {
@@ -120,6 +131,7 @@ bool make_uci_move(chess::Position& pos, std::vector<chess::Position>& history,
 int main() {
     chess::Position pos;
     pos.set_startpos();
+    chess::HeuristicSearcher bot;
     std::vector<chess::Position> history;
 
     std::string line;
@@ -129,39 +141,39 @@ int main() {
         in >> command;
 
         if (command == "state") {
-            write_state(pos, true);
+            write_state(pos, history, true);
         } else if (command == "reset") {
             pos.set_startpos();
             history.clear();
-            write_state(pos, true, "reset");
+            write_state(pos, history, true, "reset");
         } else if (command == "move") {
             std::string uci;
             in >> uci;
             if (make_uci_move(pos, history, uci)) {
-                write_state(pos, true, "", uci);
+                write_state(pos, history, true, "", uci);
             } else {
-                write_state(pos, false, "illegal move");
+                write_state(pos, history, false, "illegal move");
             }
         } else if (command == "bot") {
             int depth = DefaultBotDepth;
             in >> depth;
-            if (is_game_over(pos)) {
-                write_state(pos, false, "game is over");
+            if (is_game_over(pos, history)) {
+                write_state(pos, history, false, "game is over");
                 continue;
             }
-            const chess::SearchResult result = chess::search_best_move(pos, depth);
+            const chess::SearchResult result = bot.search_best_move(pos, depth);
             history.push_back(pos);
             pos.make_move(result.best_move);
-            write_state(pos, true, "score " + std::to_string(result.score)
+            write_state(pos, history, true, "score " + std::to_string(result.score)
                                    + ", nodes " + std::to_string(result.nodes),
                         chess::move_to_string(result.best_move));
         } else if (command == "undo") {
             if (!history.empty()) {
                 pos = history.back();
                 history.pop_back();
-                write_state(pos, true, "undo");
+                write_state(pos, history, true, "undo");
             } else {
-                write_state(pos, false, "nothing to undo");
+                write_state(pos, history, false, "nothing to undo");
             }
         } else if (command == "undo_turn") {
             int undone = 0;
@@ -170,11 +182,11 @@ int main() {
                 history.pop_back();
                 ++undone;
             }
-            write_state(pos, undone > 0, undone > 0 ? "undo turn" : "nothing to undo");
+            write_state(pos, history, undone > 0, undone > 0 ? "undo turn" : "nothing to undo");
         } else if (command == "quit") {
             break;
         } else {
-            write_state(pos, false, "unknown command");
+            write_state(pos, history, false, "unknown command");
         }
     }
 }

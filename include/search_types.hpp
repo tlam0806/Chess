@@ -1,8 +1,8 @@
 #pragma once
 
 #include "move.hpp"
-#include "position.hpp"
 
+#include <chrono>
 #include <cstdint>
 
 namespace chess {
@@ -14,10 +14,13 @@ struct SearchResult {
     Move best_move{};
     int score = 0;
     std::uint64_t nodes = 0;
+    int depth = 0;
+    bool stopped = false;
 };
 
-int negamax(Position pos, int depth);
-int negamax(Position pos, int depth, int alpha, int beta);
-SearchResult search_best_move(Position pos, int depth);
+struct SearchLimits {
+    int max_depth = 1;
+    std::chrono::milliseconds move_time{0};
+};
 
 } // namespace chess

@@ -9,8 +9,16 @@
 <body>
   <main class="app replay-app">
     <section class="board-wrap">
-      <div class="board-area replay-board-area">
+      <div class="replay-score-board">
+        <div class="side-score white-score">
+          <span>White</span>
+          <strong id="whiteScore">0.00</strong>
+        </div>
         <div id="replayBoard" class="board" aria-label="Replay chess board"></div>
+        <div class="side-score black-score">
+          <span>Black</span>
+          <strong id="blackScore">0.00</strong>
+        </div>
       </div>
       <div class="files replay-files">
         <span>a</span><span>b</span><span>c</span><span>d</span>
@@ -38,6 +46,17 @@
       </div>
 
       <input id="plySlider" type="range" min="0" max="0" value="0">
+
+      <div class="score-strip">
+        <div>
+          <span>White POV</span>
+          <strong id="whitePanelScore">0.00</strong>
+        </div>
+        <div>
+          <span>Black POV</span>
+          <strong id="blackPanelScore">0.00</strong>
+        </div>
+      </div>
 
       <div id="moveInfo" class="move-info"></div>
       <div id="moveList" class="log move-list"></div>

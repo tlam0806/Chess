@@ -1,5 +1,6 @@
 #include "move.hpp"
 #include "attacks.hpp"
+#include "zobrist.hpp"
 
 #include <cassert>
 #include <string>
@@ -15,23 +16,47 @@ bool has_rook_on(const Position& pos, Color color, Square square) {
 
 void remove_castling_right_for_rook_square(Position& pos, Square square) {
     if (square == make_square(7, 0)) {
-        pos.white_can_castle_kingside = false;
+        if (pos.white_can_castle_kingside) {
+            pos.zobrist_key ^= zobrist::castling_key(zobrist::CastlingRight::WhiteKingside);
+            pos.white_can_castle_kingside = false;
+        }
     } else if (square == make_square(0, 0)) {
-        pos.white_can_castle_queenside = false;
+        if (pos.white_can_castle_queenside) {
+            pos.zobrist_key ^= zobrist::castling_key(zobrist::CastlingRight::WhiteQueenside);
+            pos.white_can_castle_queenside = false;
+        }
     } else if (square == make_square(7, 7)) {
-        pos.black_can_castle_kingside = false;
+        if (pos.black_can_castle_kingside) {
+            pos.zobrist_key ^= zobrist::castling_key(zobrist::CastlingRight::BlackKingside);
+            pos.black_can_castle_kingside = false;
+        }
     } else if (square == make_square(0, 7)) {
-        pos.black_can_castle_queenside = false;
+        if (pos.black_can_castle_queenside) {
+            pos.zobrist_key ^= zobrist::castling_key(zobrist::CastlingRight::BlackQueenside);
+            pos.black_can_castle_queenside = false;
+        }
     }
 }
 
 void remove_castling_rights_for_king(Position& pos, Color color) {
     if (color == Color::White) {
-        pos.white_can_castle_kingside = false;
-        pos.white_can_castle_queenside = false;
+        if (pos.white_can_castle_kingside) {
+            pos.zobrist_key ^= zobrist::castling_key(zobrist::CastlingRight::WhiteKingside);
+            pos.white_can_castle_kingside = false;
+        }
+        if (pos.white_can_castle_queenside) {
+            pos.zobrist_key ^= zobrist::castling_key(zobrist::CastlingRight::WhiteQueenside);
+            pos.white_can_castle_queenside = false;
+        }
     } else {
-        pos.black_can_castle_kingside = false;
-        pos.black_can_castle_queenside = false;
+        if (pos.black_can_castle_kingside) {
+            pos.zobrist_key ^= zobrist::castling_key(zobrist::CastlingRight::BlackKingside);
+            pos.black_can_castle_kingside = false;
+        }
+        if (pos.black_can_castle_queenside) {
+            pos.zobrist_key ^= zobrist::castling_key(zobrist::CastlingRight::BlackQueenside);
+            pos.black_can_castle_queenside = false;
+        }
     }
 }
 
@@ -347,12 +372,20 @@ void Position::make_move(Move move) {
 
     set_piece(color, moving_piece, to);
 
+    if (en_passant_square != NoSquare) {
+        zobrist_key ^= zobrist::en_passant_file_key(file_of(en_passant_square));
+    }
     en_passant_square = flag == MoveFlag::DoublePawnPush ? color == Color::White ? to - 8 : to + 8 
                                                          : NoSquare;
+    if (en_passant_square != NoSquare) {
+        zobrist_key ^= zobrist::en_passant_file_key(file_of(en_passant_square));
+    }
+
     halfmove_clock = (pawn_move || capture) ? 0 : halfmove_clock + 1;
     if (color == Color::Black) {
         ++fullmove_number;
     }
+    zobrist_key ^= zobrist::side_key();
     side_to_move = opposite(side_to_move);
 }
 
@@ -371,4 +404,9 @@ std::vector<Move> generate_legal_moves(const Position& pos) {
     }
     return legal_moves;
 }
+
+bool on_promotion_rank(Square square) {
+    return rank_of(square) == static_cast<int>(Rank::R1) || rank_of(square) == static_cast<int>(Rank::R8);
+}
+
 } // namespace chess

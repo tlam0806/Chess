@@ -21,11 +21,13 @@ struct Position {
     Square en_passant_square = NoSquare;
     int halfmove_clock = 0;
     int fullmove_number = 1;
+    HashKey zobrist_key = 0;
 
     void print(std::ostream& os) const;
 
     Bitboard occupancy(Color color) const;
     Bitboard occupancy() const;
+    Bitboard occupancy(Color color, PieceType piece) const;
 
     void set_piece(Color color, PieceType piece, Square square);
     void clear_square(Square square);
@@ -38,6 +40,7 @@ struct Position {
     void set_startpos();
     bool set_fen(std::string_view fen);
     void make_move(Move move);
+
 };
 
 } 

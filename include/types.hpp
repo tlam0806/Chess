@@ -7,6 +7,7 @@ namespace chess {
 
     enum class PieceType : int { Pawn = 0, Knight, Bishop, Rook, Queen, King, None};
     enum class Color : int { White = 0, Black = 1};
+    using HashKey = std::uint64_t;
 
     enum class File : int { A = 0, B, C, D, E, F, G, H };
     enum class Rank : int { R1 = 0, R2, R3, R4, R5, R6, R7, R8 };

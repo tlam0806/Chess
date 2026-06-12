@@ -1,7 +1,8 @@
 #include "attacks.hpp"
+#include "game_state.hpp"
+#include "heuristic_searcher.hpp"
 #include "move.hpp"
 #include "position.hpp"
-#include "search.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -48,7 +49,15 @@ void print_position(const chess::Position& pos) {
     std::cout << "Side: " << color_name(pos.side_to_move) << '\n';
 }
 
-bool print_game_over_if_needed(const chess::Position& pos) {
+bool print_game_over_if_needed(
+    const chess::Position& pos,
+    const std::vector<chess::Position>& history
+) {
+    if (chess::is_threefold_repetition(pos, history)) {
+        std::cout << "Draw by threefold repetition.\n";
+        return true;
+    }
+
     const std::vector<chess::Move> moves = chess::generate_legal_moves(pos);
     if (!moves.empty()) {
         return false;
@@ -75,6 +84,8 @@ void print_legal_moves(const chess::Position& pos) {
 int main() {
     chess::Position pos;
     pos.set_startpos();
+    chess::HeuristicSearcher bot;
+    std::vector<chess::Position> history;
 
     std::cout << "Mini chess engine CLI\n";
     std::cout << "You are White. Enter UCI moves like e2e4, g1f3, e7e8q.\n";
@@ -82,7 +93,7 @@ int main() {
 
     while (true) {
         print_position(pos);
-        if (print_game_over_if_needed(pos)) {
+        if (print_game_over_if_needed(pos, history)) {
             break;
         }
 
@@ -108,13 +119,15 @@ int main() {
                 continue;
             }
 
+            history.push_back(pos);
             pos.make_move(*move);
         } else {
             std::cout << "Bot thinking at depth " << BotDepth << "...\n";
-            const chess::SearchResult result = chess::search_best_move(pos, BotDepth);
+            const chess::SearchResult result = bot.search_best_move(pos, BotDepth);
             std::cout << "Bot plays " << chess::move_to_string(result.best_move)
                       << " score " << result.score
                       << " nodes " << result.nodes << '\n';
+            history.push_back(pos);
             pos.make_move(result.best_move);
         }
     }

@@ -11,7 +11,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 UI_DIR = ROOT / "ui"
 ENGINE = ROOT / "build" / "chess_engine_api"
-MATCH_DIR = ROOT / "data" / "matches"
+DATA_DIR = ROOT / "data"
+DEFAULT_DATASET = DATA_DIR / "value_depth8_v6_r12_600games.jsonl"
 
 
 class EngineProcess:
@@ -55,10 +56,14 @@ class Handler(BaseHTTPRequestHandler):
             self.serve_file(UI_DIR / "index.html", "text/html")
         elif path == "/replay.html":
             self.serve_file(UI_DIR / "replay.html", "text/html")
+        elif path == "/dataset.html":
+            self.serve_file(UI_DIR / "dataset.html", "text/html")
         elif path == "/app.js":
             self.serve_file(UI_DIR / "app.js", "application/javascript")
         elif path == "/replay.js":
             self.serve_file(UI_DIR / "replay.js", "application/javascript")
+        elif path == "/dataset.js":
+            self.serve_file(UI_DIR / "dataset.js", "application/javascript")
         elif path == "/styles.css":
             self.serve_file(UI_DIR / "styles.css", "text/css")
         elif path == "/api/state":
@@ -69,6 +74,15 @@ class Handler(BaseHTTPRequestHandler):
             query = parse_qs(parsed.query)
             name = query.get("file", [""])[0]
             self.send_json(load_replay(name))
+        elif path == "/api/dataset_game":
+            query = parse_qs(parsed.query)
+            limit = int(query.get("limit", ["160"])[0])
+            name = query.get("file", [""])[0]
+            self.send_json(load_dataset_game(limit, name))
+        elif path == "/api/dataset_view":
+            query = parse_qs(parsed.query)
+            name = query.get("file", [""])[0]
+            self.send_json(load_dataset_view(name))
         else:
             self.send_error(404)
 
@@ -104,18 +118,29 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def list_replays():
-    if not MATCH_DIR.exists():
+    if not DATA_DIR.exists():
         return {"ok": True, "replays": []}
-    replays = sorted(path.name for path in MATCH_DIR.glob("*.txt"))
+    replays = []
+    for match_dir in sorted(DATA_DIR.glob("matches*")):
+        if not match_dir.is_dir():
+            continue
+        for path in sorted(match_dir.glob("*.txt")):
+            replays.append(str(path.relative_to(DATA_DIR)))
     return {"ok": True, "replays": replays}
 
 
 def load_replay(name):
-    safe_name = Path(unquote(name)).name
-    if not safe_name or safe_name != name:
+    relative_path = Path(unquote(name))
+    parts = relative_path.parts
+    if (
+        len(parts) != 2
+        or parts[0].startswith(".")
+        or not parts[0].startswith("matches")
+        or Path(parts[1]).name != parts[1]
+    ):
         return {"ok": False, "message": "invalid replay name"}
 
-    path = MATCH_DIR / safe_name
+    path = DATA_DIR / relative_path
     if not path.exists() or path.suffix != ".txt":
         return {"ok": False, "message": "replay not found"}
 
@@ -136,16 +161,114 @@ def load_replay(name):
         parts = line.split()
         if len(parts) < 8:
             continue
+        fields = {}
+        for index in range(4, len(parts) - 1, 2):
+            fields[parts[index]] = parts[index + 1]
         moves.append({
             "ply": int(parts[0]),
             "side": parts[1],
             "engine": parts[2],
             "move": parts[3],
-            "score": int(parts[5]),
-            "nodes": int(parts[7]),
+            "score": int(fields.get("score", "0")),
+            "nodes": int(fields.get("nodes", "0")),
+            "depth": int(fields.get("depth", header.get("depth", "0"))),
+            "stopped": fields.get("stopped", "0") == "1",
         })
 
-    return {"ok": True, "name": safe_name, "header": header, "moves": moves}
+    return {"ok": True, "name": str(relative_path), "header": header, "moves": moves}
+
+
+def square_name(square):
+    return "abcdefgh"[square & 7] + str((square >> 3) + 1)
+
+
+def decode_feature(index):
+    piece_square = index % 64
+    index //= 64
+    king_square = index % 64
+    index //= 64
+    king_context = index % 2
+    index //= 2
+    piece_side = index % 2
+    index //= 2
+    piece_type = index % 6
+    return piece_type, piece_side, king_context, king_square, piece_square
+
+
+def decode_sample(sample, index):
+    pieces = ["P", "N", "B", "R", "Q", "K"]
+    side_to_move = "white" if index % 2 == 0 else "black"
+    board = {}
+    seen = set()
+
+    for feature in sample["features"]:
+        piece_type, piece_side, king_context, _, relative_square = decode_feature(int(feature))
+        if king_context != 0:
+            continue
+        key = (piece_type, piece_side, relative_square)
+        if key in seen:
+            continue
+        seen.add(key)
+
+        absolute_square = relative_square if side_to_move == "white" else relative_square ^ 56
+        friendly = piece_side == 0
+        white_piece = friendly if side_to_move == "white" else not friendly
+        piece = pieces[piece_type]
+        board[square_name(absolute_square)] = piece if white_piece else piece.lower()
+
+    target = int(sample["target"])
+    white_target = target if side_to_move == "white" else -target
+    return {
+        "index": index,
+        "side_to_move": side_to_move,
+        "target": target,
+        "white_target": white_target,
+        "board": board,
+        "aux": sample["aux"],
+    }
+
+
+def dataset_path(name, suffix):
+    if not name:
+        return DEFAULT_DATASET if suffix == ".jsonl" else None
+    relative_path = Path(unquote(name))
+    if (
+        relative_path.is_absolute()
+        or any(part.startswith(".") for part in relative_path.parts)
+        or relative_path.parts[:1] != ("data",)
+        or relative_path.suffix != suffix
+    ):
+        return None
+    return ROOT / relative_path
+
+
+def load_dataset_view(name):
+    path = dataset_path(name, ".json")
+    if path is None or not path.exists():
+        return {"ok": False, "message": "dataset view not found"}
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def load_dataset_game(limit, name=""):
+    path = dataset_path(name, ".jsonl")
+    if path is None or not path.exists():
+        return {"ok": False, "message": "dataset not found"}
+
+    samples = []
+    with path.open("r", encoding="utf-8") as file:
+        for index, line in enumerate(file):
+            if index >= limit:
+                break
+            line = line.strip()
+            if not line:
+                continue
+            samples.append(decode_sample(json.loads(line), index))
+
+    return {
+        "ok": True,
+        "dataset": str(path.relative_to(ROOT)),
+        "samples": samples,
+    }
 
 
 def main():

@@ -105,13 +105,24 @@ int main(int argc, char** argv) {
     }
 
     chess::NnValueModel model;
-    assert(model.load(argv[1]));
-    assert(model.feature_count() == chess::EncodedFeatureCount);
-    assert(model.aux_feature_count() == chess::AuxFeatureCount);
-    assert(model.hidden_size() == 256);
+    if (!model.load(argv[1])) {
+        std::cerr << "failed to load model: " << argv[1] << '\n';
+        return 1;
+    }
+    if (model.feature_count() != chess::EncodedFeatureCount
+        || model.aux_feature_count() != chess::AuxFeatureCount
+        || model.hidden_size() != 256) {
+        std::cerr << "unexpected model shape: features=" << model.feature_count()
+                  << " aux=" << model.aux_feature_count()
+                  << " hidden=" << model.hidden_size() << '\n';
+        return 1;
+    }
 
     std::ifstream input(argv[2]);
-    assert(input);
+    if (!input) {
+        std::cerr << "failed to open compare file: " << argv[2] << '\n';
+        return 1;
+    }
 
     std::string line;
     int samples = 0;
@@ -133,6 +144,9 @@ int main(int argc, char** argv) {
         ++samples;
     }
 
-    assert(samples > 0);
+    if (samples == 0) {
+        std::cerr << "compare file has no samples\n";
+        return 1;
+    }
     std::cout << "checked " << samples << " samples, max_error=" << max_error << '\n';
 }

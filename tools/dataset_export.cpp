@@ -1,19 +1,38 @@
 #include "board_encoder.hpp"
+#include "heuristic_searcher.hpp"
+#include "heuristic_searcher_v2.hpp"
+#include "heuristic_searcher_v3.hpp"
+#include "heuristic_searcher_v4.hpp"
+#include "heuristic_searcher_v5.hpp"
+#include "heuristic_searcher_v6.hpp"
 #include "move.hpp"
 #include "position.hpp"
-#include "search.hpp"
 
 #include <cstdint>
+#include <algorithm>
+#include <exception>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <memory>
+#include <mutex>
 #include <random>
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <vector>
 
 namespace {
+
+enum class TeacherKind {
+    V1,
+    V2,
+    V3,
+    V4,
+    V5,
+    V6
+};
 
 struct Options {
     int positions = 1000;
@@ -22,9 +41,55 @@ struct Options {
     int random_plies = 8;
     int max_plies_per_game = 160;
     int progress_interval = 100;
+    int threads = 1;
     std::uint32_t seed = 1;
+    TeacherKind teacher = TeacherKind::V1;
     std::string output = "data/value_train.jsonl";
 };
+
+struct WorkerResult {
+    int written = 0;
+};
+
+TeacherKind parse_teacher_kind(std::string_view value) {
+    if (value == "v1") {
+        return TeacherKind::V1;
+    }
+    if (value == "v2") {
+        return TeacherKind::V2;
+    }
+    if (value == "v3") {
+        return TeacherKind::V3;
+    }
+    if (value == "v4") {
+        return TeacherKind::V4;
+    }
+    if (value == "v5") {
+        return TeacherKind::V5;
+    }
+    if (value == "v6") {
+        return TeacherKind::V6;
+    }
+    throw std::runtime_error("invalid teacher: " + std::string(value));
+}
+
+std::unique_ptr<chess::Searcher> make_teacher(TeacherKind teacher) {
+    switch (teacher) {
+        case TeacherKind::V1:
+            return std::make_unique<chess::HeuristicSearcher>();
+        case TeacherKind::V2:
+            return std::make_unique<chess::HeuristicSearcherV2>();
+        case TeacherKind::V3:
+            return std::make_unique<chess::HeuristicSearcherV3>();
+        case TeacherKind::V4:
+            return std::make_unique<chess::HeuristicSearcherV4>();
+        case TeacherKind::V5:
+            return std::make_unique<chess::HeuristicSearcherV5>();
+        case TeacherKind::V6:
+            return std::make_unique<chess::HeuristicSearcherV6>();
+    }
+    return std::make_unique<chess::HeuristicSearcher>();
+}
 
 int parse_int(std::string_view value, std::string_view name) {
     try {
@@ -63,16 +128,21 @@ Options parse_args(int argc, char** argv) {
             options.max_plies_per_game = parse_int(require_value(arg), arg);
         } else if (arg == "--progress-interval") {
             options.progress_interval = parse_int(require_value(arg), arg);
+        } else if (arg == "--threads") {
+            options.threads = parse_int(require_value(arg), arg);
         } else if (arg == "--seed") {
             options.seed = static_cast<std::uint32_t>(parse_int(require_value(arg), arg));
+        } else if (arg == "--teacher") {
+            options.teacher = parse_teacher_kind(require_value(arg));
         } else if (arg == "--output") {
             options.output = std::string(require_value(arg));
         } else if (arg == "--help") {
             std::cout
                 << "Usage: dataset_export [--positions N] [--games N] [--depth D]\n"
                 << "                      [--random-plies N] [--max-plies N]\n"
-                << "                      [--progress-interval N]\n"
-                << "                      [--seed N] [--output path]\n";
+                << "                      [--progress-interval N] [--threads N]\n"
+                << "                      [--seed N] [--teacher v1|v2|v3|v4|v5|v6]\n"
+                << "                      [--output path]\n";
             std::exit(0);
         } else {
             throw std::runtime_error("unknown argument: " + std::string(arg));
@@ -96,6 +166,9 @@ Options parse_args(int argc, char** argv) {
     }
     if (options.progress_interval <= 0) {
         throw std::runtime_error("--progress-interval must be positive");
+    }
+    if (options.threads <= 0) {
+        throw std::runtime_error("--threads must be positive");
     }
 
     return options;
@@ -131,20 +204,31 @@ chess::Move choose_random_move(const std::vector<chess::Move>& moves, std::mt199
     return moves[dist(rng)];
 }
 
-int export_position_sample(std::ostream& out, const chess::Position& pos, int depth) {
-    const int target = chess::search_best_move(pos, depth).score;
+int export_position_sample(
+    std::ostream& out,
+    const chess::Position& pos,
+    int depth,
+    chess::Searcher& searcher
+) {
+    const int target = searcher.search_best_move(pos, depth).score;
     write_sample(out, chess::encode_position(pos), target);
     return target;
 }
 
-chess::SearchResult export_search_sample(std::ostream& out, const chess::Position& pos, int depth) {
-    const chess::SearchResult result = chess::search_best_move(pos, depth);
+chess::SearchResult export_search_sample(
+    std::ostream& out,
+    const chess::Position& pos,
+    int depth,
+    chess::Searcher& searcher
+) {
+    const chess::SearchResult result = searcher.search_best_move(pos, depth);
     write_sample(out, chess::encode_position(pos), result.score);
     return result;
 }
 
 int export_games(std::ostream& out, const Options& options, std::mt19937& rng) {
     int written = 0;
+    std::unique_ptr<chess::Searcher> searcher = make_teacher(options.teacher);
 
     for (int game = 0; game < options.games; ++game) {
         chess::Position pos;
@@ -156,7 +240,7 @@ int export_games(std::ostream& out, const Options& options, std::mt19937& rng) {
                 break;
             }
 
-            const chess::SearchResult search_result = export_search_sample(out, pos, options.depth);
+            const chess::SearchResult search_result = export_search_sample(out, pos, options.depth, *searcher);
             ++written;
 
             chess::Move move;
@@ -179,6 +263,7 @@ int export_games(std::ostream& out, const Options& options, std::mt19937& rng) {
 
 int export_positions(std::ostream& out, const Options& options, std::mt19937& rng) {
     chess::Position pos;
+    std::unique_ptr<chess::Searcher> searcher = make_teacher(options.teacher);
     int ply = 0;
     reset_game(pos, ply);
 
@@ -189,7 +274,7 @@ int export_positions(std::ostream& out, const Options& options, std::mt19937& rn
             continue;
         }
 
-        export_position_sample(out, pos, options.depth);
+        export_position_sample(out, pos, options.depth, *searcher);
         ++written;
 
         pos.make_move(choose_random_move(moves, rng));
@@ -203,6 +288,110 @@ int export_positions(std::ostream& out, const Options& options, std::mt19937& rn
     return options.positions;
 }
 
+std::filesystem::path make_part_path(const std::filesystem::path& output_path, int worker_index) {
+    std::filesystem::path part_path = output_path;
+    part_path += ".part" + std::to_string(worker_index);
+    return part_path;
+}
+
+int split_count(int total, int worker_index, int worker_count) {
+    const int base = total / worker_count;
+    const int extra = total % worker_count;
+    return base + (worker_index < extra ? 1 : 0);
+}
+
+int export_single_thread(
+    const Options& options,
+    const std::filesystem::path& output_path
+) {
+    std::ofstream out(output_path);
+    if (!out) {
+        throw std::runtime_error("failed to open output: " + output_path.string());
+    }
+
+    std::mt19937 rng(options.seed);
+    return options.games > 0
+        ? export_games(out, options, rng)
+        : export_positions(out, options, rng);
+}
+
+int export_parallel(
+    const Options& options,
+    const std::filesystem::path& output_path
+) {
+    const int total_units = options.games > 0 ? options.games : options.positions;
+    const int worker_count = std::min(options.threads, total_units);
+
+    std::vector<std::thread> workers;
+    std::vector<WorkerResult> results(static_cast<std::size_t>(worker_count));
+    std::vector<std::exception_ptr> errors(static_cast<std::size_t>(worker_count));
+    std::mutex progress_mutex;
+
+    for (int worker_index = 0; worker_index < worker_count; ++worker_index) {
+        workers.emplace_back([&, worker_index] {
+            try {
+                Options worker_options = options;
+                worker_options.seed = options.seed + static_cast<std::uint32_t>(worker_index * 0x9E37U + 1U);
+                if (options.games > 0) {
+                    worker_options.games = split_count(options.games, worker_index, worker_count);
+                } else {
+                    worker_options.positions = split_count(options.positions, worker_index, worker_count);
+                }
+
+                const std::filesystem::path part_path = make_part_path(output_path, worker_index);
+                std::ofstream part_out(part_path);
+                if (!part_out) {
+                    throw std::runtime_error("failed to open part output: " + part_path.string());
+                }
+
+                std::mt19937 rng(worker_options.seed);
+                results[static_cast<std::size_t>(worker_index)].written = options.games > 0
+                    ? export_games(part_out, worker_options, rng)
+                    : export_positions(part_out, worker_options, rng);
+
+                {
+                    std::lock_guard<std::mutex> lock(progress_mutex);
+                    std::cerr << "thread " << worker_index << " wrote "
+                              << results[static_cast<std::size_t>(worker_index)].written
+                              << " samples\n";
+                }
+            } catch (...) {
+                errors[static_cast<std::size_t>(worker_index)] = std::current_exception();
+            }
+        });
+    }
+
+    for (std::thread& worker : workers) {
+        worker.join();
+    }
+
+    for (const std::exception_ptr& error : errors) {
+        if (error) {
+            std::rethrow_exception(error);
+        }
+    }
+
+    std::ofstream out(output_path);
+    if (!out) {
+        throw std::runtime_error("failed to open output: " + output_path.string());
+    }
+
+    int total_written = 0;
+    for (int worker_index = 0; worker_index < worker_count; ++worker_index) {
+        const std::filesystem::path part_path = make_part_path(output_path, worker_index);
+        std::ifstream part_in(part_path);
+        if (!part_in) {
+            throw std::runtime_error("failed to open part input: " + part_path.string());
+        }
+        out << part_in.rdbuf();
+        total_written += results[static_cast<std::size_t>(worker_index)].written;
+        part_in.close();
+        std::filesystem::remove(part_path);
+    }
+
+    return total_written;
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -214,15 +403,9 @@ int main(int argc, char** argv) {
             std::filesystem::create_directories(output_path.parent_path());
         }
 
-        std::ofstream out(output_path);
-        if (!out) {
-            throw std::runtime_error("failed to open output: " + options.output);
-        }
-
-        std::mt19937 rng(options.seed);
-        const int written = options.games > 0
-            ? export_games(out, options, rng)
-            : export_positions(out, options, rng);
+        const int written = options.threads == 1
+            ? export_single_thread(options, output_path)
+            : export_parallel(options, output_path);
 
         std::cerr << "wrote " << written << " samples to " << options.output << '\n';
     } catch (const std::exception& error) {

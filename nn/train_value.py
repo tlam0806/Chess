@@ -228,6 +228,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--train", required=True, help="Training JSONL path")
     parser.add_argument("--val", default=None, help="Validation JSONL path")
     parser.add_argument("--test", default=None, help="Held-out baseline JSONL path")
+    parser.add_argument("--init-checkpoint", default=None, help="Checkpoint to initialize model weights from")
     parser.add_argument("--epochs", type=int, default=10)
     parser.add_argument("--batch-size", type=int, default=256)
     parser.add_argument("--lr", type=float, default=1e-3)
@@ -248,6 +249,11 @@ def main() -> None:
     test_loader = make_loader(args.test, args.batch_size, shuffle=False) if args.test else None
 
     model = ChessValueNet().to(device)
+    if args.init_checkpoint:
+        checkpoint = torch.load(args.init_checkpoint, map_location=device)
+        model.load_state_dict(checkpoint["model_state"])
+        print(f"initialized from {args.init_checkpoint}")
+
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
     loss_fn = nn.SmoothL1Loss(beta=0.1)
 

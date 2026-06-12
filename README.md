@@ -136,6 +136,28 @@ This prevents blindly replacing the engine with a model that only has lower trai
 
 ## Build
 
+With CMake:
+
+```sh
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build -j
+```
+
+On this machine, if `cmake` is not on `PATH`, use:
+
+```sh
+/opt/homebrew/Cellar/cmake/4.2.0/bin/cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+/opt/homebrew/Cellar/cmake/4.2.0/bin/cmake --build build -j
+```
+
+Run tests:
+
+```sh
+ctest --test-dir build --output-on-failure
+```
+
+Manual one-shot build:
+
 ```sh
 mkdir -p build
 c++ -std=c++20 -O2 -Wall -Wextra -Wpedantic -Iinclude \

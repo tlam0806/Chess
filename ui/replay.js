@@ -9,6 +9,10 @@ const lastBtn = document.getElementById("lastMove");
 const slider = document.getElementById("plySlider");
 const moveInfo = document.getElementById("moveInfo");
 const moveList = document.getElementById("moveList");
+const whiteScoreEl = document.getElementById("whiteScore");
+const blackScoreEl = document.getElementById("blackScore");
+const whitePanelScoreEl = document.getElementById("whitePanelScore");
+const blackPanelScoreEl = document.getElementById("blackPanelScore");
 
 const pieceGlyph = {
   P: "♟", N: "♞", B: "♝", R: "♜", Q: "♛", K: "♚",
@@ -127,6 +131,22 @@ async function api(path) {
   return response.json();
 }
 
+function cpLabel(cp) {
+  if (Math.abs(cp) >= 100000) {
+    return cp > 0 ? "M+" : "M-";
+  }
+  const pawns = cp / 100;
+  return `${pawns >= 0 ? "+" : ""}${pawns.toFixed(2)}`;
+}
+
+function currentWhiteScore() {
+  if (plyIndex === 0 || !replay.moves.length) {
+    return 0;
+  }
+  const current = replay.moves[plyIndex - 1];
+  return current.side === "white" ? current.score : -current.score;
+}
+
 async function loadReplayList() {
   const payload = await api("/api/replays");
   if (!payload.ok || payload.replays.length === 0) {
@@ -143,7 +163,12 @@ async function loadReplayList() {
   }
 
   replaySelect.addEventListener("change", () => loadReplay(replaySelect.value));
-  await loadReplay(payload.replays[0]);
+  const requested = new URLSearchParams(window.location.search).get("file");
+  const initial = requested && payload.replays.includes(requested)
+    ? requested
+    : payload.replays[0];
+  replaySelect.value = initial;
+  await loadReplay(initial);
 }
 
 async function loadReplay(file) {
@@ -207,7 +232,10 @@ function renderMoveList() {
     if (index === plyIndex - 1) {
       row.classList.add("active");
     }
-    row.textContent = `${move.ply}. ${move.side} ${move.engine} ${move.move} score ${move.score}`;
+    const whiteScore = move.side === "white" ? move.score : -move.score;
+    row.textContent =
+      `${move.ply}. ${move.side} ${move.engine} ${move.move} ` +
+      `W ${cpLabel(whiteScore)} B ${cpLabel(-whiteScore)}`;
     row.addEventListener("click", () => {
       stopPlayback();
       setPly(index + 1);
@@ -220,14 +248,23 @@ function renderInfo() {
   const header = replay.header;
   const current = plyIndex > 0 ? replay.moves[plyIndex - 1] : null;
   lastMove = current ? current.move : "";
+  const whiteScore = currentWhiteScore();
+  const blackScore = -whiteScore;
+  whiteScoreEl.textContent = cpLabel(whiteScore);
+  blackScoreEl.textContent = cpLabel(blackScore);
+  whitePanelScoreEl.textContent = cpLabel(whiteScore);
+  blackPanelScoreEl.textContent = cpLabel(blackScore);
   statusEl.textContent =
     `Depth ${header.depth}. White: ${header.white}. Black: ${header.black}. Result: ${header.result} (${header.reason}).`;
 
   if (!current) {
     moveInfo.textContent = "Start position";
   } else {
+    const stopped = current.stopped ? ", stopped by time" : "";
     moveInfo.textContent =
-      `Ply ${current.ply}: ${current.side} ${current.engine} played ${current.move}, score ${current.score}, nodes ${current.nodes}`;
+      `Ply ${current.ply}: ${current.side} ${current.engine} played ${current.move}, ` +
+      `raw score ${current.score}, White ${cpLabel(whiteScore)}, Black ${cpLabel(blackScore)}, ` +
+      `depth ${current.depth}, nodes ${current.nodes}${stopped}`;
   }
 }
 

@@ -1,4 +1,5 @@
 #include "attacks.hpp"
+#include "game_state.hpp"
 #include "move.hpp"
 #include "nn_search.hpp"
 #include "nn_value.hpp"
@@ -53,7 +54,15 @@ void print_position(const chess::Position& pos) {
     std::cout << "Side: " << color_name(pos.side_to_move) << '\n';
 }
 
-bool print_game_over_if_needed(const chess::Position& pos) {
+bool print_game_over_if_needed(
+    const chess::Position& pos,
+    const std::vector<chess::Position>& history
+) {
+    if (chess::is_threefold_repetition(pos, history)) {
+        std::cout << "Draw by threefold repetition.\n";
+        return true;
+    }
+
     const std::vector<chess::Move> moves = chess::generate_legal_moves(pos);
     if (!moves.empty()) {
         return false;
@@ -136,9 +145,10 @@ int main(int argc, char** argv) {
             std::cerr << "invalid FEN\n";
             return 1;
         }
+        std::vector<chess::Position> history;
 
         if (options.go_once) {
-            if (print_game_over_if_needed(pos)) {
+            if (print_game_over_if_needed(pos, history)) {
                 return 0;
             }
             const chess::SearchResult result = think(pos, options.depth, model);
@@ -155,7 +165,7 @@ int main(int argc, char** argv) {
 
         while (true) {
             print_position(pos);
-            if (print_game_over_if_needed(pos)) {
+            if (print_game_over_if_needed(pos, history)) {
                 break;
             }
 
@@ -179,6 +189,7 @@ int main(int argc, char** argv) {
                     std::cout << "NN plays " << chess::move_to_string(result.best_move)
                               << " score " << result.score
                               << " nodes " << result.nodes << '\n';
+                    history.push_back(pos);
                     pos.make_move(result.best_move);
                     continue;
                 }
@@ -189,6 +200,7 @@ int main(int argc, char** argv) {
                     continue;
                 }
 
+                history.push_back(pos);
                 pos.make_move(*move);
             } else {
                 std::cout << "NN bot thinking at depth " << options.depth << "...\n";
@@ -196,6 +208,7 @@ int main(int argc, char** argv) {
                 std::cout << "NN plays " << chess::move_to_string(result.best_move)
                           << " score " << result.score
                           << " nodes " << result.nodes << '\n';
+                history.push_back(pos);
                 pos.make_move(result.best_move);
             }
         }

@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Dataset Game Viewer</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <main class="app replay-app">
+    <section class="board-wrap">
+      <div class="board-area dataset-board-area">
+        <div class="eval-bar">
+          <span class="eval-label">Advantage</span>
+          <div class="eval-track">
+            <div id="datasetEvalWhite" class="eval-white"></div>
+          </div>
+          <span id="datasetEvalText" class="eval-text">0</span>
+        </div>
+        <div id="datasetBoard" class="board" aria-label="Dataset chess board"></div>
+      </div>
+      <div class="files">
+        <span>a</span><span>b</span><span>c</span><span>d</span>
+        <span>e</span><span>f</span><span>g</span><span>h</span>
+      </div>
+    </section>
+
+    <aside class="panel replay-panel">
+      <div>
+        <h1>Dataset</h1>
+        <p id="datasetStatus" class="status">Loading...</p>
+      </div>
+
+      <div class="replay-controls">
+        <button id="datasetFirst">|&lt;</button>
+        <button id="datasetPrev">&lt;</button>
+        <button id="datasetPlay">Play</button>
+        <button id="datasetNext">&gt;</button>
+        <button id="datasetLast">&gt;|</button>
+      </div>
+
+      <input id="datasetSlider" type="range" min="0" max="0" value="0">
+
+      <div id="datasetInfo" class="move-info"></div>
+      <div id="datasetList" class="log move-list"></div>
+    </aside>
+  </main>
+
+  <script src="/dataset.js"></script>
+</body>
+</html>

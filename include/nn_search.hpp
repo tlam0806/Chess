@@ -2,7 +2,7 @@
 
 #include "nn_value.hpp"
 #include "position.hpp"
-#include "search.hpp"
+#include "search_types.hpp"
 
 namespace chess {
 

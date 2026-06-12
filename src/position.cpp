@@ -4,6 +4,7 @@
 #include <cctype>
 #include <ostream>
 #include <string_view>
+#include "zobrist.hpp"
 
 namespace chess {
 
@@ -180,6 +181,10 @@ Bitboard Position::occupancy(Color color) const {
     return ret;
 }
 
+Bitboard Position::occupancy(Color color, PieceType piece) const {
+    return pieces[static_cast<int>(color)][static_cast<int>(piece)];
+}
+
 Bitboard Position::occupancy() const {
     return occupancy(Color::White) | occupancy(Color::Black);
 }
@@ -189,14 +194,21 @@ void Position::set_piece(Color color, PieceType piece, Square square) {
     assert((occupancy() & bit(square)) == EmptyBB);
 
     pieces[color_index(color)][piece_index(piece)] |= bit(square);
+    zobrist_key ^= zobrist::piece_key(color, piece, square);
 }
 
 void Position::clear_square(Square square) {
     const Bitboard clear_mask = ~bit(square);
 
-    for (auto& color_pieces : pieces) {
-        for (Bitboard& bb : color_pieces) {
-            bb &= clear_mask;
+    for (int colorIndex = 0; colorIndex < 2; colorIndex++) {
+        for (int pieceIndex = 0; pieceIndex < 6; pieceIndex++) {
+            Bitboard& bb = pieces[colorIndex][pieceIndex];
+            Bitboard new_bb = bb & clear_mask;
+            if (new_bb != bb) {
+                bb = new_bb;
+                zobrist_key ^= zobrist::piece_key(colorIndex, pieceIndex, static_cast<int>(square));
+                return;
+            }
         }
     }
 }
@@ -247,6 +259,7 @@ void Position::clear() {
     en_passant_square = NoSquare;
     halfmove_clock = 0;
     fullmove_number = 1;
+    zobrist_key = 0;
 }
 
 void Position::set_startpos() {
@@ -259,6 +272,7 @@ void Position::set_startpos() {
     en_passant_square = NoSquare;
     halfmove_clock = 0;
     fullmove_number = 1;
+    zobrist_key = zobrist::compute_hash(*this);
 }
 
 bool Position::set_fen(std::string_view fen) {
@@ -428,6 +442,7 @@ bool Position::set_fen(std::string_view fen) {
         }
     }
 
+    tmp.zobrist_key = zobrist::compute_hash(tmp);
     *this = tmp;
     return true;
 }
