@@ -1,4 +1,4 @@
-#include "heuristic_searcher_v7.hpp"
+#include "heuristic_searcher_v9.hpp"
 
 #include "attacks.hpp"
 #include "evaluate.hpp"
@@ -21,6 +21,7 @@ constexpr int LmrMoveIndex = 4;
 constexpr int LmrReduction = 1;
 constexpr int NullMoveMinDepth = 3;
 constexpr int NullMoveReduction = 2;
+constexpr int KillerMoveReward = 100000;
 
 bool is_valid_move(Move move) {
     return move.value != 0;
@@ -47,7 +48,7 @@ bool has_non_pawn_material(const Position& pos, Color color) {
 
 } // namespace
 
-void HeuristicSearcherV7::make_null_move(Position& pos) const {
+void HeuristicSearcherV9::make_null_move(Position& pos) const {
     if (pos.en_passant_square != NoSquare) {
         pos.zobrist_key ^= zobrist::en_passant_file_key(file_of(pos.en_passant_square));
         pos.en_passant_square = NoSquare;
@@ -57,7 +58,7 @@ void HeuristicSearcherV7::make_null_move(Position& pos) const {
     pos.side_to_move = opposite(pos.side_to_move);
 }
 
-bool HeuristicSearcherV7::should_stop(SearchContext& context) const {
+bool HeuristicSearcherV9::should_stop(SearchContext& context) const {
     if (!context.has_deadline) {
         return false;
     }
@@ -71,11 +72,11 @@ bool HeuristicSearcherV7::should_stop(SearchContext& context) const {
     return false;
 }
 
-int HeuristicSearcherV7::move_priority(
+int HeuristicSearcherV9::move_priority(
     Move move,
     const Position& cur,
-    const Position& next,
-    Move tt_move
+    Move tt_move,
+    bool gives_check
 ) const {
     if (is_valid_move(tt_move) && move == tt_move) {
         return 1e9;
@@ -86,45 +87,94 @@ int HeuristicSearcherV7::move_priority(
     if (is_capture(move)) {
         return 2 + std::max(0, static_exchange_eval(cur, move));
     }
-    if (in_check(next, next.side_to_move)) {
+    if (gives_check) {
         return 2;
     }
     return 0;
 }
 
-std::vector<HeuristicSearcherV7::OrderedMove> HeuristicSearcherV7::ordered_moves(
+int HeuristicSearcherV9::move_static_score(
+    Move move,
     const Position& pos,
+    const Position& next,
+    int ply,
+    bool gives_check,
+    ScoringMode stage
+) const {
+    if (stage == ScoringMode::Quiescence) {
+        return -evaluate_for_side_to_move(next);
+    }
+
+    int score = history_table_.get_score(pos, move);
+    if (!is_capture(move) && !is_promotion(move) && !gives_check) {
+        score += KillerMoveReward * killer_table_.score(ply, move);
+    }
+
+    return score;
+}
+
+HeuristicSearcherV9::ScoredMove HeuristicSearcherV9::make_scored_move(
+    const Position& pos,
+    Move move,
+    int ply,
+    Move tt_move,
+    ScoringMode stage
+) const {
+    Position next = pos;
+    next.make_move(move);
+    const bool gives_check = in_check(next, next.side_to_move);
+
+    if (stage == ScoringMode::Quiescence) {
+        return ScoredMove{
+            move,
+            is_promotion(move) ? static_cast<int>(1e9) : static_exchange_eval(pos, move),
+            move_static_score(move, pos, next, ply, gives_check, stage),
+            gives_check
+        };
+    }
+
+    return ScoredMove{
+        move,
+        move_priority(move, pos, tt_move, gives_check),
+        move_static_score(move, pos, next, ply, gives_check, stage),
+        gives_check
+    };
+}
+
+bool HeuristicSearcherV9::better_scored_move(
+    const ScoredMove& lhs,
+    const ScoredMove& rhs
+) const {
+    if (lhs.priority != rhs.priority) {
+        return lhs.priority > rhs.priority;
+    }
+    return lhs.static_score > rhs.static_score;
+}
+
+std::vector<HeuristicSearcherV9::ScoredMove> HeuristicSearcherV9::ordered_moves(
+    const Position& pos,
+    int ply,
     Move tt_move
 ) const {
-    std::vector<OrderedMove> ordered;
+    std::vector<ScoredMove> ordered;
     const std::vector<Move> moves = generate_legal_moves(pos);
     ordered.reserve(moves.size());
 
     for (Move move : moves) {
-        Position next = pos;
-        next.make_move(move);
-
-        ordered.push_back(OrderedMove{
-            move,
-            move_priority(move, pos, next, tt_move),
-            -evaluate_for_side_to_move(next)
-        });
+        ordered.push_back(make_scored_move(pos, move, ply, tt_move));
     }
 
-    std::stable_sort(ordered.begin(), ordered.end(), [](const OrderedMove& lhs, const OrderedMove& rhs) {
-        if (lhs.priority != rhs.priority) {
-            return lhs.priority > rhs.priority;
-        }
-        return lhs.static_score > rhs.static_score;
+    std::stable_sort(ordered.begin(), ordered.end(), [this](const ScoredMove& lhs, const ScoredMove& rhs) {
+        return better_scored_move(lhs, rhs);
     });
 
     return ordered;
 }
 
-std::vector<HeuristicSearcherV7::OrderedMove> HeuristicSearcherV7::ordered_noisy_moves(
+std::vector<HeuristicSearcherV9::ScoredMove> HeuristicSearcherV9::ordered_noisy_moves(
     const Position& pos
 ) const {
-    std::vector<OrderedMove> ordered;
+    std::vector<ScoredMove> ordered;
     const std::vector<Move> moves = generate_legal_moves(pos);
     ordered.reserve(moves.size());
 
@@ -133,39 +183,29 @@ std::vector<HeuristicSearcherV7::OrderedMove> HeuristicSearcherV7::ordered_noisy
             continue;
         }
 
-        Position next = pos;
-        next.make_move(move);
-
-        ordered.push_back(OrderedMove{
-            move,
-            is_promotion(move) ? (int) 1e9 : static_exchange_eval(pos, move),
-            -evaluate_for_side_to_move(next)
-        });
+        ordered.push_back(make_scored_move(pos, move, 0, Move{}, ScoringMode::Quiescence));
     }
 
-    std::stable_sort(ordered.begin(), ordered.end(), [](const OrderedMove& lhs, const OrderedMove& rhs) {
-        if (lhs.priority != rhs.priority) {
-            return lhs.priority > rhs.priority;
-        }
-        return lhs.static_score > rhs.static_score;
+    std::stable_sort(ordered.begin(), ordered.end(), [this](const ScoredMove& lhs, const ScoredMove& rhs) {
+        return better_scored_move(lhs, rhs);
     });
 
     return ordered;
 }
 
-bool HeuristicSearcherV7::should_reduce_late_move(
+bool HeuristicSearcherV9::should_reduce_late_move(
     const Position& pos,
-    const OrderedMove& ordered_move,
+    const ScoredMove& scored_move,
     int depth,
     int move_index
 ) const {
     return depth >= LmrMinDepth
         && move_index >= LmrMoveIndex
-        && ordered_move.priority == 0
+        && is_quiet_move(scored_move)
         && !in_check(pos, pos.side_to_move);
 }
 
-bool HeuristicSearcherV7::can_null_move_prune(
+bool HeuristicSearcherV9::can_null_move_prune(
     const Position& pos,
     int depth,
     const SearchContext& context
@@ -176,7 +216,7 @@ bool HeuristicSearcherV7::can_null_move_prune(
         && has_non_pawn_material(pos, pos.side_to_move);
 }
 
-int HeuristicSearcherV7::quiescence(
+int HeuristicSearcherV9::quiescence(
     Position pos,
     int alpha,
     int beta,
@@ -207,10 +247,10 @@ int HeuristicSearcherV7::quiescence(
         return alpha;
     }
 
-    const std::vector<OrderedMove> moves = ordered_noisy_moves(pos);
-    for (const OrderedMove& ordered_move : moves) {
+    const std::vector<ScoredMove> moves = ordered_noisy_moves(pos);
+    for (const ScoredMove& scored_move : moves) {
         Position next = pos;
-        next.make_move(ordered_move.move);
+        next.make_move(scored_move.move);
 
         const int score = -quiescence(next, -beta, -alpha, q_depth + 1, context);
         if (context.stopped) {
@@ -228,7 +268,13 @@ int HeuristicSearcherV7::quiescence(
     return alpha;
 }
 
-int HeuristicSearcherV7::negamax(
+bool HeuristicSearcherV9::is_quiet_move(const ScoredMove& scored_move) const {
+    return !is_capture(scored_move.move)
+        && !is_promotion(scored_move.move)
+        && !scored_move.gives_check;
+}
+
+int HeuristicSearcherV9::negamax(
     Position pos,
     int depth,
     int ply,
@@ -281,7 +327,7 @@ int HeuristicSearcherV7::negamax(
         }
     }
 
-    const std::vector<OrderedMove> moves = ordered_moves(pos, tt_best_move);
+    const std::vector<ScoredMove> moves = ordered_moves(pos, ply, tt_best_move);
 
     if (moves.empty()) {
         return in_check(pos, pos.side_to_move) ? -CheckmateScore + ply : 0;
@@ -290,13 +336,13 @@ int HeuristicSearcherV7::negamax(
     int best_score = -Infinity;
     Move best_move{};
     for (std::size_t move_index = 0; move_index < moves.size(); ++move_index) {
-        const OrderedMove& ordered_move = moves[move_index];
+        const ScoredMove& scored_move = moves[move_index];
 
         Position next = pos;
-        next.make_move(ordered_move.move);
+        next.make_move(scored_move.move);
 
         int score = -Infinity;
-        if (should_reduce_late_move(pos, ordered_move, depth, static_cast<int>(move_index))) {
+        if (should_reduce_late_move(pos, scored_move, depth, static_cast<int>(move_index))) {
             const int reduced_depth = std::max(0, depth - 1 - LmrReduction);
             score = -negamax(next, reduced_depth, ply + 1, -alpha - 1, -alpha, context);
             if (context.stopped) {
@@ -318,11 +364,15 @@ int HeuristicSearcherV7::negamax(
 
         if (score > best_score) {
             best_score = score;
-            best_move = ordered_move.move;
+            best_move = scored_move.move;
         }
 
         alpha = std::max(alpha, score);
         if (alpha >= beta) {
+            if (is_quiet_move(scored_move)) {
+                killer_table_.store(ply, scored_move.move);
+                history_table_.store(pos, scored_move.move, depth);
+            }
             break;
         }
     }
@@ -338,9 +388,9 @@ int HeuristicSearcherV7::negamax(
     return best_score;
 }
 
-SearchResult HeuristicSearcherV7::make_fallback_result(const Position& pos) const {
+SearchResult HeuristicSearcherV9::make_fallback_result(const Position& pos) const {
     SearchResult result;
-    const std::vector<OrderedMove> moves = ordered_moves(pos);
+    const std::vector<ScoredMove> moves = ordered_moves(pos, 0);
     if (moves.empty()) {
         result.score = in_check(pos, pos.side_to_move) ? -CheckmateScore : 0;
         result.nodes = 1;
@@ -352,7 +402,7 @@ SearchResult HeuristicSearcherV7::make_fallback_result(const Position& pos) cons
     return result;
 }
 
-SearchResult HeuristicSearcherV7::search_fixed_depth(
+SearchResult HeuristicSearcherV9::search_fixed_depth(
     const Position& pos,
     int depth,
     SearchContext& context
@@ -382,7 +432,7 @@ SearchResult HeuristicSearcherV7::search_fixed_depth(
     const int alpha_before_search = alpha;
     const int beta_before_search = beta;
 
-    const std::vector<OrderedMove> moves = ordered_moves(pos, tt_best_move);
+    const std::vector<ScoredMove> moves = ordered_moves(pos, 0, tt_best_move);
 
     if (moves.empty()) {
         result.score = in_check(pos, pos.side_to_move) ? -CheckmateScore : 0;
@@ -391,9 +441,9 @@ SearchResult HeuristicSearcherV7::search_fixed_depth(
     }
 
     result.score = -Infinity;
-    for (const OrderedMove& ordered_move : moves) {
+    for (const ScoredMove& scored_move : moves) {
         Position next = pos;
-        next.make_move(ordered_move.move);
+        next.make_move(scored_move.move);
 
         const int score = -negamax(next, depth - 1, 1, -beta, -alpha, context);
         if (context.stopped) {
@@ -403,7 +453,7 @@ SearchResult HeuristicSearcherV7::search_fixed_depth(
         }
         if (score > result.score) {
             result.score = score;
-            result.best_move = ordered_move.move;
+            result.best_move = scored_move.move;
         }
         alpha = std::max(alpha, score);
     }
@@ -420,18 +470,20 @@ SearchResult HeuristicSearcherV7::search_fixed_depth(
     return result;
 }
 
-HeuristicSearcherV7::HeuristicSearcherV7(std::size_t tt_mb)
+HeuristicSearcherV9::HeuristicSearcherV9(std::size_t tt_mb)
     : tt_(tt_mb) {
 }
 
-SearchResult HeuristicSearcherV7::search_best_move(const Position& pos, int depth) {
+SearchResult HeuristicSearcherV9::search_best_move(const Position& pos, int depth) {
+    killer_table_.clear();
     SearchContext context;
     return search_fixed_depth(pos, depth, context);
 }
 
-SearchResult HeuristicSearcherV7::search_best_move(const Position& pos, const SearchLimits& limits) {
+SearchResult HeuristicSearcherV9::search_best_move(const Position& pos, const SearchLimits& limits) {
     assert(limits.max_depth >= 0);
 
+    killer_table_.clear();
     SearchResult best = make_fallback_result(pos);
     best.depth = 0;
 
@@ -455,15 +507,15 @@ SearchResult HeuristicSearcherV7::search_best_move(const Position& pos, const Se
     return best;
 }
 
-std::string_view HeuristicSearcherV7::name() const {
-    return "heuristic_v7";
+std::string_view HeuristicSearcherV9::name() const {
+    return "heuristic_v9";
 }
 
-void HeuristicSearcherV7::clear_tt() {
+void HeuristicSearcherV9::clear_tt() {
     tt_.clear();
 }
 
-std::size_t HeuristicSearcherV7::tt_entry_count() const {
+std::size_t HeuristicSearcherV9::tt_entry_count() const {
     return tt_.entry_count();
 }
 

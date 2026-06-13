@@ -34,6 +34,10 @@ public:
         return target_scale_;
     }
 
+    float target_clip() const {
+        return target_clip_;
+    }
+
     bool loaded() const {
         return !sparse_weights_.empty();
     }

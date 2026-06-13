@@ -1,4 +1,4 @@
-#include "heuristic_searcher_v7.hpp"
+#include "nn_searcher_v7.hpp"
 
 #include "attacks.hpp"
 #include "evaluate.hpp"
@@ -21,6 +21,34 @@ constexpr int LmrMoveIndex = 4;
 constexpr int LmrReduction = 1;
 constexpr int NullMoveMinDepth = 3;
 constexpr int NullMoveReduction = 2;
+
+struct SearchContext {
+    std::uint64_t nodes = 0;
+    Clock::time_point deadline{};
+    bool has_deadline = false;
+    bool stopped = false;
+    bool in_null_move = false;
+};
+
+struct OrderedMove {
+    Move move{};
+    int priority = 0;
+    int static_score = 0;
+};
+
+bool should_stop(SearchContext& context) {
+    if (!context.has_deadline) {
+        return false;
+    }
+    if ((context.nodes & 1023ULL) != 0) {
+        return false;
+    }
+    if (Clock::now() >= context.deadline) {
+        context.stopped = true;
+        return true;
+    }
+    return false;
+}
 
 bool is_valid_move(Move move) {
     return move.value != 0;
@@ -45,9 +73,7 @@ bool has_non_pawn_material(const Position& pos, Color color) {
     return false;
 }
 
-} // namespace
-
-void HeuristicSearcherV7::make_null_move(Position& pos) const {
+void make_null_move(Position& pos) {
     if (pos.en_passant_square != NoSquare) {
         pos.zobrist_key ^= zobrist::en_passant_file_key(file_of(pos.en_passant_square));
         pos.en_passant_square = NoSquare;
@@ -57,26 +83,7 @@ void HeuristicSearcherV7::make_null_move(Position& pos) const {
     pos.side_to_move = opposite(pos.side_to_move);
 }
 
-bool HeuristicSearcherV7::should_stop(SearchContext& context) const {
-    if (!context.has_deadline) {
-        return false;
-    }
-    if ((context.nodes & 1023ULL) != 0) {
-        return false;
-    }
-    if (Clock::now() >= context.deadline) {
-        context.stopped = true;
-        return true;
-    }
-    return false;
-}
-
-int HeuristicSearcherV7::move_priority(
-    Move move,
-    const Position& cur,
-    const Position& next,
-    Move tt_move
-) const {
+int move_priority(Move move, const Position& cur, const Position& next, Move tt_move) {
     if (is_valid_move(tt_move) && move == tt_move) {
         return 1e9;
     }
@@ -92,10 +99,11 @@ int HeuristicSearcherV7::move_priority(
     return 0;
 }
 
-std::vector<HeuristicSearcherV7::OrderedMove> HeuristicSearcherV7::ordered_moves(
+std::vector<OrderedMove> ordered_moves(
     const Position& pos,
-    Move tt_move
-) const {
+    const NnValueModel& model,
+    Move tt_move = Move{}
+) {
     std::vector<OrderedMove> ordered;
     const std::vector<Move> moves = generate_legal_moves(pos);
     ordered.reserve(moves.size());
@@ -107,7 +115,7 @@ std::vector<HeuristicSearcherV7::OrderedMove> HeuristicSearcherV7::ordered_moves
         ordered.push_back(OrderedMove{
             move,
             move_priority(move, pos, next, tt_move),
-            -evaluate_for_side_to_move(next)
+            -model.evaluate_cp_rounded(next)
         });
     }
 
@@ -121,9 +129,7 @@ std::vector<HeuristicSearcherV7::OrderedMove> HeuristicSearcherV7::ordered_moves
     return ordered;
 }
 
-std::vector<HeuristicSearcherV7::OrderedMove> HeuristicSearcherV7::ordered_noisy_moves(
-    const Position& pos
-) const {
+std::vector<OrderedMove> ordered_noisy_moves(const Position& pos, const NnValueModel& model) {
     std::vector<OrderedMove> ordered;
     const std::vector<Move> moves = generate_legal_moves(pos);
     ordered.reserve(moves.size());
@@ -139,7 +145,7 @@ std::vector<HeuristicSearcherV7::OrderedMove> HeuristicSearcherV7::ordered_noisy
         ordered.push_back(OrderedMove{
             move,
             is_promotion(move) ? (int) 1e9 : static_exchange_eval(pos, move),
-            -evaluate_for_side_to_move(next)
+            -model.evaluate_cp_rounded(next)
         });
     }
 
@@ -153,35 +159,32 @@ std::vector<HeuristicSearcherV7::OrderedMove> HeuristicSearcherV7::ordered_noisy
     return ordered;
 }
 
-bool HeuristicSearcherV7::should_reduce_late_move(
+bool should_reduce_late_move(
     const Position& pos,
     const OrderedMove& ordered_move,
     int depth,
     int move_index
-) const {
+) {
     return depth >= LmrMinDepth
         && move_index >= LmrMoveIndex
         && ordered_move.priority == 0
         && !in_check(pos, pos.side_to_move);
 }
 
-bool HeuristicSearcherV7::can_null_move_prune(
-    const Position& pos,
-    int depth,
-    const SearchContext& context
-) const {
+bool can_null_move_prune(const Position& pos, int depth, const SearchContext& context) {
     return depth >= NullMoveMinDepth
         && !context.in_null_move
         && !in_check(pos, pos.side_to_move)
         && has_non_pawn_material(pos, pos.side_to_move);
 }
 
-int HeuristicSearcherV7::quiescence(
+int quiescence(
     Position pos,
     int alpha,
     int beta,
     int q_depth,
-    SearchContext& context
+    SearchContext& context,
+    const NnValueModel& model
 ) {
     assert(alpha < beta);
     ++context.nodes;
@@ -195,7 +198,7 @@ int HeuristicSearcherV7::quiescence(
         return in_check(pos, pos.side_to_move) ? -CheckmateScore : 0;
     }
 
-    const int stand_pat = evaluate_for_side_to_move(pos);
+    const int stand_pat = model.evaluate_cp_rounded(pos);
     if (stand_pat >= beta) {
         return beta;
     }
@@ -207,12 +210,12 @@ int HeuristicSearcherV7::quiescence(
         return alpha;
     }
 
-    const std::vector<OrderedMove> moves = ordered_noisy_moves(pos);
+    const std::vector<OrderedMove> moves = ordered_noisy_moves(pos, model);
     for (const OrderedMove& ordered_move : moves) {
         Position next = pos;
         next.make_move(ordered_move.move);
 
-        const int score = -quiescence(next, -beta, -alpha, q_depth + 1, context);
+        const int score = -quiescence(next, -beta, -alpha, q_depth + 1, context, model);
         if (context.stopped) {
             return 0;
         }
@@ -228,13 +231,15 @@ int HeuristicSearcherV7::quiescence(
     return alpha;
 }
 
-int HeuristicSearcherV7::negamax(
+int negamax_impl(
     Position pos,
     int depth,
     int ply,
     int alpha,
     int beta,
-    SearchContext& context
+    SearchContext& context,
+    TranspositionTable& tt,
+    const NnValueModel& model
 ) {
     assert(depth >= 0);
     assert(alpha < beta);
@@ -246,7 +251,7 @@ int HeuristicSearcherV7::negamax(
 
     int tt_score = 0;
     Move tt_best_move{};
-    if (tt_.probe(pos.zobrist_key, depth, alpha, beta, tt_score, tt_best_move)) {
+    if (tt.probe(pos.zobrist_key, depth, alpha, beta, tt_score, tt_best_move)) {
         return tt_score;
     }
 
@@ -254,7 +259,7 @@ int HeuristicSearcherV7::negamax(
     const int beta_before_search = beta;
 
     if (depth == 0) {
-        return quiescence(pos, alpha, beta, 0, context);
+        return quiescence(pos, alpha, beta, 0, context, model);
     }
 
     if (can_null_move_prune(pos, depth, context)) {
@@ -264,13 +269,15 @@ int HeuristicSearcherV7::negamax(
         const bool previous_in_null_move = context.in_null_move;
         context.in_null_move = true;
         const int null_depth = std::max(0, depth - 1 - NullMoveReduction);
-        const int null_score = -negamax(
+        const int null_score = -negamax_impl(
             null_pos,
             null_depth,
             ply + 1,
             -beta,
             -beta + 1,
-            context);
+            context,
+            tt,
+            model);
         context.in_null_move = previous_in_null_move;
 
         if (context.stopped) {
@@ -281,7 +288,7 @@ int HeuristicSearcherV7::negamax(
         }
     }
 
-    const std::vector<OrderedMove> moves = ordered_moves(pos, tt_best_move);
+    const std::vector<OrderedMove> moves = ordered_moves(pos, model, tt_best_move);
 
     if (moves.empty()) {
         return in_check(pos, pos.side_to_move) ? -CheckmateScore + ply : 0;
@@ -298,19 +305,19 @@ int HeuristicSearcherV7::negamax(
         int score = -Infinity;
         if (should_reduce_late_move(pos, ordered_move, depth, static_cast<int>(move_index))) {
             const int reduced_depth = std::max(0, depth - 1 - LmrReduction);
-            score = -negamax(next, reduced_depth, ply + 1, -alpha - 1, -alpha, context);
+            score = -negamax_impl(next, reduced_depth, ply + 1, -alpha - 1, -alpha, context, tt, model);
             if (context.stopped) {
                 return 0;
             }
 
             if (score > alpha) {
-                score = -negamax(next, depth - 1, ply + 1, -beta, -alpha, context);
+                score = -negamax_impl(next, depth - 1, ply + 1, -beta, -alpha, context, tt, model);
                 if (context.stopped) {
                     return 0;
                 }
             }
         } else {
-            score = -negamax(next, depth - 1, ply + 1, -beta, -alpha, context);
+            score = -negamax_impl(next, depth - 1, ply + 1, -beta, -alpha, context, tt, model);
             if (context.stopped) {
                 return 0;
             }
@@ -333,29 +340,31 @@ int HeuristicSearcherV7::negamax(
     } else if (best_score >= beta_before_search) {
         bound = TTBound::Lower;
     }
-    tt_.store(pos.zobrist_key, depth, best_score, bound, best_move);
+    tt.store(pos.zobrist_key, depth, best_score, bound, best_move);
 
     return best_score;
 }
 
-SearchResult HeuristicSearcherV7::make_fallback_result(const Position& pos) const {
+SearchResult make_fallback_result(const Position& pos, const NnValueModel& model) {
     SearchResult result;
-    const std::vector<OrderedMove> moves = ordered_moves(pos);
+    const std::vector<OrderedMove> moves = ordered_moves(pos, model);
     if (moves.empty()) {
         result.score = in_check(pos, pos.side_to_move) ? -CheckmateScore : 0;
         result.nodes = 1;
         return result;
     }
     result.best_move = moves.front().move;
-    result.score = evaluate_for_side_to_move(pos);
+    result.score = model.evaluate_cp_rounded(pos);
     result.nodes = 1;
     return result;
 }
 
-SearchResult HeuristicSearcherV7::search_fixed_depth(
+SearchResult search_fixed_depth(
     const Position& pos,
     int depth,
-    SearchContext& context
+    TranspositionTable& tt,
+    SearchContext& context,
+    const NnValueModel& model
 ) {
     assert(depth >= 0);
 
@@ -363,7 +372,7 @@ SearchResult HeuristicSearcherV7::search_fixed_depth(
     result.depth = depth;
 
     if (depth == 0) {
-        result.score = quiescence(pos, -Infinity, Infinity, 0, context);
+        result.score = quiescence(pos, -Infinity, Infinity, 0, context, model);
         result.nodes = context.nodes;
         return result;
     }
@@ -372,7 +381,7 @@ SearchResult HeuristicSearcherV7::search_fixed_depth(
     int beta = Infinity;
     int tt_score = 0;
     Move tt_best_move{};
-    if (tt_.probe(pos.zobrist_key, depth, alpha, beta, tt_score, tt_best_move)) {
+    if (tt.probe(pos.zobrist_key, depth, alpha, beta, tt_score, tt_best_move)) {
         result.score = tt_score;
         result.best_move = tt_best_move;
         result.nodes = 1;
@@ -382,7 +391,7 @@ SearchResult HeuristicSearcherV7::search_fixed_depth(
     const int alpha_before_search = alpha;
     const int beta_before_search = beta;
 
-    const std::vector<OrderedMove> moves = ordered_moves(pos, tt_best_move);
+    const std::vector<OrderedMove> moves = ordered_moves(pos, model, tt_best_move);
 
     if (moves.empty()) {
         result.score = in_check(pos, pos.side_to_move) ? -CheckmateScore : 0;
@@ -395,7 +404,7 @@ SearchResult HeuristicSearcherV7::search_fixed_depth(
         Position next = pos;
         next.make_move(ordered_move.move);
 
-        const int score = -negamax(next, depth - 1, 1, -beta, -alpha, context);
+        const int score = -negamax_impl(next, depth - 1, 1, -beta, -alpha, context, tt, model);
         if (context.stopped) {
             result.stopped = true;
             result.nodes = context.nodes;
@@ -414,25 +423,28 @@ SearchResult HeuristicSearcherV7::search_fixed_depth(
     } else if (result.score >= beta_before_search) {
         bound = TTBound::Lower;
     }
-    tt_.store(pos.zobrist_key, depth, result.score, bound, result.best_move);
+    tt.store(pos.zobrist_key, depth, result.score, bound, result.best_move);
 
     result.nodes = context.nodes;
     return result;
 }
 
-HeuristicSearcherV7::HeuristicSearcherV7(std::size_t tt_mb)
-    : tt_(tt_mb) {
+} // namespace
+
+NnSearcherV7::NnSearcherV7(const NnValueModel& model, std::size_t tt_mb)
+    : model_(model),
+      tt_(tt_mb) {
 }
 
-SearchResult HeuristicSearcherV7::search_best_move(const Position& pos, int depth) {
+SearchResult NnSearcherV7::search_best_move(const Position& pos, int depth) {
     SearchContext context;
-    return search_fixed_depth(pos, depth, context);
+    return search_fixed_depth(pos, depth, tt_, context, model_);
 }
 
-SearchResult HeuristicSearcherV7::search_best_move(const Position& pos, const SearchLimits& limits) {
+SearchResult NnSearcherV7::search_best_move(const Position& pos, const SearchLimits& limits) {
     assert(limits.max_depth >= 0);
 
-    SearchResult best = make_fallback_result(pos);
+    SearchResult best = make_fallback_result(pos, model_);
     best.depth = 0;
 
     SearchContext context;
@@ -442,7 +454,7 @@ SearchResult HeuristicSearcherV7::search_best_move(const Position& pos, const Se
     }
 
     for (int depth = 1; depth <= limits.max_depth; ++depth) {
-        SearchResult current = search_fixed_depth(pos, depth, context);
+        SearchResult current = search_fixed_depth(pos, depth, tt_, context, model_);
         if (current.stopped || context.stopped) {
             best.stopped = true;
             best.nodes = context.nodes;
@@ -455,15 +467,15 @@ SearchResult HeuristicSearcherV7::search_best_move(const Position& pos, const Se
     return best;
 }
 
-std::string_view HeuristicSearcherV7::name() const {
-    return "heuristic_v7";
+std::string_view NnSearcherV7::name() const {
+    return "nn_v7";
 }
 
-void HeuristicSearcherV7::clear_tt() {
+void NnSearcherV7::clear_tt() {
     tt_.clear();
 }
 
-std::size_t HeuristicSearcherV7::tt_entry_count() const {
+std::size_t NnSearcherV7::tt_entry_count() const {
     return tt_.entry_count();
 }
 

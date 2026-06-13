@@ -1,9 +1,9 @@
 #include "attacks.hpp"
 #include "evaluate.hpp"
 #include "game_state.hpp"
-#include "heuristic_searcher_v6.hpp"
+#include "heuristic_searcher_v7.hpp"
 #include "move.hpp"
-#include "nn_searcher_v6.hpp"
+#include "nn_searcher_v7.hpp"
 #include "nn_value.hpp"
 #include "position.hpp"
 
@@ -161,8 +161,8 @@ GameResult play_game(
     chess::Position pos;
     pos.set_startpos();
     std::vector<chess::HashKey> position_hashes{pos.zobrist_key};
-    chess::HeuristicSearcherV6 heuristic_searcher;
-    chess::NnSearcherV6 nn_searcher(model);
+    chess::HeuristicSearcherV7 heuristic_searcher;
+    chess::NnSearcherV7 nn_searcher(model);
 
     for (int ply = 0; ply < max_plies; ++ply) {
         if (chess::is_threefold_repetition(pos.zobrist_key, position_hashes)) {

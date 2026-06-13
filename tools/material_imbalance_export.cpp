@@ -1,6 +1,6 @@
 #include "attacks.hpp"
 #include "board_encoder.hpp"
-#include "heuristic_searcher_v6.hpp"
+#include "heuristic_searcher_v7.hpp"
 #include "move.hpp"
 #include "position.hpp"
 
@@ -26,7 +26,7 @@ struct Options {
     int limit = 20000;
     int progress_interval = 10;
     std::uint32_t seed = 20260621;
-    std::string output = "data/material_imbalance_depth6_v6.jsonl";
+    std::string output = "data/material_imbalance_depth6_v7.jsonl";
 };
 
 struct PieceOnBoard {
@@ -153,7 +153,7 @@ int write_labeled_position(
     std::ostream& out,
     const chess::Position& pos,
     int depth,
-    chess::HeuristicSearcherV6& teacher
+    chess::HeuristicSearcherV7& teacher
 ) {
     const int target = teacher.search_best_move(pos, depth).score;
     write_sample(out, chess::encode_position(pos), target);
@@ -164,7 +164,7 @@ int write_removed_piece_variants(
     std::ostream& out,
     const chess::Position& pos,
     int depth,
-    chess::HeuristicSearcherV6& teacher,
+    chess::HeuristicSearcherV7& teacher,
     int remaining
 ) {
     int written = 0;
@@ -197,7 +197,7 @@ int write_exchange_variants(
     std::ostream& out,
     const chess::Position& pos,
     int depth,
-    chess::HeuristicSearcherV6& teacher,
+    chess::HeuristicSearcherV7& teacher,
     int remaining
 ) {
     int written = 0;
@@ -228,7 +228,7 @@ int write_two_pawn_variants(
     std::ostream& out,
     const chess::Position& pos,
     int depth,
-    chess::HeuristicSearcherV6& teacher,
+    chess::HeuristicSearcherV7& teacher,
     int remaining
 ) {
     int written = 0;
@@ -257,7 +257,7 @@ int write_material_imbalance(
     std::ostream& out,
     const chess::Position& pos,
     int depth,
-    chess::HeuristicSearcherV6& teacher,
+    chess::HeuristicSearcherV7& teacher,
     int remaining
 ) {
     int written = 0;
@@ -290,7 +290,7 @@ int main(int argc, char** argv) {
         }
 
         std::mt19937 rng(options.seed);
-        chess::HeuristicSearcherV6 teacher;
+        chess::HeuristicSearcherV7 teacher;
         int written = 0;
 
         for (int game = 0; game < options.games && written < options.limit; ++game) {

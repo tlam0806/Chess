@@ -34,6 +34,51 @@ Implemented pieces:
 
 The engine currently prioritizes correctness and clarity over advanced speed tricks. Sliding attacks are intentionally simple; magic bitboards can come later.
 
+## Search Experiments
+
+The classical searchers are versioned so move-ordering and pruning changes can be tested side by side.
+
+Current relevant versions:
+
+- `HeuristicSearcherV7`: baseline alpha-beta search with transposition table move ordering, SEE-based capture ordering, quiescence search, null-move pruning, and late-move reduction.
+- `HeuristicSearcherV8`: V7 plus a history table for quiet moves that cause beta cutoffs.
+- `HeuristicSearcherV9`: V8 plus a two-slot killer move table indexed by search ply.
+
+Iterative deepening is selected by calling:
+
+```cpp
+search_best_move(position, SearchLimits{.max_depth = depth, .move_time = ...})
+```
+
+The fixed-depth overload:
+
+```cpp
+search_best_move(position, depth)
+```
+
+searches only that depth.
+
+Benchmark V7/V8/V9 on the same random legal game:
+
+```sh
+build/benchmark_v7_v8_on_random_match \
+  --depth 8 \
+  --plies 80 \
+  --seed 20260613 \
+  --iterative \
+  --summary-only
+```
+
+Recent 5-seed benchmark at iterative depth 8, 80 plies per seed:
+
+```text
+V7: nodes=102355555 time=180788 ms
+V8: nodes=102806141 time=177956 ms
+V9: nodes=100725973 time=173799 ms
+```
+
+On this sample, V9 is the current preferred classical searcher for data labeling and bot play.
+
 ## Phase 2: Neural Value Evaluation
 
 Phase 2 experiments with replacing or augmenting the hand-written heuristic evaluation using a small neural network.

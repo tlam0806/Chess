@@ -12,6 +12,8 @@ add_library(chess_core
     src/board_encoder.cpp
     src/evaluate.cpp
     src/game_state.cpp
+    src/history_table.cpp
+    src/killer_move_table.cpp
     src/move.cpp
     src/nn_search.cpp
     src/nn_value.cpp
@@ -24,8 +26,11 @@ add_library(chess_core
     src/heuristic_searcher_v5.cpp
     src/heuristic_searcher_v6.cpp
     src/heuristic_searcher_v7.cpp
+    src/heuristic_searcher_v8.cpp
+    src/heuristic_searcher_v9.cpp
     src/nn_searcher.cpp
     src/nn_searcher_v6.cpp
+    src/nn_searcher_v7.cpp
     src/searcher.cpp
     src/transposition_table.cpp
     src/zobrist.cpp
@@ -78,6 +83,15 @@ target_link_libraries(nn_engine PRIVATE chess_core)
 add_executable(benchmark_searchers_on_dataset tools/benchmark_searchers_on_dataset.cpp)
 target_link_libraries(benchmark_searchers_on_dataset PRIVATE chess_core)
 
+add_executable(benchmark_v7_v8_on_random_match tools/benchmark_v7_v8_on_random_match.cpp)
+target_link_libraries(benchmark_v7_v8_on_random_match PRIVATE chess_core)
+
+add_executable(analyze_nn_buckets tools/analyze_nn_buckets.cpp)
+target_link_libraries(analyze_nn_buckets PRIVATE chess_core)
+
+add_executable(tactical_disagreement_export tools/tactical_disagreement_export.cpp)
+target_link_libraries(tactical_disagreement_export PRIVATE chess_core)
+
 add_executable(uci_v7 tools/uci_v7.cpp)
 target_link_libraries(uci_v7 PRIVATE chess_core)
 
@@ -105,6 +119,8 @@ add_chess_test(heuristic_searcher_v4_tests)
 add_chess_test(heuristic_searcher_v5_tests)
 add_chess_test(heuristic_searcher_v6_tests)
 add_chess_test(heuristic_searcher_v7_tests)
+add_chess_test(heuristic_searcher_v8_tests)
+add_chess_test(heuristic_searcher_v9_tests)
 add_chess_test(king_attack_tests)
 add_chess_test(king_movegen_tests)
 add_chess_test(knight_attack_tests)

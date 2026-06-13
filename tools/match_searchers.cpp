@@ -6,6 +6,7 @@
 #include "heuristic_searcher_v5.hpp"
 #include "heuristic_searcher_v6.hpp"
 #include "heuristic_searcher_v7.hpp"
+#include "heuristic_searcher_v8.hpp"
 #include "move.hpp"
 #include "position.hpp"
 
@@ -36,7 +37,8 @@ enum class EngineKind {
     V4,
     V5,
     V6,
-    V7
+    V7,
+    V8
 };
 
 struct Options {
@@ -86,6 +88,8 @@ std::string_view engine_name(EngineKind engine) {
             return "v6";
         case EngineKind::V7:
             return "v7";
+        case EngineKind::V8:
+            return "v8";
     }
     return "unknown";
 }
@@ -111,6 +115,9 @@ EngineKind parse_engine_kind(std::string_view value) {
     }
     if (value == "v7") {
         return EngineKind::V7;
+    }
+    if (value == "v8") {
+        return EngineKind::V8;
     }
     throw std::runtime_error("invalid engine kind: " + std::string(value));
 }
@@ -165,7 +172,7 @@ Options parse_args(int argc, char** argv) {
                 << "Usage: match_searchers [--games N] [--max-depth D] [--movetime-ms MS]\n"
                 << "                       [--random-plies N] [--max-plies N]\n"
                 << "                       [--progress-interval N] [--threads N] [--seed N]\n"
-                << "                       [--engine-a v1|v2|v3|v4|v5|v6|v7] [--engine-b v1|v2|v3|v4|v5|v6|v7]\n";
+                << "                       [--engine-a v1|v2|v3|v4|v5|v6|v7|v8] [--engine-b v1|v2|v3|v4|v5|v6|v7|v8]\n";
             std::exit(0);
         } else {
             throw std::runtime_error("unknown argument: " + std::string(arg));
@@ -205,7 +212,8 @@ chess::Searcher& select_searcher(
     chess::HeuristicSearcherV4& v4,
     chess::HeuristicSearcherV5& v5,
     chess::HeuristicSearcherV6& v6,
-    chess::HeuristicSearcherV7& v7
+    chess::HeuristicSearcherV7& v7,
+    chess::HeuristicSearcherV8& v8
 ) {
     switch (engine) {
         case EngineKind::V1:
@@ -222,6 +230,8 @@ chess::Searcher& select_searcher(
             return v6;
         case EngineKind::V7:
             return v7;
+        case EngineKind::V8:
+            return v8;
     }
     return v1;
 }
@@ -272,6 +282,7 @@ SideResult play_game(
     chess::HeuristicSearcherV5 v5;
     chess::HeuristicSearcherV6 v6;
     chess::HeuristicSearcherV7 v7;
+    chess::HeuristicSearcherV8 v8;
 
     const bool engine_a_is_white = (game_index % 2 == 0);
     const chess::SearchLimits limits{
@@ -296,8 +307,8 @@ SideResult play_game(
         } else {
             const bool engine_a_to_move = (pos.side_to_move == chess::Color::White) == engine_a_is_white;
             chess::Searcher& searcher = engine_a_to_move
-                ? select_searcher(options.engine_a, v1, v2, v3, v4, v5, v6, v7)
-                : select_searcher(options.engine_b, v1, v2, v3, v4, v5, v6, v7);
+                ? select_searcher(options.engine_a, v1, v2, v3, v4, v5, v6, v7, v8)
+                : select_searcher(options.engine_b, v1, v2, v3, v4, v5, v6, v7, v8);
             const auto search_start = std::chrono::steady_clock::now();
             move = choose_move(searcher, pos, limits);
             const auto search_end = std::chrono::steady_clock::now();

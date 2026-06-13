@@ -1,7 +1,7 @@
 #include "board_encoder.hpp"
 #include "attacks.hpp"
 #include "game_state.hpp"
-#include "heuristic_searcher_v6.hpp"
+#include "heuristic_searcher_v7.hpp"
 #include "move.hpp"
 #include "position.hpp"
 
@@ -40,7 +40,7 @@ struct Options {
     int threads = 1;
     std::uint32_t seed = 20260612;
     SelectionKind selection = SelectionKind::All;
-    std::string output = "data/legal_moves_depth6_v6.jsonl";
+    std::string output = "data/legal_moves_depth6_v7.jsonl";
 };
 
 struct WorkerResult {
@@ -200,7 +200,7 @@ int write_legal_move_children(
     const chess::Position& pos,
     const std::vector<chess::Move>& moves,
     int label_depth,
-    chess::HeuristicSearcherV6& teacher,
+    chess::HeuristicSearcherV7& teacher,
     int remaining
 ) {
     int written = 0;
@@ -222,7 +222,7 @@ std::vector<MoveLabel> score_legal_move_children(
     const chess::Position& pos,
     const std::vector<chess::Move>& moves,
     int candidate_depth,
-    chess::HeuristicSearcherV6& teacher
+    chess::HeuristicSearcherV7& teacher
 ) {
     std::vector<MoveLabel> labels;
     labels.reserve(moves.size());
@@ -254,7 +254,7 @@ int write_important_move_children(
     const chess::Position& pos,
     const std::vector<chess::Move>& moves,
     const Options& options,
-    chess::HeuristicSearcherV6& teacher,
+    chess::HeuristicSearcherV7& teacher,
     std::mt19937& rng,
     int remaining
 ) {
@@ -313,7 +313,7 @@ int write_selected_move_children(
     const chess::Position& pos,
     const std::vector<chess::Move>& moves,
     const Options& options,
-    chess::HeuristicSearcherV6& teacher,
+    chess::HeuristicSearcherV7& teacher,
     std::mt19937& rng,
     int remaining
 ) {
@@ -324,7 +324,7 @@ int write_selected_move_children(
 }
 
 int export_games(std::ostream& out, const Options& options, std::mt19937& rng, int worker_index = 0) {
-    chess::HeuristicSearcherV6 teacher;
+    chess::HeuristicSearcherV7 teacher;
     int written = 0;
 
     for (int game = 0; game < options.games && written < options.limit; ++game) {

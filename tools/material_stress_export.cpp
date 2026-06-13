@@ -1,5 +1,5 @@
 #include "board_encoder.hpp"
-#include "heuristic_searcher_v6.hpp"
+#include "heuristic_searcher_v7.hpp"
 #include "move.hpp"
 #include "position.hpp"
 
@@ -139,7 +139,7 @@ int write_labeled_position(
     std::ostream& out,
     const chess::Position& pos,
     int depth,
-    chess::HeuristicSearcherV6& teacher
+    chess::HeuristicSearcherV7& teacher
 ) {
     const int target = teacher.search_best_move(pos, depth).score;
     write_sample(out, chess::encode_position(pos), target);
@@ -150,7 +150,7 @@ int write_capture_stress(
     std::ostream& out,
     const chess::Position& pos,
     int depth,
-    chess::HeuristicSearcherV6& teacher,
+    chess::HeuristicSearcherV7& teacher,
     int remaining
 ) {
     int written = 0;
@@ -192,7 +192,7 @@ int main(int argc, char** argv) {
         }
 
         std::mt19937 rng(options.seed);
-        chess::HeuristicSearcherV6 teacher;
+        chess::HeuristicSearcherV7 teacher;
         int written = 0;
 
         for (int game = 0; game < options.games && written < options.limit; ++game) {
