@@ -1,4 +1,4 @@
-#include "heuristic_searcher_v15.hpp"
+#include "heuristic_searcher_v16.hpp"
 
 #include <cassert>
 #include <cstdlib>
@@ -82,13 +82,13 @@ std::string test_fen(const Position& pos) {
     return out.str();
 }
 
-void assert_v15_search_is_stable(Position pos, int max_depth) {
-    HeuristicSearcherV15 v15(1);
+void assert_v16_search_is_stable(Position pos, int max_depth) {
+    HeuristicSearcherV16 v16(1);
 
     for (int depth = 0; depth <= max_depth; ++depth) {
-        v15.clear_tt();
-        const SearchResult cold = v15.search_best_move(pos, depth);
-        const SearchResult warm = v15.search_best_move(pos, depth);
+        v16.clear_tt();
+        const SearchResult cold = v16.search_best_move(pos, depth);
+        const SearchResult warm = v16.search_best_move(pos, depth);
 
         assert(cold.score == warm.score);
         assert(cold.best_move == warm.best_move);
@@ -101,13 +101,13 @@ void assert_v15_search_is_stable(Position pos, int max_depth) {
     }
 }
 
-void assert_v15_search_is_stable_from_fen(std::string_view fen, int max_depth) {
+void assert_v16_search_is_stable_from_fen(std::string_view fen, int max_depth) {
     Position pos;
     assert(pos.set_fen(fen));
-    assert_v15_search_is_stable(pos, max_depth);
+    assert_v16_search_is_stable(pos, max_depth);
 }
 
-void stress_v15_search_is_stable(std::uint32_t seed, int samples, int max_random_plies, int max_depth) {
+void stress_v16_search_is_stable(std::uint32_t seed, int samples, int max_random_plies, int max_depth) {
     std::mt19937 rng(seed);
 
     for (int sample = 0; sample < samples; ++sample) {
@@ -125,7 +125,7 @@ void stress_v15_search_is_stable(std::uint32_t seed, int samples, int max_random
             pos.make_move(moves[move_dist(rng)]);
         }
 
-        assert_v15_search_is_stable(pos, max_depth);
+        assert_v16_search_is_stable(pos, max_depth);
     }
 }
 
@@ -135,56 +135,56 @@ int main() {
     {
         Position pos;
         pos.set_startpos();
-        assert_v15_search_is_stable(pos, 3);
+        assert_v16_search_is_stable(pos, 3);
     }
 
-    assert_v15_search_is_stable_from_fen(
+    assert_v16_search_is_stable_from_fen(
         "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1",
         2);
 
-    assert_v15_search_is_stable_from_fen(
+    assert_v16_search_is_stable_from_fen(
         "8/P6k/8/8/8/8/6Kp/8 w - - 0 1",
         3);
 
-    assert_v15_search_is_stable_from_fen(
+    assert_v16_search_is_stable_from_fen(
         "8/8/8/8/8/2k5/4K3/8 w - - 0 1",
         3);
 
     {
         Position pos;
         pos.set_startpos();
-        assert_v15_search_is_stable(pos, 4);
+        assert_v16_search_is_stable(pos, 4);
     }
 
-    assert_v15_search_is_stable_from_fen(
+    assert_v16_search_is_stable_from_fen(
         "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1",
         4);
 
-    assert_v15_search_is_stable_from_fen(
+    assert_v16_search_is_stable_from_fen(
         "8/P6k/8/8/8/8/6Kp/8 w - - 0 1",
         4);
 
-    assert_v15_search_is_stable_from_fen(
+    assert_v16_search_is_stable_from_fen(
         "7k/5K2/8/8/8/8/1Q6/8 w - - 0 1",
         3);
 
-    assert_v15_search_is_stable_from_fen(
+    assert_v16_search_is_stable_from_fen(
         "rnb1kb1r/ppppqppp/5n2/4N3/4P3/8/PPPP1PPP/RNBQKB1R w KQkq - 1 4",
         4);
 
-    assert_v15_search_is_stable_from_fen(
+    assert_v16_search_is_stable_from_fen(
         "rnbq1k1r/pp1Pbppp/2p5/8/2B5/8/PPP1NnPP/RNBQK2R w KQ - 1 8",
         4);
 
-    assert_v15_search_is_stable_from_fen(
+    assert_v16_search_is_stable_from_fen(
         "r1bq1rk1/pp1n1ppp/2pbpn2/3p4/3P4/2N1PN2/PPQ1BPPP/R1B2RK1 w - - 0 9",
         4);
 
-    assert_v15_search_is_stable_from_fen(
+    assert_v16_search_is_stable_from_fen(
         "2r2rk1/pp2qppp/2n1bn2/2bp4/3P4/2N1PN2/PPQ1BPPP/2RR2K1 w - - 4 12",
         4);
 
-    assert_v15_search_is_stable_from_fen(
+    assert_v16_search_is_stable_from_fen(
         "4r3/5ppp/5P2/1p1pp3/3nP2P/1p1b4/rP1P1P2/R1BR2K1 w - - 0 23",
         4);
 
@@ -192,8 +192,8 @@ int main() {
         Position pos;
         assert(pos.set_fen("7k/5K2/8/8/8/8/1Q6/8 w - - 0 1"));
 
-        HeuristicSearcherV15 v15(1);
-        const SearchResult result = v15.search_best_move(pos, 1);
+        HeuristicSearcherV16 v16(1);
+        const SearchResult result = v16.search_best_move(pos, 1);
         assert(result.score == CheckmateScore - 1);
 
         Position next = pos;
@@ -208,7 +208,7 @@ int main() {
         pos.set_startpos();
 
         for (int sample = 0; sample < 80; ++sample) {
-            assert_v15_search_is_stable(pos, 3);
+            assert_v16_search_is_stable(pos, 3);
 
             const std::vector<Move> moves = generate_legal_moves(pos);
             if (moves.empty()) {
@@ -221,15 +221,15 @@ int main() {
         }
     }
 
-    stress_v15_search_is_stable(20260616, 250, 80, 4);
-    stress_v15_search_is_stable(20260617, 40, 100, 5);
+    stress_v16_search_is_stable(20260616, 250, 80, 4);
+    stress_v16_search_is_stable(20260617, 40, 100, 5);
 
     {
         Position pos;
         pos.set_startpos();
 
-        HeuristicSearcherV15 v15(1);
-        const SearchResult result = v15.search_best_move(pos, SearchLimits{
+        HeuristicSearcherV16 v16(1);
+        const SearchResult result = v16.search_best_move(pos, SearchLimits{
             .max_depth = 64,
             .move_time = std::chrono::milliseconds{1}
         });
@@ -243,12 +243,12 @@ int main() {
         Position pos;
         assert(pos.set_fen("r1bq1rk1/pp1n1ppp/2pbpn2/3p4/3P4/2N1PN2/PPQ1BPPP/R1B2RK1 w - - 0 9"));
 
-        HeuristicSearcherV15 v15(4);
+        HeuristicSearcherV16 v16(4);
         const SearchLimits limits{
             .max_depth = 5,
             .move_time = std::chrono::milliseconds{0}
         };
-        const SearchResult result = v15.search_best_move(pos, limits);
+        const SearchResult result = v16.search_best_move(pos, limits);
         assert(result.depth == 5);
         assert(contains_move(generate_legal_moves(pos), result.best_move));
     }

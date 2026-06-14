@@ -10,9 +10,11 @@ add_library(chess_core
     src/attacks.cpp
     src/bitboard.cpp
     src/board_encoder.cpp
+    src/counter_history_table.cpp
     src/evaluate.cpp
     src/game_state.cpp
     src/history_table.cpp
+    src/history_table_v16.cpp
     src/killer_move_table.cpp
     src/move.cpp
     src/nn_search.cpp
@@ -21,6 +23,7 @@ add_library(chess_core
     src/perft.cpp
     src/position.cpp
     src/range_transposition_table.cpp
+    src/range_bucket_transposition_table.cpp
     src/heuristic_searcher.cpp
     src/heuristic_searcher_v2.cpp
     src/heuristic_searcher_v3.cpp
@@ -37,6 +40,10 @@ add_library(chess_core
     src/heuristic_searcher_v14.cpp
     src/heuristic_searcher_v14_experimental.cpp
     src/searchers/strict/heuristic_searcher_v15.cpp
+    src/searchers/strict/heuristic_searcher_v16.cpp
+    src/searchers/strict/heuristic_searcher_v17.cpp
+    src/searchers/strict/heuristic_searcher_v18.cpp
+    src/searchers/strict/heuristic_searcher_v19.cpp
     src/searchers/fast/heuristic_searcher_v15_pvs.cpp
     src/nn_searcher.cpp
     src/nn_searcher_v6.cpp
@@ -122,6 +129,27 @@ target_link_libraries(benchmark_v15_pvs_compare PRIVATE chess_core)
 add_executable(benchmark_v15_aspiration tools/benchmark_v15_aspiration.cpp)
 target_link_libraries(benchmark_v15_aspiration PRIVATE chess_core)
 
+add_executable(benchmark_v15_v16_history tools/benchmark_v15_v16_history.cpp)
+target_link_libraries(benchmark_v15_v16_history PRIVATE chess_core)
+
+add_executable(benchmark_v10_v16_depth_sweep tools/benchmark_v10_v16_depth_sweep.cpp)
+target_link_libraries(benchmark_v10_v16_depth_sweep PRIVATE chess_core)
+
+add_executable(benchmark_v16_v17_counterhistory tools/benchmark_v16_v17_counterhistory.cpp)
+target_link_libraries(benchmark_v16_v17_counterhistory PRIVATE chess_core)
+
+add_executable(benchmark_v17_v18 tools/benchmark_v17_v18.cpp)
+target_link_libraries(benchmark_v17_v18 PRIVATE chess_core)
+
+add_executable(analyze_v17_v18_move_ordering tools/analyze_v17_v18_move_ordering.cpp)
+target_link_libraries(analyze_v17_v18_move_ordering PRIVATE chess_core)
+
+add_executable(benchmark_v18_counterhistory_toggle tools/benchmark_v18_counterhistory_toggle.cpp)
+target_link_libraries(benchmark_v18_counterhistory_toggle PRIVATE chess_core)
+
+add_executable(benchmark_v18_v19_bucket_tt tools/benchmark_v18_v19_bucket_tt.cpp)
+target_link_libraries(benchmark_v18_v19_bucket_tt PRIVATE chess_core)
+
 add_executable(analyze_nn_buckets tools/analyze_nn_buckets.cpp)
 target_link_libraries(analyze_nn_buckets PRIVATE chess_core)
 
@@ -161,6 +189,8 @@ add_chess_test(en_passant_tests)
 add_chess_test(evaluate_tests)
 add_chess_test(fen_tests)
 add_chess_test(game_state_tests)
+add_chess_test(history_table_tests)
+add_chess_test(history_table_v16_tests)
 add_chess_test(heuristic_searcher_v2_tests)
 add_chess_test(heuristic_searcher_v3_tests)
 add_chess_test(heuristic_searcher_v4_tests)
@@ -175,6 +205,10 @@ add_chess_test(heuristic_searcher_v12_tests)
 add_chess_test(heuristic_searcher_v13_tests)
 add_chess_test(heuristic_searcher_v14_tests)
 add_chess_test(heuristic_searcher_v15_tests)
+add_chess_test(heuristic_searcher_v16_tests)
+add_chess_test(heuristic_searcher_v17_tests)
+add_chess_test(heuristic_searcher_v18_tests)
+add_chess_test(heuristic_searcher_v19_tests)
 add_chess_test(king_attack_tests)
 add_chess_test(king_movegen_tests)
 add_chess_test(knight_attack_tests)
@@ -182,6 +216,7 @@ add_chess_test(knight_movegen_tests)
 add_chess_test(legal_movegen_tests)
 add_chess_test(make_move_tests)
 add_chess_test(move_tests)
+add_chess_test(movegen_regression_tests)
 add_chess_test(pawn_attack_tests)
 add_chess_test(pawn_movegen_tests)
 add_chess_test(perft_tests)

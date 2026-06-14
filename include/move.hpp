@@ -53,6 +53,10 @@ struct Move {
         value = static_cast<std::uint16_t>(
             (value & ~0xF000) | ((static_cast<int>(move_flag) & 0x0F) << 12));
     }
+
+    constexpr PieceType get_moving_piece(const Position& pos) const {
+        return pos.piece_type_on_occupied(from());
+    }
 };
 
 constexpr bool operator==(Move lhs, Move rhs) {
