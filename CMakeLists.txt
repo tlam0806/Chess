@@ -159,6 +159,9 @@ target_link_libraries(tactical_disagreement_export PRIVATE chess_core)
 add_executable(measure_tt_stats tools/measure_tt_stats.cpp)
 target_link_libraries(measure_tt_stats PRIVATE chess_core)
 
+add_executable(generate_magic_bitboards tools/generate_magic_bitboards.cpp)
+target_link_libraries(generate_magic_bitboards PRIVATE chess_core)
+
 add_executable(opening_book_match tools/opening_book_match.cpp)
 target_link_libraries(opening_book_match PRIVATE chess_core)
 
@@ -215,6 +218,7 @@ add_chess_test(knight_attack_tests)
 add_chess_test(knight_movegen_tests)
 add_chess_test(legal_movegen_tests)
 add_chess_test(make_move_tests)
+add_chess_test(magic_bitboard_tests)
 add_chess_test(move_tests)
 add_chess_test(movegen_regression_tests)
 add_chess_test(pawn_attack_tests)
