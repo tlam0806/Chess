@@ -1,5 +1,4 @@
 #include "heuristic_searcher_v15.hpp"
-#include "heuristic_searcher_v15_pvs.hpp"
 #include "position.hpp"
 
 #include <chrono>
@@ -17,11 +16,10 @@ namespace {
 
 struct Options {
     int depth = 7;
-    int fixed_count = 3;
-    int random_positions = 0;
-    int random_plies = 40;
-    std::uint32_t seed = 20260618;
-    bool iterative = true;
+    int fixed_count = 6;
+    int random_positions = 8;
+    int random_plies = 80;
+    std::uint32_t seed = 20260620;
 };
 
 struct Totals {
@@ -63,17 +61,15 @@ Options parse_args(int argc, char** argv) {
             options.random_plies = parse_int(require_value(arg), arg);
         } else if (arg == "--seed") {
             options.seed = static_cast<std::uint32_t>(parse_int(require_value(arg), arg));
-        } else if (arg == "--fixed-depth") {
-            options.iterative = false;
-        } else if (arg == "--iterative") {
-            options.iterative = true;
         } else if (arg == "--help") {
-            std::cout
-                << "Usage: benchmark_v15_pvs_compare [--depth N] [--iterative|--fixed-depth]\n"
-                << "                                 [--fixed-count N] [--random-positions N]\n"
-                << "                                 [--random-plies N] [--seed N]\n"
+std::cout
+    << "Usage: benchmark_v15_aspiration [--depth N]\n"
+                << "                                [--fixed-count N]\n"
+                << "                                [--random-positions N]\n"
+                << "                                [--random-plies N]\n"
+                << "                                [--seed N]\n"
                 << "\n"
-                << "Default mode is iterative deepening through SearchLimits.\n";
+                << "Compares manual full-window iterative deepening against SearchLimits aspiration.\n";
             std::exit(0);
         } else {
             throw std::runtime_error("unknown argument: " + std::string(arg));
@@ -187,15 +183,30 @@ std::string to_fen(const chess::Position& pos) {
     return out.str();
 }
 
-template <typename Searcher>
-chess::SearchResult search(Searcher& searcher, const chess::Position& pos, const Options& options) {
+chess::SearchResult search_no_aspiration(
+    chess::HeuristicSearcherV15& searcher,
+    const chess::Position& pos,
+    int depth
+) {
     searcher.clear_tt();
-    if (!options.iterative) {
-        return searcher.search_best_move(pos, options.depth);
+    chess::SearchResult best;
+    std::uint64_t total_nodes = 0;
+    for (int current_depth = 1; current_depth <= depth; ++current_depth) {
+        best = searcher.search_best_move(pos, current_depth);
+        total_nodes += best.nodes;
     }
+    best.nodes = total_nodes;
+    return best;
+}
 
+chess::SearchResult search_with_aspiration(
+    chess::HeuristicSearcherV15& searcher,
+    const chess::Position& pos,
+    int depth
+) {
+    searcher.clear_tt();
     chess::SearchLimits limits;
-    limits.max_depth = options.depth;
+    limits.max_depth = depth;
     return searcher.search_best_move(pos, limits);
 }
 
@@ -209,32 +220,40 @@ int main(int argc, char** argv) {
         std::vector<chess::Position> random = random_positions(options);
         positions.insert(positions.end(), random.begin(), random.end());
 
-        Totals base_totals;
-        Totals pvs_totals;
+        Totals no_asp_totals;
+        Totals asp_totals;
         int score_mismatches = 0;
         int move_mismatches = 0;
+        int max_abs_score_diff = 0;
 
         for (std::size_t i = 0; i < positions.size(); ++i) {
-            chess::HeuristicSearcherV15 base(64);
-            chess::HeuristicSearcherV15Pvs pvs(64);
+            chess::HeuristicSearcherV15 no_aspiration(64);
+            chess::HeuristicSearcherV15 aspiration(64);
 
-            const auto base_start = std::chrono::steady_clock::now();
-            const chess::SearchResult base_result = search(base, positions[i], options);
-            const auto base_stop = std::chrono::steady_clock::now();
+            const auto no_asp_start = std::chrono::steady_clock::now();
+            const chess::SearchResult no_asp_result =
+                search_no_aspiration(no_aspiration, positions[i], options.depth);
+            const auto no_asp_stop = std::chrono::steady_clock::now();
 
-            const auto pvs_start = std::chrono::steady_clock::now();
-            const chess::SearchResult pvs_result = search(pvs, positions[i], options);
-            const auto pvs_stop = std::chrono::steady_clock::now();
+            const auto asp_start = std::chrono::steady_clock::now();
+            const chess::SearchResult asp_result =
+                search_with_aspiration(aspiration, positions[i], options.depth);
+            const auto asp_stop = std::chrono::steady_clock::now();
 
-            const double base_ms = std::chrono::duration<double, std::milli>(base_stop - base_start).count();
-            const double pvs_ms = std::chrono::duration<double, std::milli>(pvs_stop - pvs_start).count();
-            base_totals.nodes += base_result.nodes;
-            base_totals.ms += base_ms;
-            pvs_totals.nodes += pvs_result.nodes;
-            pvs_totals.ms += pvs_ms;
+            const double no_asp_ms =
+                std::chrono::duration<double, std::milli>(no_asp_stop - no_asp_start).count();
+            const double asp_ms =
+                std::chrono::duration<double, std::milli>(asp_stop - asp_start).count();
 
-            const bool score_mismatch = base_result.score != pvs_result.score;
-            const bool move_mismatch = base_result.best_move != pvs_result.best_move;
+            no_asp_totals.nodes += no_asp_result.nodes;
+            no_asp_totals.ms += no_asp_ms;
+            asp_totals.nodes += asp_result.nodes;
+            asp_totals.ms += asp_ms;
+
+            const int score_diff = asp_result.score - no_asp_result.score;
+            max_abs_score_diff = std::max(max_abs_score_diff, std::abs(score_diff));
+            const bool score_mismatch = score_diff != 0;
+            const bool move_mismatch = asp_result.best_move != no_asp_result.best_move;
             if (score_mismatch) {
                 ++score_mismatches;
             }
@@ -245,39 +264,39 @@ int main(int argc, char** argv) {
             std::cout
                 << "sample=" << i
                 << " depth=" << options.depth
-                << " mode=" << (options.iterative ? "iterative" : "fixed")
-                << " base_score=" << base_result.score
-                << " pvs_score=" << pvs_result.score
-                << " base_move=" << chess::move_to_string(base_result.best_move)
-                << " pvs_move=" << chess::move_to_string(pvs_result.best_move)
-                << " base_nodes=" << base_result.nodes
-                << " pvs_nodes=" << pvs_result.nodes
-                << " node_ratio=" << (base_result.nodes == 0 ? 0.0 : static_cast<double>(pvs_result.nodes) / static_cast<double>(base_result.nodes))
-                << " base_ms=" << base_ms
-                << " pvs_ms=" << pvs_ms
-                << " time_ratio=" << (base_ms == 0.0 ? 0.0 : pvs_ms / base_ms)
+                << " manual_no_asp_score=" << no_asp_result.score
+                << " asp_score=" << asp_result.score
+                << " score_diff=" << score_diff
+                << " manual_no_asp_move=" << chess::move_to_string(no_asp_result.best_move)
+                << " asp_move=" << chess::move_to_string(asp_result.best_move)
+                << " manual_no_asp_nodes=" << no_asp_result.nodes
+                << " asp_nodes=" << asp_result.nodes
+                << " node_ratio=" << static_cast<double>(asp_result.nodes)
+                       / static_cast<double>(std::max<std::uint64_t>(no_asp_result.nodes, 1))
+                << " manual_no_asp_ms=" << no_asp_ms
+                << " asp_ms=" << asp_ms
+                << " time_ratio=" << asp_ms / std::max(no_asp_ms, 0.001)
                 << " score_mismatch=" << (score_mismatch ? 1 : 0)
                 << " move_mismatch=" << (move_mismatch ? 1 : 0)
-                << " fen=\"" << to_fen(positions[i]) << "\""
-                << '\n' << std::flush;
+                << " fen=\"" << to_fen(positions[i]) << "\"\n";
         }
 
         std::cout
-            << "SUMMARY"
-            << " samples=" << positions.size()
+            << "SUMMARY samples=" << positions.size()
             << " depth=" << options.depth
-            << " mode=" << (options.iterative ? "iterative" : "fixed")
-            << " base_nodes=" << base_totals.nodes
-            << " pvs_nodes=" << pvs_totals.nodes
-            << " node_ratio=" << (base_totals.nodes == 0 ? 0.0 : static_cast<double>(pvs_totals.nodes) / static_cast<double>(base_totals.nodes))
-            << " base_ms=" << base_totals.ms
-            << " pvs_ms=" << pvs_totals.ms
-            << " time_ratio=" << (base_totals.ms == 0.0 ? 0.0 : pvs_totals.ms / base_totals.ms)
+            << " manual_no_asp_nodes=" << no_asp_totals.nodes
+            << " asp_nodes=" << asp_totals.nodes
+            << " node_ratio=" << static_cast<double>(asp_totals.nodes)
+                   / static_cast<double>(std::max<std::uint64_t>(no_asp_totals.nodes, 1))
+            << " manual_no_asp_ms=" << no_asp_totals.ms
+            << " asp_ms=" << asp_totals.ms
+            << " time_ratio=" << asp_totals.ms / std::max(no_asp_totals.ms, 0.001)
             << " score_mismatches=" << score_mismatches
             << " move_mismatches=" << move_mismatches
+            << " max_abs_score_diff=" << max_abs_score_diff
             << '\n';
-    } catch (const std::exception& error) {
-        std::cerr << "benchmark_v15_pvs_compare: " << error.what() << '\n';
+    } catch (const std::exception& ex) {
+        std::cerr << "error: " << ex.what() << '\n';
         return 1;
     }
 }

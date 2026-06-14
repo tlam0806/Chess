@@ -119,6 +119,9 @@ target_link_libraries(benchmark_v14_pvs PRIVATE chess_core)
 add_executable(benchmark_v15_pvs_compare tools/benchmark_v15_pvs_compare.cpp)
 target_link_libraries(benchmark_v15_pvs_compare PRIVATE chess_core)
 
+add_executable(benchmark_v15_aspiration tools/benchmark_v15_aspiration.cpp)
+target_link_libraries(benchmark_v15_aspiration PRIVATE chess_core)
+
 add_executable(analyze_nn_buckets tools/analyze_nn_buckets.cpp)
 target_link_libraries(analyze_nn_buckets PRIVATE chess_core)
 

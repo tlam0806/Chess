@@ -488,8 +488,24 @@ HeuristicSearcherV15::SearchValue HeuristicSearcherV15::negamax(
         Position next = pos;
         next.make_move(scored_move.move);
 
-        SearchValue child = negamax(next, depth - 1, ply + 1, -beta, -alpha, state);
-        const ScoreRange move_range = negate_range(child.range);
+        ScoreRange move_range;
+        if (move_index > 0 && beta > alpha + 1) {
+            SearchValue scout = negamax(next, depth - 1, ply + 1, -alpha - 1, -alpha, state);
+            move_range = negate_range(scout.range);
+            if (state.stopped) {
+                return SearchValue{exact_range(0)};
+            }
+
+            const bool scout_proves_fail_low = move_range.upper <= alpha;
+            const bool scout_proves_fail_high = move_range.lower >= beta;
+            if (!scout_proves_fail_low && !scout_proves_fail_high) {
+                SearchValue full = negamax(next, depth - 1, ply + 1, -beta, -alpha, state);
+                move_range = negate_range(full.range);
+            }
+        } else {
+            SearchValue child = negamax(next, depth - 1, ply + 1, -beta, -alpha, state);
+            move_range = negate_range(child.range);
+        }
         if (state.stopped) {
             return SearchValue{exact_range(0)};
         }
@@ -717,12 +733,6 @@ SearchResult HeuristicSearcherV15::search_best_move(const Position& pos, const S
                     alpha = std::max(alpha, current.score);
                     beta = Infinity;
                 }
-            }
-            current = search_root_without_tt_probe(pos, depth, state);
-            if (current.stopped || state.stopped) {
-                best.stopped = true;
-                best.nodes = state.nodes;
-                return best;
             }
             best = current;
         } else {
