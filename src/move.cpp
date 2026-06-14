@@ -60,7 +60,8 @@ void remove_castling_rights_for_king(Position& pos, Color color) {
     }
 }
 
-void add_castling_moves(const Position& pos, std::vector<Move>& moves, Square king_square) {
+template <typename List>
+void add_castling_moves(const Position& pos, List& moves, Square king_square) {
     const Color color = pos.side_to_move;
     const Color enemy = opposite(color);
     const Bitboard occupancy = pos.occupancy();
@@ -155,8 +156,11 @@ std::string move_to_string(Move move) {
     return result;
 }
 
-std::vector<Move> generate_knight_moves(const Position& pos) {
-    std::vector<Move> moves;
+std::vector<Move> to_vector(const MoveList& moves) {
+    return std::vector<Move>(moves.begin(), moves.end());
+}
+
+void generate_knight_moves(const Position& pos, MoveList& moves) {
     Bitboard positions = pos.pieces[static_cast<int>(pos.side_to_move)][static_cast<int>(PieceType::Knight)];
     const Color op_side = opposite(pos.side_to_move);
     const Bitboard op_occupancy = pos.occupancy(op_side);
@@ -171,11 +175,9 @@ std::vector<Move> generate_knight_moves(const Position& pos) {
             moves.push_back(make_move(from, to, (capturable_occupancy & bit(to)) ? MoveFlag::Capture : MoveFlag::Quiet));
         }
     }
-    return moves;
 }
 
-std::vector<Move> generate_king_moves(const Position& pos) {
-    std::vector<Move> moves;
+void generate_king_moves(const Position& pos, MoveList& moves) {
     Bitboard positions = pos.pieces[static_cast<int>(pos.side_to_move)][static_cast<int>(PieceType::King)];
     const Color op_side = opposite(pos.side_to_move);
     const Bitboard op_occupancy = pos.occupancy(op_side);
@@ -191,11 +193,9 @@ std::vector<Move> generate_king_moves(const Position& pos) {
         }
         add_castling_moves(pos, moves, from);
     }
-    return moves;
 }
 
-std::vector<Move> generate_bishop_moves(const Position& pos) {
-    std::vector<Move> moves;
+void generate_bishop_moves(const Position& pos, MoveList& moves) {
     Bitboard positions = pos.pieces[static_cast<int>(pos.side_to_move)][static_cast<int>(PieceType::Bishop)];
     const Color op_side = opposite(pos.side_to_move);
     const Bitboard op_occupancy = pos.occupancy(op_side);
@@ -211,11 +211,9 @@ std::vector<Move> generate_bishop_moves(const Position& pos) {
             moves.push_back(make_move(from, to, (capturable_occupancy & bit(to)) ? MoveFlag::Capture : MoveFlag::Quiet));
         }
     }
-    return moves;
 }
 
-std::vector<Move> generate_rook_moves(const Position& pos) {
-    std::vector<Move> moves;
+void generate_rook_moves(const Position& pos, MoveList& moves) {
     Bitboard positions = pos.pieces[static_cast<int>(pos.side_to_move)][static_cast<int>(PieceType::Rook)];
     const Color op_side = opposite(pos.side_to_move);
     const Bitboard op_occupancy = pos.occupancy(op_side);
@@ -231,11 +229,9 @@ std::vector<Move> generate_rook_moves(const Position& pos) {
             moves.push_back(make_move(from, to, (capturable_occupancy & bit(to)) ? MoveFlag::Capture : MoveFlag::Quiet));
         }
     }
-    return moves;
 }
 
-std::vector<Move> generate_queen_moves(const Position& pos) {
-    std::vector<Move> moves;
+void generate_queen_moves(const Position& pos, MoveList& moves) {
     Bitboard positions = pos.pieces[static_cast<int>(pos.side_to_move)][static_cast<int>(PieceType::Queen)];
     const Color op_side = opposite(pos.side_to_move);
     const Bitboard op_occupancy = pos.occupancy(op_side);
@@ -251,11 +247,9 @@ std::vector<Move> generate_queen_moves(const Position& pos) {
             moves.push_back(make_move(from, to, (capturable_occupancy & bit(to)) ? MoveFlag::Capture : MoveFlag::Quiet));
         }
     }
-    return moves;
 }
 
-std::vector<Move> generate_pawn_moves(const Position& pos) {
-    std::vector<Move> moves;
+void generate_pawn_moves(const Position& pos, MoveList& moves) {
     Bitboard positions = pos.pieces[static_cast<int>(pos.side_to_move)][static_cast<int>(PieceType::Pawn)];
     const Color op_side = opposite(pos.side_to_move);
     const Bitboard op_occupancy = pos.occupancy(op_side);
@@ -310,21 +304,57 @@ std::vector<Move> generate_pawn_moves(const Position& pos) {
             }
         }
     }
-    return moves;
+}
+
+void generate_pseudo_legal_moves(const Position& pos, MoveList& moves) {
+    generate_pawn_moves(pos, moves);
+    generate_knight_moves(pos, moves);
+    generate_bishop_moves(pos, moves);
+    generate_rook_moves(pos, moves);
+    generate_queen_moves(pos, moves);
+    generate_king_moves(pos, moves);
+}
+
+std::vector<Move> generate_knight_moves(const Position& pos) {
+    MoveList moves;
+    generate_knight_moves(pos, moves);
+    return to_vector(moves);
+}
+
+std::vector<Move> generate_king_moves(const Position& pos) {
+    MoveList moves;
+    generate_king_moves(pos, moves);
+    return to_vector(moves);
+}
+
+std::vector<Move> generate_bishop_moves(const Position& pos) {
+    MoveList moves;
+    generate_bishop_moves(pos, moves);
+    return to_vector(moves);
+}
+
+std::vector<Move> generate_rook_moves(const Position& pos) {
+    MoveList moves;
+    generate_rook_moves(pos, moves);
+    return to_vector(moves);
+}
+
+std::vector<Move> generate_queen_moves(const Position& pos) {
+    MoveList moves;
+    generate_queen_moves(pos, moves);
+    return to_vector(moves);
+}
+
+std::vector<Move> generate_pawn_moves(const Position& pos) {
+    MoveList moves;
+    generate_pawn_moves(pos, moves);
+    return to_vector(moves);
 }
 
 std::vector<Move> generate_pseudo_legal_moves(const Position& pos) {
-    std::vector<Move> moves;
-    auto append = [&moves](std::vector<Move> part) {
-        moves.insert(moves.end(), part.begin(), part.end());
-    };
-    append(generate_pawn_moves(pos));
-    append(generate_knight_moves(pos));
-    append(generate_bishop_moves(pos));
-    append(generate_rook_moves(pos));
-    append(generate_queen_moves(pos));
-    append(generate_king_moves(pos));
-    return moves;
+    MoveList moves;
+    generate_pseudo_legal_moves(pos, moves);
+    return to_vector(moves);
 }
 
 void Position::make_move(Move move) {
@@ -389,10 +419,10 @@ void Position::make_move(Move move) {
     side_to_move = opposite(side_to_move);
 }
 
-std::vector<Move> generate_legal_moves(const Position& pos) {
-    std::vector<Move> legal_moves;
+void generate_legal_moves(const Position& pos, MoveList& legal_moves) {
     const Color us = pos.side_to_move;
-    const std::vector<Move> pseudo_moves = generate_pseudo_legal_moves(pos);
+    MoveList pseudo_moves;
+    generate_pseudo_legal_moves(pos, pseudo_moves);
 
     for (Move move : pseudo_moves) {
         Position next = pos;
@@ -402,7 +432,12 @@ std::vector<Move> generate_legal_moves(const Position& pos) {
             legal_moves.push_back(move);
         }
     }
-    return legal_moves;
+}
+
+std::vector<Move> generate_legal_moves(const Position& pos) {
+    MoveList legal_moves;
+    generate_legal_moves(pos, legal_moves);
+    return to_vector(legal_moves);
 }
 
 bool on_promotion_rank(Square square) {

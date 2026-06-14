@@ -2,7 +2,11 @@
 
 #include "types.hpp"
 
+#include <array>
+#include <cassert>
 #include <cstdint>
+#include <cstddef>
+#include <limits>
 #include <string>
 #include <vector>
 #include "position.hpp"
@@ -138,6 +142,74 @@ constexpr bool is_capture(Move move) {
 
 std::string square_to_string(Square square);
 std::string move_to_string(Move move);
+
+template <std::size_t Capacity>
+struct FixedMoveList {
+    static_assert(Capacity <= std::numeric_limits<std::uint16_t>::max());
+
+    std::array<Move, Capacity> moves{};
+    std::uint16_t count = 0;
+
+    void push(Move move) {
+        assert(count < Capacity && "FixedMoveList capacity exceeded");
+        moves[count++] = move;
+    }
+
+    void push_back(Move move) {
+        push(move);
+    }
+
+    void clear() {
+        count = 0;
+    }
+
+    bool empty() const {
+        return count == 0;
+    }
+
+    std::size_t size() const {
+        return count;
+    }
+
+    Move* begin() {
+        return moves.data();
+    }
+
+    Move* end() {
+        return moves.data() + count;
+    }
+
+    const Move* begin() const {
+        return moves.data();
+    }
+
+    const Move* end() const {
+        return moves.data() + count;
+    }
+
+    Move& operator[](std::size_t index) {
+        assert(index < count);
+        return moves[index];
+    }
+
+    const Move& operator[](std::size_t index) const {
+        assert(index < count);
+        return moves[index];
+    }
+};
+
+using MoveList = FixedMoveList<256>;
+using NoisyMoveList = FixedMoveList<128>;
+
+void generate_knight_moves(const Position& pos, MoveList& moves);
+void generate_king_moves(const Position& pos, MoveList& moves);
+void generate_bishop_moves(const Position& pos, MoveList& moves);
+void generate_rook_moves(const Position& pos, MoveList& moves);
+void generate_queen_moves(const Position& pos, MoveList& moves);
+void generate_pawn_moves(const Position& pos, MoveList& moves);
+
+void generate_pseudo_legal_moves(const Position& pos, MoveList& moves);
+void generate_legal_moves(const Position& pos, MoveList& moves);
 
 std::vector<Move> generate_knight_moves(const Position& pos);
 std::vector<Move> generate_king_moves(const Position& pos);
