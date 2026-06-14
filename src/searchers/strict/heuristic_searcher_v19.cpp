@@ -268,6 +268,10 @@ HeuristicSearcherV19::ScoredMove HeuristicSearcherV19::make_scored_move(
 ) const {
     Position next = pos;
     next.make_move(move);
+    if (in_check(next, pos.side_to_move)) {
+        return ScoredMove{};
+    }
+
     const bool gives_check = in_check(next, next.side_to_move);
     const bool capture = is_capture(move);
     const bool promotion = is_promotion(move);
@@ -360,13 +364,15 @@ std::vector<HeuristicSearcherV19::ScoredMove> HeuristicSearcherV19::ordered_move
     PieceType prev_moved_piece
 ) const {
     std::vector<ScoredMove> ordered;
-    const std::vector<Move> moves = generate_legal_moves(pos);
+    const std::vector<Move> moves = generate_pseudo_legal_moves(pos);
     ordered.reserve(moves.size());
 
     for (Move move : moves) {
-        ordered.push_back(
-            make_scored_move(pos, move, ply, tt_moves, prev_move, prev_moved_piece, ScoringMode::MainSearch)
-        );
+        ScoredMove scored_move =
+            make_scored_move(pos, move, ply, tt_moves, prev_move, prev_moved_piece, ScoringMode::MainSearch);
+        if (is_valid_move(scored_move.move)) {
+            ordered.push_back(scored_move);
+        }
     }
 
     std::stable_sort(ordered.begin(), ordered.end(), [this](const ScoredMove& lhs, const ScoredMove& rhs) {
@@ -380,7 +386,7 @@ std::vector<HeuristicSearcherV19::ScoredMove> HeuristicSearcherV19::ordered_nois
     const Position& pos
 ) const {
     std::vector<ScoredMove> ordered;
-    const std::vector<Move> moves = generate_legal_moves(pos);
+    const std::vector<Move> moves = generate_pseudo_legal_moves(pos);
     ordered.reserve(moves.size());
 
     for (Move move : moves) {
@@ -388,9 +394,11 @@ std::vector<HeuristicSearcherV19::ScoredMove> HeuristicSearcherV19::ordered_nois
             continue;
         }
 
-        ordered.push_back(
-            make_scored_move(pos, move, 0, MoveRange{}, Move{}, PieceType::None, ScoringMode::Quiescence)
-        );
+        ScoredMove scored_move =
+            make_scored_move(pos, move, 0, MoveRange{}, Move{}, PieceType::None, ScoringMode::Quiescence);
+        if (is_valid_move(scored_move.move)) {
+            ordered.push_back(scored_move);
+        }
     }
 
     std::stable_sort(ordered.begin(), ordered.end(), [this](const ScoredMove& lhs, const ScoredMove& rhs) {
