@@ -17,8 +17,10 @@ add_library(chess_core
     src/move.cpp
     src/nn_search.cpp
     src/nn_value.cpp
+    src/nnue_value.cpp
     src/perft.cpp
     src/position.cpp
+    src/range_transposition_table.cpp
     src/heuristic_searcher.cpp
     src/heuristic_searcher_v2.cpp
     src/heuristic_searcher_v3.cpp
@@ -28,9 +30,19 @@ add_library(chess_core
     src/heuristic_searcher_v7.cpp
     src/heuristic_searcher_v8.cpp
     src/heuristic_searcher_v9.cpp
+    src/heuristic_searcher_v10.cpp
+    src/heuristic_searcher_v11.cpp
+    src/heuristic_searcher_v12.cpp
+    src/heuristic_searcher_v13.cpp
+    src/heuristic_searcher_v14.cpp
+    src/heuristic_searcher_v14_experimental.cpp
+    src/searchers/strict/heuristic_searcher_v15.cpp
+    src/searchers/fast/heuristic_searcher_v15_pvs.cpp
     src/nn_searcher.cpp
     src/nn_searcher_v6.cpp
     src/nn_searcher_v7.cpp
+    src/nn_searcher_v10.cpp
+    src/nnue_searcher_v10.cpp
     src/searcher.cpp
     src/transposition_table.cpp
     src/zobrist.cpp
@@ -86,11 +98,44 @@ target_link_libraries(benchmark_searchers_on_dataset PRIVATE chess_core)
 add_executable(benchmark_v7_v8_on_random_match tools/benchmark_v7_v8_on_random_match.cpp)
 target_link_libraries(benchmark_v7_v8_on_random_match PRIVATE chess_core)
 
+add_executable(benchmark_v10_order_profiles tools/benchmark_v10_order_profiles.cpp)
+target_link_libraries(benchmark_v10_order_profiles PRIVATE chess_core)
+
+add_executable(benchmark_v9_v10_v11_on_dataset tools/benchmark_v9_v10_v11_on_dataset.cpp)
+target_link_libraries(benchmark_v9_v10_v11_on_dataset PRIVATE chess_core)
+
+add_executable(tune_v12_move_order_weights tools/tune_v12_move_order_weights.cpp)
+target_link_libraries(tune_v12_move_order_weights PRIVATE chess_core)
+
+add_executable(measure_v12_ordering_stats tools/measure_v12_ordering_stats.cpp)
+target_link_libraries(measure_v12_ordering_stats PRIVATE chess_core)
+
+add_executable(compare_v12_v13_logic tools/compare_v12_v13_logic.cpp)
+target_link_libraries(compare_v12_v13_logic PRIVATE chess_core)
+
+add_executable(benchmark_v14_pvs tools/benchmark_v14_pvs.cpp)
+target_link_libraries(benchmark_v14_pvs PRIVATE chess_core)
+
+add_executable(benchmark_v15_pvs_compare tools/benchmark_v15_pvs_compare.cpp)
+target_link_libraries(benchmark_v15_pvs_compare PRIVATE chess_core)
+
 add_executable(analyze_nn_buckets tools/analyze_nn_buckets.cpp)
 target_link_libraries(analyze_nn_buckets PRIVATE chess_core)
 
 add_executable(tactical_disagreement_export tools/tactical_disagreement_export.cpp)
 target_link_libraries(tactical_disagreement_export PRIVATE chess_core)
+
+add_executable(measure_tt_stats tools/measure_tt_stats.cpp)
+target_link_libraries(measure_tt_stats PRIVATE chess_core)
+
+add_executable(opening_book_match tools/opening_book_match.cpp)
+target_link_libraries(opening_book_match PRIVATE chess_core)
+
+add_executable(nnue_hard_negative_export tools/nnue_hard_negative_export.cpp)
+target_link_libraries(nnue_hard_negative_export PRIVATE chess_core)
+
+add_executable(nnue_spectator_gap_export tools/nnue_spectator_gap_export.cpp)
+target_link_libraries(nnue_spectator_gap_export PRIVATE chess_core)
 
 add_executable(uci_v7 tools/uci_v7.cpp)
 target_link_libraries(uci_v7 PRIVATE chess_core)
@@ -121,6 +166,12 @@ add_chess_test(heuristic_searcher_v6_tests)
 add_chess_test(heuristic_searcher_v7_tests)
 add_chess_test(heuristic_searcher_v8_tests)
 add_chess_test(heuristic_searcher_v9_tests)
+add_chess_test(heuristic_searcher_v10_tests)
+add_chess_test(heuristic_searcher_v11_tests)
+add_chess_test(heuristic_searcher_v12_tests)
+add_chess_test(heuristic_searcher_v13_tests)
+add_chess_test(heuristic_searcher_v14_tests)
+add_chess_test(heuristic_searcher_v15_tests)
 add_chess_test(king_attack_tests)
 add_chess_test(king_movegen_tests)
 add_chess_test(knight_attack_tests)
@@ -153,3 +204,9 @@ add_test(NAME nn_value_tests
         ${CMAKE_SOURCE_DIR}/models/value_net_stream_100k.bin
         ${CMAKE_SOURCE_DIR}/data/nn_value_compare_10000.jsonl
 )
+
+add_executable(nnue_value_tests tests/nnue_value_tests.cpp)
+target_link_libraries(nnue_value_tests PRIVATE chess_core)
+
+add_executable(nnue_searcher_v10_tests tests/nnue_searcher_v10_tests.cpp)
+target_link_libraries(nnue_searcher_v10_tests PRIVATE chess_core)

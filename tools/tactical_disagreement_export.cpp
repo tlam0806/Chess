@@ -1,7 +1,7 @@
 #include "attacks.hpp"
 #include "board_encoder.hpp"
 #include "game_state.hpp"
-#include "heuristic_searcher_v7.hpp"
+#include "heuristic_searcher_v10.hpp"
 #include "move.hpp"
 #include "position.hpp"
 #include "search_types.hpp"
@@ -196,7 +196,7 @@ chess::Move choose_random_move(const std::vector<chess::Move>& moves, std::mt199
     return moves[dist(rng)];
 }
 
-chess::SearchResult iterative_search(chess::HeuristicSearcherV7& searcher, const chess::Position& pos, int depth) {
+chess::SearchResult iterative_search(chess::HeuristicSearcherV10& searcher, const chess::Position& pos, int depth) {
     searcher.clear_tt();
     return searcher.search_best_move(pos, chess::SearchLimits{
         .max_depth = depth,
@@ -205,8 +205,8 @@ chess::SearchResult iterative_search(chess::HeuristicSearcherV7& searcher, const
 }
 
 SearchScores score_position(
-    chess::HeuristicSearcherV7& shallow_teacher,
-    chess::HeuristicSearcherV7& deep_teacher,
+    chess::HeuristicSearcherV10& shallow_teacher,
+    chess::HeuristicSearcherV10& deep_teacher,
     const chess::Position& pos,
     const Options& options
 ) {
@@ -217,8 +217,8 @@ SearchScores score_position(
 
 int write_tactical_samples(
     std::ostream& out,
-    chess::HeuristicSearcherV7& shallow_teacher,
-    chess::HeuristicSearcherV7& deep_teacher,
+    chess::HeuristicSearcherV10& shallow_teacher,
+    chess::HeuristicSearcherV10& deep_teacher,
     const chess::Position& pos,
     const std::vector<chess::Move>& moves,
     const Options& options,
@@ -277,7 +277,7 @@ int write_tactical_samples(
 }
 
 chess::Move choose_play_move(
-    chess::HeuristicSearcherV7& teacher,
+    chess::HeuristicSearcherV10& teacher,
     const chess::Position& pos,
     const std::vector<chess::Move>& moves,
     const Options& options,
@@ -312,9 +312,9 @@ WorkerResult export_worker(
 ) {
     WorkerResult result;
     std::mt19937 rng(options.seed + static_cast<std::uint32_t>(worker_index * 0x9E37U + 1U));
-    chess::HeuristicSearcherV7 shallow_teacher;
-    chess::HeuristicSearcherV7 deep_teacher;
-    chess::HeuristicSearcherV7 play_teacher;
+    chess::HeuristicSearcherV10 shallow_teacher;
+    chess::HeuristicSearcherV10 deep_teacher;
+    chess::HeuristicSearcherV10 play_teacher;
 
     while (Clock::now() < deadline && total_written.load() < options.limit) {
         chess::Position pos;

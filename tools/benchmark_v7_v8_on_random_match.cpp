@@ -2,6 +2,7 @@
 #include "heuristic_searcher_v7.hpp"
 #include "heuristic_searcher_v8.hpp"
 #include "heuristic_searcher_v9.hpp"
+#include "heuristic_searcher_v10.hpp"
 #include "move.hpp"
 #include "position.hpp"
 #include "search_types.hpp"
@@ -195,12 +196,14 @@ int main(int argc, char** argv) {
         chess::HeuristicSearcherV7 v7;
         chess::HeuristicSearcherV8 v8;
         chess::HeuristicSearcherV9 v9;
+        chess::HeuristicSearcherV10 v10;
         warmup_history(v8, options.depth, options.warmup_plies, options.warmup_seed, options.iterative);
 
         std::mt19937 rng(options.seed);
         Totals v7_totals;
         Totals v8_totals;
         Totals v9_totals;
+        Totals v10_totals;
 
         std::cout << "depth=" << options.depth
                   << " plies=" << options.plies
@@ -222,15 +225,19 @@ int main(int argc, char** argv) {
             std::uint64_t v7_us = 0;
             std::uint64_t v8_us = 0;
             std::uint64_t v9_us = 0;
+            std::uint64_t v10_us = 0;
             const chess::SearchResult v7_result =
                 timed_search(v7, pos, options.depth, options.iterative, v7_us);
             const chess::SearchResult v8_result =
                 timed_search(v8, pos, options.depth, options.iterative, v8_us);
             const chess::SearchResult v9_result =
                 timed_search(v9, pos, options.depth, options.iterative, v9_us);
+            const chess::SearchResult v10_result =
+                timed_search(v10, pos, options.depth, options.iterative, v10_us);
             add_result(v7_totals, v7_result, v7_us);
             add_result(v8_totals, v8_result, v8_us);
             add_result(v9_totals, v9_result, v9_us);
+            add_result(v10_totals, v10_result, v10_us);
 
             const chess::Move played = random_move(moves, rng);
             if (!options.summary_only) {
@@ -250,6 +257,10 @@ int main(int argc, char** argv) {
                           << " v9_score=" << v9_result.score
                           << " v9_nodes=" << v9_result.nodes
                           << " v9_us=" << v9_us
+                          << " v10_best=" << chess::move_to_string(v10_result.best_move)
+                          << " v10_score=" << v10_result.score
+                          << " v10_nodes=" << v10_result.nodes
+                          << " v10_us=" << v10_us
                           << '\n';
             }
 
@@ -274,6 +285,12 @@ int main(int argc, char** argv) {
         const std::uint64_t v9_avg_us = v9_totals.moves == 0
             ? 0
             : v9_totals.time_us / static_cast<std::uint64_t>(v9_totals.moves);
+        const std::uint64_t v10_avg_nodes = v10_totals.moves == 0
+            ? 0
+            : v10_totals.nodes / static_cast<std::uint64_t>(v10_totals.moves);
+        const std::uint64_t v10_avg_us = v10_totals.moves == 0
+            ? 0
+            : v10_totals.time_us / static_cast<std::uint64_t>(v10_totals.moves);
 
         std::cout << "summary"
                   << " moves=" << v7_totals.moves
@@ -288,14 +305,20 @@ int main(int argc, char** argv) {
                   << " v9_nodes=" << v9_totals.nodes
                   << " v9_avg_nodes=" << v9_avg_nodes
                   << " v9_ms=" << (v9_totals.time_us / 1000)
-                  << " v9_avg_us=" << v9_avg_us;
+                  << " v9_avg_us=" << v9_avg_us
+                  << " v10_nodes=" << v10_totals.nodes
+                  << " v10_avg_nodes=" << v10_avg_nodes
+                  << " v10_ms=" << (v10_totals.time_us / 1000)
+                  << " v10_avg_us=" << v10_avg_us;
         if (v7_totals.nodes != 0) {
             std::cout << " v8_node_ratio=" << static_cast<double>(v8_totals.nodes) / v7_totals.nodes;
             std::cout << " v9_node_ratio=" << static_cast<double>(v9_totals.nodes) / v7_totals.nodes;
+            std::cout << " v10_node_ratio=" << static_cast<double>(v10_totals.nodes) / v7_totals.nodes;
         }
         if (v7_totals.time_us != 0) {
             std::cout << " v8_time_ratio=" << static_cast<double>(v8_totals.time_us) / v7_totals.time_us;
             std::cout << " v9_time_ratio=" << static_cast<double>(v9_totals.time_us) / v7_totals.time_us;
+            std::cout << " v10_time_ratio=" << static_cast<double>(v10_totals.time_us) / v7_totals.time_us;
         }
         std::cout << '\n';
     } catch (const std::exception& error) {

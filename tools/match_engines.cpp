@@ -1,9 +1,9 @@
 #include "attacks.hpp"
 #include "evaluate.hpp"
 #include "game_state.hpp"
-#include "heuristic_searcher_v7.hpp"
+#include "heuristic_searcher_v10.hpp"
 #include "move.hpp"
-#include "nn_searcher_v7.hpp"
+#include "nn_searcher_v10.hpp"
 #include "nn_value.hpp"
 #include "position.hpp"
 
@@ -29,6 +29,7 @@ struct Options {
     int max_depth = 4;
     int max_plies = 120;
     int progress_interval = 10;
+    bool iterative = false;
     std::string output_dir = "data/matches";
 };
 
@@ -92,12 +93,14 @@ Options parse_args(int argc, char** argv) {
             options.max_plies = parse_int(require_value(arg), arg);
         } else if (arg == "--progress-interval") {
             options.progress_interval = parse_int(require_value(arg), arg);
+        } else if (arg == "--iterative") {
+            options.iterative = true;
         } else if (arg == "--output-dir") {
             options.output_dir = std::string(require_value(arg));
         } else if (arg == "--help") {
             std::cout
                 << "Usage: match_engines [--model path] [--min-depth N] [--max-depth N]\n"
-                << "                     [--max-plies N] [--progress-interval N]\n"
+                << "                     [--max-plies N] [--progress-interval N] [--iterative]\n"
                 << "                     [--output-dir path]\n";
             std::exit(0);
         } else {
@@ -129,11 +132,19 @@ bool contains_move(const std::vector<chess::Move>& moves, chess::Move target) {
 chess::SearchResult search(
     const chess::Position& pos,
     int depth,
+    bool iterative,
     EngineKind engine,
     chess::Searcher& heuristic,
     chess::Searcher& nn
 ) {
-    return (engine == EngineKind::Nn ? nn : heuristic).search_best_move(pos, depth);
+    chess::Searcher& searcher = engine == EngineKind::Nn ? nn : heuristic;
+    if (!iterative) {
+        return searcher.search_best_move(pos, depth);
+    }
+    return searcher.search_best_move(pos, chess::SearchLimits{
+        .max_depth = depth,
+        .move_time = std::chrono::milliseconds{0}
+    });
 }
 
 std::string terminal_result(const chess::Position& pos, std::string& reason) {
@@ -151,6 +162,7 @@ GameResult play_game(
     EngineKind black,
     int max_plies,
     int progress_interval,
+    bool iterative,
     const chess::NnValueModel& model
 ) {
     GameResult game;
@@ -161,8 +173,8 @@ GameResult play_game(
     chess::Position pos;
     pos.set_startpos();
     std::vector<chess::HashKey> position_hashes{pos.zobrist_key};
-    chess::HeuristicSearcherV7 heuristic_searcher;
-    chess::NnSearcherV7 nn_searcher(model);
+    chess::HeuristicSearcherV10 heuristic_searcher;
+    chess::NnSearcherV10 nn_searcher(model);
 
     for (int ply = 0; ply < max_plies; ++ply) {
         if (chess::is_threefold_repetition(pos.zobrist_key, position_hashes)) {
@@ -178,7 +190,13 @@ GameResult play_game(
         }
 
         const EngineKind engine = pos.side_to_move == chess::Color::White ? white : black;
-        const chess::SearchResult result = search(pos, depth, engine, heuristic_searcher, nn_searcher);
+        const chess::SearchResult result = search(
+            pos,
+            depth,
+            iterative,
+            engine,
+            heuristic_searcher,
+            nn_searcher);
         if (!contains_move(moves, result.best_move)) {
             throw std::runtime_error("engine returned illegal move");
         }
@@ -282,6 +300,7 @@ int main(int argc, char** argv) {
                     black,
                     options.max_plies,
                     options.progress_interval,
+                    options.iterative,
                     model);
                 write_replay(game, options.output_dir);
                 print_summary(game);

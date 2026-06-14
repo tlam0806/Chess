@@ -1,5 +1,7 @@
 #pragma once
 
+#include "heuristic_searcher_v10.hpp"
+#include "nn_value.hpp"
 #include "searcher.hpp"
 #include "transposition_table.hpp"
 #include "killer_move_table.hpp"
@@ -12,9 +14,13 @@
 
 namespace chess {
 
-class HeuristicSearcherV9 final : public Searcher {
+class NnSearcherV10 final : public Searcher {
 public:
-    explicit HeuristicSearcherV9(std::size_t tt_mb = 64);
+    explicit NnSearcherV10(
+        const NnValueModel& model,
+        std::size_t tt_mb = 64,
+        V10MoveOrderingProfile profile = V10MoveOrderingProfile::BadCaptureBeforeQuiet
+    );
 
     SearchResult search_best_move(const Position& pos, int depth) override;
     SearchResult search_best_move(const Position& pos, const SearchLimits& limits) override;
@@ -34,16 +40,28 @@ private:
         bool in_null_move = false;
     };
 
-    struct ScoredMove {
-        Move move{};
-        int priority = 0;
-        int static_score = 0;
-        bool gives_check = false;
-    };
-
     enum class ScoringMode {
         MainSearch,
         Quiescence
+    };
+
+    enum class MoveOrderStage {
+        TtMove = 0,
+        Promotion = 1,
+        GoodCapture = 2,
+        Check = 3,
+        Killer = 4,
+        HistoryQuiet = 5,
+        BadCapture = 6
+    };
+
+    struct ScoredMove {
+        Move move{};
+        MoveOrderStage stage = MoveOrderStage::HistoryQuiet;
+        int tie_break_score = 0;
+        bool gives_check = false;
+        bool capture = false;
+        bool promotion = false;
     };
 
     SearchResult search_fixed_depth(const Position& pos, int depth, SearchContext& context);
@@ -61,6 +79,7 @@ private:
         Position pos,
         int alpha,
         int beta,
+        int ply,
         int q_depth,
         SearchContext& context
     );
@@ -77,13 +96,24 @@ private:
         Move tt_move = Move{},
         ScoringMode stage = ScoringMode::MainSearch
     ) const;
-    int move_priority(Move move, const Position& cur, Move tt_move, bool gives_check) const;
-    int move_static_score(
+    MoveOrderStage move_order_stage(
         Move move,
-        const Position& pos,
-        const Position& next,
+        Move tt_move,
         int ply,
         bool gives_check,
+        bool capture,
+        bool promotion,
+        int see_score,
+        ScoringMode scoring_mode
+    ) const;
+    int move_tie_break_score(
+        Move move,
+        const Position& pos,
+        int ply,
+        bool gives_check,
+        bool capture,
+        bool promotion,
+        int see_score,
         ScoringMode stage
     ) const;
     bool should_stop(SearchContext& context) const;
@@ -98,10 +128,13 @@ private:
 
     bool is_quiet_move(const ScoredMove& scored_move) const;
     bool better_scored_move(const ScoredMove& lhs, const ScoredMove& rhs) const;
+    int stage_rank(MoveOrderStage stage) const;
 
     TranspositionTable tt_;
     KillerMoveTable killer_table_;
     HistoryTable history_table_;
+    const NnValueModel& model_;
+    V10MoveOrderingProfile profile_ = V10MoveOrderingProfile::BadCaptureBeforeQuiet;
 };
 
 } // namespace chess
