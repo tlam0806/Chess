@@ -15,6 +15,7 @@ add_library(chess_core
     src/game_state.cpp
     src/history_table.cpp
     src/history_table_v16.cpp
+    src/king_safety.cpp
     src/killer_move_table.cpp
     src/move.cpp
     src/nn_search.cpp
@@ -24,38 +25,42 @@ add_library(chess_core
     src/position.cpp
     src/range_transposition_table.cpp
     src/range_bucket_transposition_table.cpp
-    src/heuristic_searcher.cpp
-    src/heuristic_searcher_v2.cpp
-    src/heuristic_searcher_v3.cpp
-    src/heuristic_searcher_v4.cpp
-    src/heuristic_searcher_v5.cpp
-    src/heuristic_searcher_v6.cpp
-    src/heuristic_searcher_v7.cpp
-    src/heuristic_searcher_v8.cpp
-    src/heuristic_searcher_v9.cpp
-    src/heuristic_searcher_v10.cpp
-    src/heuristic_searcher_v11.cpp
-    src/heuristic_searcher_v12.cpp
-    src/heuristic_searcher_v13.cpp
-    src/heuristic_searcher_v14.cpp
-    src/heuristic_searcher_v14_experimental.cpp
+    src/searchers/fast/heuristic_searcher.cpp
+    src/searchers/fast/heuristic_searcher_v2.cpp
+    src/searchers/fast/heuristic_searcher_v3.cpp
+    src/searchers/fast/heuristic_searcher_v4.cpp
+    src/searchers/fast/heuristic_searcher_v5.cpp
+    src/searchers/fast/heuristic_searcher_v6.cpp
+    src/searchers/fast/heuristic_searcher_v7.cpp
+    src/searchers/fast/heuristic_searcher_v8.cpp
+    src/searchers/fast/heuristic_searcher_v9.cpp
+    src/searchers/fast/heuristic_searcher_v10.cpp
+    src/searchers/fast/heuristic_searcher_v11.cpp
+    src/searchers/fast/heuristic_searcher_v12.cpp
+    src/searchers/fast/heuristic_searcher_v13.cpp
+    src/searchers/fast/heuristic_searcher_v14.cpp
+    src/searchers/fast/heuristic_searcher_v14_experimental.cpp
     src/searchers/strict/heuristic_searcher_v15.cpp
     src/searchers/strict/heuristic_searcher_v16.cpp
     src/searchers/strict/heuristic_searcher_v17.cpp
     src/searchers/strict/heuristic_searcher_v18.cpp
     src/searchers/strict/heuristic_searcher_v19.cpp
     src/searchers/fast/heuristic_searcher_v15_pvs.cpp
-    src/nn_searcher.cpp
-    src/nn_searcher_v6.cpp
-    src/nn_searcher_v7.cpp
-    src/nn_searcher_v10.cpp
-    src/nnue_searcher_v10.cpp
+    src/searchers/fast/nn_searcher.cpp
+    src/searchers/fast/nn_searcher_v6.cpp
+    src/searchers/fast/nn_searcher_v7.cpp
+    src/searchers/fast/nn_searcher_v10.cpp
+    src/searchers/fast/nnue_searcher_v10.cpp
     src/searcher.cpp
     src/transposition_table.cpp
     src/zobrist.cpp
 )
 
-target_include_directories(chess_core PUBLIC include)
+target_include_directories(chess_core PUBLIC
+    include
+    include/searchers/fast
+    include/searchers/strict
+)
 
 if (MSVC)
     target_compile_options(chess_core PRIVATE /W4)

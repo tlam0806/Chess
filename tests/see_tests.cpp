@@ -14,6 +14,15 @@ Position empty_kings(Color side_to_move = Color::White) {
     return pos;
 }
 
+void assert_see_matches_overload(const Position& pos, Move move) {
+    const PieceType moving_piece = pos.piece_type_on_occupied(move.from());
+    const PieceType captured_piece = move.flag() == MoveFlag::EnPassant
+        ? PieceType::Pawn
+        : pos.piece_type_on_occupied(move.to());
+    assert(static_exchange_eval(pos, move)
+        == static_exchange_eval(pos, move, moving_piece, captured_piece));
+}
+
 } // namespace
 
 int main() {
@@ -76,6 +85,7 @@ int main() {
         pos.set_piece(Color::Black, PieceType::Pawn, make_square(3, 4));
 
         const Move capture = make_move(make_square(4, 3), make_square(3, 4), MoveFlag::Capture);
+        assert_see_matches_overload(pos, capture);
         assert(static_exchange_eval(pos, capture) == 100);
     }
 
@@ -86,6 +96,7 @@ int main() {
         pos.set_piece(Color::Black, PieceType::Knight, make_square(5, 5));
 
         const Move capture = make_move(make_square(4, 3), make_square(3, 4), MoveFlag::Capture);
+        assert_see_matches_overload(pos, capture);
         assert(static_exchange_eval(pos, capture) == 0);
     }
 
@@ -96,6 +107,7 @@ int main() {
         pos.set_piece(Color::Black, PieceType::Knight, make_square(5, 5));
 
         const Move capture = make_move(make_square(3, 0), make_square(3, 4), MoveFlag::Capture);
+        assert_see_matches_overload(pos, capture);
         assert(static_exchange_eval(pos, capture) == -800);
     }
 
@@ -112,6 +124,7 @@ int main() {
             make_square(6, 6),
             make_square(7, 7),
             MoveFlag::QueenPromotionCapture);
+        assert_see_matches_overload(pos, capture);
         assert(static_exchange_eval(pos, capture) == -400);
     }
 
@@ -128,6 +141,7 @@ int main() {
             make_square(4, 4),
             make_square(3, 5),
             MoveFlag::EnPassant);
+        assert_see_matches_overload(pos, capture);
         assert(static_exchange_eval(pos, capture) == 0);
     }
 }

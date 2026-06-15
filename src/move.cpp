@@ -14,6 +14,17 @@ bool has_rook_on(const Position& pos, Color color, Square square) {
     return (rooks & bit(square)) != EmptyBB;
 }
 
+void push_generated_move(
+    MoveList& moves,
+    Move move,
+    PieceType moved_piece,
+    PieceType captured_piece = PieceType::None
+) {
+    (void)moved_piece;
+    (void)captured_piece;
+    moves.push_back(move);
+}
+
 void remove_castling_right_for_rook_square(Position& pos, Square square) {
     if (square == make_square(7, 0)) {
         if (pos.white_can_castle_kingside) {
@@ -60,8 +71,7 @@ void remove_castling_rights_for_king(Position& pos, Color color) {
     }
 }
 
-template <typename List>
-void add_castling_moves(const Position& pos, List& moves, Square king_square) {
+void add_castling_moves(const Position& pos, MoveList& moves, Square king_square) {
     const Color color = pos.side_to_move;
     const Color enemy = opposite(color);
     const Bitboard occupancy = pos.occupancy();
@@ -81,7 +91,7 @@ void add_castling_moves(const Position& pos, List& moves, Square king_square) {
             && !is_square_attacked(pos, e1, enemy)
             && !is_square_attacked(pos, f1, enemy)
             && !is_square_attacked(pos, g1, enemy)) {
-            moves.push_back(make_move(e1, g1, MoveFlag::KingCastle));
+            push_generated_move(moves, make_move(e1, g1, MoveFlag::KingCastle), PieceType::King);
         }
 
         if (king_square == e1 && pos.white_can_castle_queenside && has_rook_on(pos, color, a1)
@@ -89,7 +99,7 @@ void add_castling_moves(const Position& pos, List& moves, Square king_square) {
             && !is_square_attacked(pos, e1, enemy)
             && !is_square_attacked(pos, d1, enemy)
             && !is_square_attacked(pos, c1, enemy)) {
-            moves.push_back(make_move(e1, c1, MoveFlag::QueenCastle));
+            push_generated_move(moves, make_move(e1, c1, MoveFlag::QueenCastle), PieceType::King);
         }
     } else {
         const Square e8 = make_square(4, 7);
@@ -106,7 +116,7 @@ void add_castling_moves(const Position& pos, List& moves, Square king_square) {
             && !is_square_attacked(pos, e8, enemy)
             && !is_square_attacked(pos, f8, enemy)
             && !is_square_attacked(pos, g8, enemy)) {
-            moves.push_back(make_move(e8, g8, MoveFlag::KingCastle));
+            push_generated_move(moves, make_move(e8, g8, MoveFlag::KingCastle), PieceType::King);
         }
 
         if (king_square == e8 && pos.black_can_castle_queenside && has_rook_on(pos, color, a8)
@@ -114,7 +124,7 @@ void add_castling_moves(const Position& pos, List& moves, Square king_square) {
             && !is_square_attacked(pos, e8, enemy)
             && !is_square_attacked(pos, d8, enemy)
             && !is_square_attacked(pos, c8, enemy)) {
-            moves.push_back(make_move(e8, c8, MoveFlag::QueenCastle));
+            push_generated_move(moves, make_move(e8, c8, MoveFlag::QueenCastle), PieceType::King);
         }
     }
 }
@@ -172,7 +182,12 @@ void generate_knight_moves(const Position& pos, MoveList& moves) {
         Bitboard to_mask = knight_attacks(from) & ~my_occupancy & ~op_king;
         while (to_mask) {
             Square to = pop_lsb(to_mask);
-            moves.push_back(make_move(from, to, (capturable_occupancy & bit(to)) ? MoveFlag::Capture : MoveFlag::Quiet));
+            const bool capture = (capturable_occupancy & bit(to)) != EmptyBB;
+            push_generated_move(
+                moves,
+                make_move(from, to, capture ? MoveFlag::Capture : MoveFlag::Quiet),
+                PieceType::Knight,
+                PieceType::None);
         }
     }
 }
@@ -189,7 +204,12 @@ void generate_king_moves(const Position& pos, MoveList& moves) {
         Bitboard to_mask = king_attacks(from) & ~my_occupancy & ~op_king;
         while (to_mask) {
             Square to = pop_lsb(to_mask);
-            moves.push_back(make_move(from, to, (capturable_occupancy & bit(to)) ? MoveFlag::Capture : MoveFlag::Quiet));
+            const bool capture = (capturable_occupancy & bit(to)) != EmptyBB;
+            push_generated_move(
+                moves,
+                make_move(from, to, capture ? MoveFlag::Capture : MoveFlag::Quiet),
+                PieceType::King,
+                PieceType::None);
         }
         add_castling_moves(pos, moves, from);
     }
@@ -208,7 +228,12 @@ void generate_bishop_moves(const Position& pos, MoveList& moves) {
         Bitboard to_mask = bishop_attacks(from, occupancy) & ~my_occupancy & ~op_king;
         while (to_mask) {
             Square to = pop_lsb(to_mask);
-            moves.push_back(make_move(from, to, (capturable_occupancy & bit(to)) ? MoveFlag::Capture : MoveFlag::Quiet));
+            const bool capture = (capturable_occupancy & bit(to)) != EmptyBB;
+            push_generated_move(
+                moves,
+                make_move(from, to, capture ? MoveFlag::Capture : MoveFlag::Quiet),
+                PieceType::Bishop,
+                PieceType::None);
         }
     }
 }
@@ -226,7 +251,12 @@ void generate_rook_moves(const Position& pos, MoveList& moves) {
         Bitboard to_mask = rook_attacks(from, occupancy) & ~my_occupancy & ~op_king;
         while (to_mask) {
             Square to = pop_lsb(to_mask);
-            moves.push_back(make_move(from, to, (capturable_occupancy & bit(to)) ? MoveFlag::Capture : MoveFlag::Quiet));
+            const bool capture = (capturable_occupancy & bit(to)) != EmptyBB;
+            push_generated_move(
+                moves,
+                make_move(from, to, capture ? MoveFlag::Capture : MoveFlag::Quiet),
+                PieceType::Rook,
+                PieceType::None);
         }
     }
 }
@@ -244,7 +274,12 @@ void generate_queen_moves(const Position& pos, MoveList& moves) {
         Bitboard to_mask = queen_attacks(from, occupancy) & ~my_occupancy & ~op_king;
         while (to_mask) {
             Square to = pop_lsb(to_mask);
-            moves.push_back(make_move(from, to, (capturable_occupancy & bit(to)) ? MoveFlag::Capture : MoveFlag::Quiet));
+            const bool capture = (capturable_occupancy & bit(to)) != EmptyBB;
+            push_generated_move(
+                moves,
+                make_move(from, to, capture ? MoveFlag::Capture : MoveFlag::Quiet),
+                PieceType::Queen,
+                PieceType::None);
         }
     }
 }
@@ -270,35 +305,43 @@ void generate_pawn_moves(const Position& pos, MoveList& moves) {
             while (target) {
                 Square to = pop_lsb(target);
                 if (capturable_occupancy & bit(to)) {
-                    moves.push_back(make_move(from, to, MoveFlag::QueenPromotionCapture));
-                    moves.push_back(make_move(from, to, MoveFlag::KnightPromotionCapture));
-                    moves.push_back(make_move(from, to, MoveFlag::BishopPromotionCapture));
-                    moves.push_back(make_move(from, to, MoveFlag::RookPromotionCapture));
+                    push_generated_move(moves, make_move(from, to, MoveFlag::QueenPromotionCapture), PieceType::Pawn);
+                    push_generated_move(moves, make_move(from, to, MoveFlag::KnightPromotionCapture), PieceType::Pawn);
+                    push_generated_move(moves, make_move(from, to, MoveFlag::BishopPromotionCapture), PieceType::Pawn);
+                    push_generated_move(moves, make_move(from, to, MoveFlag::RookPromotionCapture), PieceType::Pawn);
                 }
             }
             Square to = make_square(file, rank + offset);
             if (!(occupancy & bit(to))) {
-                moves.push_back(make_move(from, to, MoveFlag::QueenPromotion));
-                moves.push_back(make_move(from, to, MoveFlag::KnightPromotion));
-                moves.push_back(make_move(from, to, MoveFlag::BishopPromotion));
-                moves.push_back(make_move(from, to, MoveFlag::RookPromotion));
+                push_generated_move(moves, make_move(from, to, MoveFlag::QueenPromotion), PieceType::Pawn);
+                push_generated_move(moves, make_move(from, to, MoveFlag::KnightPromotion), PieceType::Pawn);
+                push_generated_move(moves, make_move(from, to, MoveFlag::BishopPromotion), PieceType::Pawn);
+                push_generated_move(moves, make_move(from, to, MoveFlag::RookPromotion), PieceType::Pawn);
             }
         } else {
             while (target) {
                 Square to = pop_lsb(target);
                 if (capturable_occupancy & bit(to)) {
-                    moves.push_back(make_move(from, to, MoveFlag::Capture));
+                    push_generated_move(
+                        moves,
+                        make_move(from, to, MoveFlag::Capture),
+                        PieceType::Pawn,
+                        PieceType::None);
                 } else if (to == pos.en_passant_square) {
-                    moves.push_back(make_move(from, to, MoveFlag::EnPassant));
+                    push_generated_move(
+                        moves,
+                        make_move(from, to, MoveFlag::EnPassant),
+                        PieceType::Pawn,
+                        PieceType::Pawn);
                 }
             }
             Square to = make_square(file, rank + offset);
             if (!(occupancy & bit(to))) {
-                moves.push_back(make_move(from, to, MoveFlag::Quiet));
+                push_generated_move(moves, make_move(from, to, MoveFlag::Quiet), PieceType::Pawn);
                 if (rank == starting_rank) {
                     Square double_to = make_square(file, rank + offset + offset);
                     if (!(occupancy & bit(double_to))) {
-                        moves.push_back(make_move(from, double_to, MoveFlag::DoublePawnPush));
+                        push_generated_move(moves, make_move(from, double_to, MoveFlag::DoublePawnPush), PieceType::Pawn);
                     }
                 }
             }
@@ -358,19 +401,41 @@ std::vector<Move> generate_pseudo_legal_moves(const Position& pos) {
 }
 
 void Position::make_move(Move move) {
+    make_move(move, piece_type_on_occupied(move.from()));
+}
+
+void Position::make_move(Move move, PieceType moved_piece) {
+    const MoveFlag flag = move.flag();
+    const PieceType captured_piece =
+        (is_capture(flag) && flag != MoveFlag::EnPassant)
+            ? piece_type_on_occupied(move.to())
+            : PieceType::None;
+    make_move(move, moved_piece, captured_piece);
+}
+
+void Position::make_move(Move move, PieceType moved_piece, PieceType captured_piece) {
+    assert(moved_piece != PieceType::None);
+
     const Square from = move.from();
     const Square to = move.to();
-    const Color color = color_on_occupied(from);
+    const Color color = side_to_move;
     const MoveFlag flag = move.flag();
     assert(side_to_move == color);
-    PieceType moving_piece = promotion_piece(move);
-    if (moving_piece == PieceType::None) moving_piece = piece_type_on_occupied(from);
-    const bool pawn_move = piece_type_on_occupied(from) == PieceType::Pawn;
+    PieceType placed_piece = promotion_piece(move);
+    if (placed_piece == PieceType::None) {
+        placed_piece = moved_piece;
+    }
+    const bool pawn_move = moved_piece == PieceType::Pawn;
     const bool capture = is_capture(flag);
+    const Color enemy = opposite(color);
+    if (capture && flag != MoveFlag::EnPassant && captured_piece == PieceType::None) {
+        captured_piece = piece_type_on_occupied(to);
+    }
+    assert(!capture || flag == MoveFlag::EnPassant || captured_piece != PieceType::None);
 
-    if (moving_piece == PieceType::King) {
+    if (moved_piece == PieceType::King) {
         remove_castling_rights_for_king(*this, color);
-    } else if (moving_piece == PieceType::Rook) {
+    } else if (moved_piece == PieceType::Rook) {
         remove_castling_right_for_rook_square(*this, from);
     }
 
@@ -378,29 +443,29 @@ void Position::make_move(Move move) {
         remove_castling_right_for_rook_square(*this, to);
     }
 
-    clear_square(from);
+    clear_piece(color, moved_piece, from);
 
   
     if (flag == MoveFlag::EnPassant) {
         assert(to == en_passant_square);
         Square captured_square = color == Color::White ? to - 8 : to + 8;
-        clear_square(captured_square);
+        clear_piece(enemy, PieceType::Pawn, captured_square);
     } else if (flag == MoveFlag::KingCastle) {
         const Square rook_from = color == Color::White ? make_square(7, 0) : make_square(7, 7);
         const Square rook_to = color == Color::White ? make_square(5, 0) : make_square(5, 7);
-        clear_square(rook_from);
+        clear_piece(color, PieceType::Rook, rook_from);
         set_piece(color, PieceType::Rook, rook_to);
     } else if (flag == MoveFlag::QueenCastle) {
         const Square rook_from = color == Color::White ? make_square(0, 0) : make_square(0, 7);
         const Square rook_to = color == Color::White ? make_square(3, 0) : make_square(3, 7);
-        clear_square(rook_from);
+        clear_piece(color, PieceType::Rook, rook_from);
         set_piece(color, PieceType::Rook, rook_to);
     } else if (is_capture(flag)) {
-        clear_square(to);
+        clear_piece(enemy, captured_piece, to);
     }
 
 
-    set_piece(color, moving_piece, to);
+    set_piece(color, placed_piece, to);
 
     if (en_passant_square != NoSquare) {
         zobrist_key ^= zobrist::en_passant_file_key(file_of(en_passant_square));

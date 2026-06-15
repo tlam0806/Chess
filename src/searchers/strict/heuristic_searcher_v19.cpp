@@ -105,21 +105,11 @@ struct HeuristicSearcherV19::SearchState {
     bool has_deadline = false;
     bool stopped = false;
     WindowStatus root_status = WindowStatus::Inside;
-    MoveOrderingStats move_ordering_stats{};
 };
 
 enum class HeuristicSearcherV19::ScoringMode {
     MainSearch,
     Quiescence
-};
-
-struct HeuristicSearcherV19::ScoredMove {
-    Move move{};
-    int order_score = 0;
-    bool gives_check = false;
-    bool capture = false;
-    bool promotion = false;
-    MoveOrderingCategory category = MoveOrderingCategory::Quiet;
 };
 
 struct HeuristicSearcherV19::SearchValue {
@@ -194,6 +184,7 @@ bool HeuristicSearcherV19::should_stop(SearchState& state) const {
 int HeuristicSearcherV19::move_order_score(
     Move move,
     const Position& pos,
+    PieceType moved_piece,
     int ply,
     MoveRange tt_moves,
     Move prev_move,
@@ -234,7 +225,6 @@ int HeuristicSearcherV19::move_order_score(
     if (!gives_check
         && is_valid_move(prev_move)
         && prev_moved_piece != PieceType::None) {
-        const PieceType moved_piece = pos.piece_type_on_occupied(from_square(move));
         const int counter_history_score = counter_history_table_.get_score(
             pos.side_to_move,
             prev_moved_piece,
@@ -259,6 +249,7 @@ int HeuristicSearcherV19::move_order_score(
 
 HeuristicSearcherV19::ScoredMove HeuristicSearcherV19::make_scored_move(
     const Position& pos,
+    const KingSafetyContext& king_safety,
     Move move,
     int ply,
     MoveRange tt_moves,
@@ -266,52 +257,31 @@ HeuristicSearcherV19::ScoredMove HeuristicSearcherV19::make_scored_move(
     PieceType prev_moved_piece,
     ScoringMode stage
 ) const {
-    Position next = pos;
-    next.make_move(move);
-    if (in_check(next, pos.side_to_move)) {
+    const PieceType moved_piece = pos.piece_type_on_occupied(from_square(move));
+    const bool capture = is_capture(move);
+    PieceType captured_piece = PieceType::None;
+    if (capture
+        && move_flag(move) != MoveFlag::EnPassant) {
+        captured_piece = pos.piece_type_on_occupied(to_square(move));
+    } else if (move_flag(move) == MoveFlag::EnPassant) {
+        captured_piece = PieceType::Pawn;
+    }
+    if (!is_pseudo_move_legal(pos, king_safety, move, moved_piece, captured_piece)) {
         return ScoredMove{};
     }
 
-    const bool gives_check = in_check(next, next.side_to_move);
-    const bool capture = is_capture(move);
+    const bool gives_check = gives_check_fast(pos, move, moved_piece, captured_piece);
     const bool promotion = is_promotion(move);
-    const int see_score = capture ? static_exchange_eval(pos, move) : 0;
-    MoveOrderingCategory category = MoveOrderingCategory::Quiet;
-    if (is_valid_move(tt_moves.lower) && move == tt_moves.lower) {
-        category = MoveOrderingCategory::TtLower;
-    } else if (is_valid_move(tt_moves.upper) && move == tt_moves.upper) {
-        category = MoveOrderingCategory::TtUpper;
-    } else if (promotion) {
-        category = MoveOrderingCategory::Promotion;
-    } else if (capture) {
-        category = see_score >= 0 ? MoveOrderingCategory::GoodCapture : MoveOrderingCategory::BadCapture;
-    } else if (gives_check) {
-        category = MoveOrderingCategory::Check;
-    } else {
-        if (is_valid_move(prev_move)
-            && prev_moved_piece != PieceType::None
-            && counter_history_table_.get_score(
-                pos.side_to_move,
-                prev_moved_piece,
-                prev_move,
-                pos.piece_type_on_occupied(from_square(move)),
-                move) > 0) {
-            category = MoveOrderingCategory::CounterHistory;
-        }
-        const int killer_score = killer_table_.score(ply, move);
-        if (category == MoveOrderingCategory::Quiet && killer_score == 2) {
-            category = MoveOrderingCategory::Killer1;
-        } else if (category == MoveOrderingCategory::Quiet && killer_score == 1) {
-            category = MoveOrderingCategory::Killer2;
-        }
-    }
+    const int see_score = capture
+        ? static_exchange_eval(pos, move, moved_piece, captured_piece)
+        : 0;
 
     if (stage == ScoringMode::Quiescence) {
         return ScoredMove{
-            move,
             move_order_score(
                 move,
                 pos,
+                moved_piece,
                 ply,
                 tt_moves,
                 prev_move,
@@ -321,18 +291,20 @@ HeuristicSearcherV19::ScoredMove HeuristicSearcherV19::make_scored_move(
                 promotion,
                 see_score,
                 stage),
+            move,
+            moved_piece,
+            captured_piece,
             gives_check,
             capture,
-            promotion,
-            category
+            promotion
         };
     }
 
     return ScoredMove{
-        move,
         move_order_score(
             move,
             pos,
+            moved_piece,
             ply,
             tt_moves,
             prev_move,
@@ -342,10 +314,12 @@ HeuristicSearcherV19::ScoredMove HeuristicSearcherV19::make_scored_move(
             promotion,
             see_score,
             stage),
+        move,
+        moved_piece,
+        captured_piece,
         gives_check,
         capture,
-        promotion,
-        category
+        promotion
     };
 }
 
@@ -364,12 +338,22 @@ std::vector<HeuristicSearcherV19::ScoredMove> HeuristicSearcherV19::ordered_move
     PieceType prev_moved_piece
 ) const {
     std::vector<ScoredMove> ordered;
-    const std::vector<Move> moves = generate_pseudo_legal_moves(pos);
+    const KingSafetyContext king_safety = make_king_safety_context(pos);
+    MoveList moves;
+    generate_pseudo_legal_moves(pos, moves);
     ordered.reserve(moves.size());
 
     for (Move move : moves) {
         ScoredMove scored_move =
-            make_scored_move(pos, move, ply, tt_moves, prev_move, prev_moved_piece, ScoringMode::MainSearch);
+            make_scored_move(
+                pos,
+                king_safety,
+                move,
+                ply,
+                tt_moves,
+                prev_move,
+                prev_moved_piece,
+                ScoringMode::MainSearch);
         if (is_valid_move(scored_move.move)) {
             ordered.push_back(scored_move);
         }
@@ -386,7 +370,9 @@ std::vector<HeuristicSearcherV19::ScoredMove> HeuristicSearcherV19::ordered_nois
     const Position& pos
 ) const {
     std::vector<ScoredMove> ordered;
-    const std::vector<Move> moves = generate_pseudo_legal_moves(pos);
+    const KingSafetyContext king_safety = make_king_safety_context(pos);
+    MoveList moves;
+    generate_pseudo_legal_moves(pos, moves);
     ordered.reserve(moves.size());
 
     for (Move move : moves) {
@@ -395,7 +381,15 @@ std::vector<HeuristicSearcherV19::ScoredMove> HeuristicSearcherV19::ordered_nois
         }
 
         ScoredMove scored_move =
-            make_scored_move(pos, move, 0, MoveRange{}, Move{}, PieceType::None, ScoringMode::Quiescence);
+            make_scored_move(
+                pos,
+                king_safety,
+                move,
+                0,
+                MoveRange{},
+                Move{},
+                PieceType::None,
+                ScoringMode::Quiescence);
         if (is_valid_move(scored_move.move)) {
             ordered.push_back(scored_move);
         }
@@ -423,12 +417,51 @@ HeuristicSearcherV19::SearchValue HeuristicSearcherV19::quiescence(
         return SearchValue{exact_range(0)};
     }
 
-    const std::vector<Move> legal_moves = generate_legal_moves(pos);
-    if (legal_moves.empty()) {
-        return SearchValue{exact_range(in_check(pos, pos.side_to_move) ? -CheckmateScore + ply : 0)};
+    const KingSafetyContext king_safety = make_king_safety_context(pos);
+    const bool side_in_check = king_safety.checkers != EmptyBB;
+    std::vector<ScoredMove> moves;
+    bool has_legal_move = false;
+    MoveList pseudo_moves;
+    generate_pseudo_legal_moves(pos, pseudo_moves);
+    moves.reserve(pseudo_moves.size());
+    for (Move move : pseudo_moves) {
+        if (!side_in_check && !is_noisy_move(move)) {
+            if (!has_legal_move) {
+                const PieceType moved_piece = pos.piece_type_on_occupied(from_square(move));
+                if (is_pseudo_move_legal(
+                    pos,
+                    king_safety,
+                    move,
+                    moved_piece,
+                    PieceType::None)) {
+                    has_legal_move = true;
+                }
+            }
+            continue;
+        }
+
+        ScoredMove scored_move =
+            make_scored_move(
+                pos,
+                king_safety,
+                move,
+                ply,
+                MoveRange{},
+                Move{},
+                PieceType::None,
+                ScoringMode::Quiescence);
+        if (!is_valid_move(scored_move.move)) {
+            continue;
+        }
+        has_legal_move = true;
+        moves.push_back(scored_move);
     }
 
-    if (in_check(pos, pos.side_to_move)) {
+    if (!has_legal_move) {
+        return SearchValue{exact_range(side_in_check ? -CheckmateScore + ply : 0)};
+    }
+
+    if (side_in_check) {
         if (q_depth >= MaxQuiescenceDepth) {
             return SearchValue{exact_range(evaluate_for_side_to_move(pos))};
         }
@@ -436,20 +469,13 @@ HeuristicSearcherV19::SearchValue HeuristicSearcherV19::quiescence(
         ScoreRange node_range;
         node_range.lower = -Infinity;
         node_range.upper = -Infinity;
-        std::vector<ScoredMove> moves;
-        moves.reserve(legal_moves.size());
-        for (Move move : legal_moves) {
-            moves.push_back(
-                make_scored_move(pos, move, ply, MoveRange{}, Move{}, PieceType::None, ScoringMode::Quiescence)
-            );
-        }
         std::stable_sort(moves.begin(), moves.end(), [this](const ScoredMove& lhs, const ScoredMove& rhs) {
             return better_scored_move(lhs, rhs);
         });
 
         for (const ScoredMove& scored_move : moves) {
             Position next = pos;
-            next.make_move(scored_move.move);
+            next.make_move(scored_move.move, scored_move.moved_piece, scored_move.captured_piece);
 
             SearchValue child = quiescence(next, -beta, -alpha, ply + 1, q_depth + 1, state);
             const ScoreRange move_range = negate_range(child.range);
@@ -483,10 +509,12 @@ HeuristicSearcherV19::SearchValue HeuristicSearcherV19::quiescence(
     }
 
     ScoreRange node_range = exact_range(best_score);
-    const std::vector<ScoredMove> moves = ordered_noisy_moves(pos);
+    std::stable_sort(moves.begin(), moves.end(), [this](const ScoredMove& lhs, const ScoredMove& rhs) {
+        return better_scored_move(lhs, rhs);
+    });
     for (const ScoredMove& scored_move : moves) {
         Position next = pos;
-        next.make_move(scored_move.move);
+        next.make_move(scored_move.move, scored_move.moved_piece, scored_move.captured_piece);
 
         SearchValue child = quiescence(next, -beta, -alpha, ply + 1, q_depth + 1, state);
         const ScoreRange move_range = negate_range(child.range);
@@ -551,17 +579,14 @@ HeuristicSearcherV19::SearchValue HeuristicSearcherV19::negamax(
     node_range.upper = -Infinity;
     Move best_lower_move{};
     Move best_upper_move{};
-    std::size_t best_lower_index = moves.size();
-    std::size_t best_upper_index = moves.size();
-    std::size_t cutoff_index = moves.size();
-    std::vector<Move> failed_quiet_moves;
+    std::vector<ScoredMove> failed_quiet_moves;
 
     for (std::size_t move_index = 0; move_index < moves.size(); ++move_index) {
         const ScoredMove& scored_move = moves[move_index];
-        const PieceType moved_piece = pos.piece_type_on_occupied(from_square(scored_move.move));
+        const PieceType moved_piece = scored_move.moved_piece;
 
         Position next = pos;
-        next.make_move(scored_move.move);
+        next.make_move(scored_move.move, scored_move.moved_piece, scored_move.captured_piece);
 
         ScoreRange move_range;
         if (move_index > 0 && beta > alpha + 1) {
@@ -615,19 +640,16 @@ HeuristicSearcherV19::SearchValue HeuristicSearcherV19::negamax(
         if (move_range.lower > node_range.lower) {
             node_range.lower = move_range.lower;
             best_lower_move = scored_move.move;
-            best_lower_index = move_index;
         }
         if (move_range.upper > node_range.upper) {
             node_range.upper = move_range.upper;
             best_upper_move = scored_move.move;
-            best_upper_index = move_index;
         }
 
         if (move_range.lower != -Infinity && move_range.lower > alpha) {
             alpha = move_range.lower;
         }
         if (node_range.lower >= beta) {
-            cutoff_index = move_index;
             if (is_quiet_move(scored_move)) {
                 killer_table_.store(ply, scored_move.move);
                 history_table_.store(pos, scored_move.move, depth);
@@ -642,15 +664,15 @@ HeuristicSearcherV19::SearchValue HeuristicSearcherV19::negamax(
                     );
                 }
             }
-            for (Move failed_quiet : failed_quiet_moves) {
-                history_table_.penalize(pos, failed_quiet, depth);
+            for (const ScoredMove& failed_quiet : failed_quiet_moves) {
+                history_table_.penalize(pos, failed_quiet.move, depth);
                 if (is_valid_move(prev_move) && prev_moved_piece != PieceType::None) {
                     counter_history_table_.penalize(
                         pos.side_to_move,
                         prev_moved_piece,
                         prev_move,
-                        pos.piece_type_on_occupied(from_square(failed_quiet)),
-                        failed_quiet,
+                        failed_quiet.moved_piece,
+                        failed_quiet.move,
                         depth
                     );
                 }
@@ -659,35 +681,7 @@ HeuristicSearcherV19::SearchValue HeuristicSearcherV19::negamax(
             break;
         }
         if (is_quiet_move(scored_move)) {
-            failed_quiet_moves.push_back(scored_move.move);
-        }
-    }
-    const std::size_t best_index = node_range.lower != -Infinity ? best_lower_index : best_upper_index;
-    if (best_index < moves.size()) {
-        const auto predicted_category = static_cast<std::size_t>(moves.front().category);
-        const auto best_category = static_cast<std::size_t>(moves[best_index].category);
-        ++state.move_ordering_stats.searched_nodes;
-        state.move_ordering_stats.best_index_sum += best_index;
-        ++state.move_ordering_stats.predicted_categories[predicted_category];
-        ++state.move_ordering_stats.best_categories[best_category];
-        if (best_index == 0) {
-            ++state.move_ordering_stats.best_index_zero;
-        } else {
-            ++state.move_ordering_stats.missed_best_nodes;
-            ++state.move_ordering_stats.missed_predicted_categories[predicted_category];
-            ++state.move_ordering_stats.missed_best_categories[best_category];
-            ++state.move_ordering_stats
-                  .missed_predicted_to_best_categories[predicted_category][best_category];
-        }
-    }
-    if (cutoff_index < moves.size()) {
-        ++state.move_ordering_stats.cutoff_nodes;
-        state.move_ordering_stats.cutoff_index_sum += cutoff_index;
-        ++state.move_ordering_stats.cutoff_categories[
-            static_cast<std::size_t>(moves[cutoff_index].category)
-        ];
-        if (cutoff_index == 0) {
-            ++state.move_ordering_stats.cutoff_index_zero;
+            failed_quiet_moves.push_back(scored_move);
         }
     }
     assert(node_range.lower <= node_range.upper);
@@ -769,16 +763,13 @@ SearchResult HeuristicSearcherV19::search_fixed_depth(
     root_range.upper = -Infinity;
     Move best_lower_move{};
     Move best_upper_move{};
-    std::size_t best_lower_index = moves.size();
-    std::size_t best_upper_index = moves.size();
-    std::size_t cutoff_index = moves.size();
 
     for (std::size_t move_index = 0; move_index < moves.size(); ++move_index) {
         const ScoredMove& scored_move = moves[move_index];
-        const PieceType moved_piece = pos.piece_type_on_occupied(from_square(scored_move.move));
+        const PieceType moved_piece = scored_move.moved_piece;
 
         Position next = pos;
-        next.make_move(scored_move.move);
+        next.make_move(scored_move.move, scored_move.moved_piece, scored_move.captured_piece);
 
         SearchValue child = negamax(
             next,
@@ -800,50 +791,18 @@ SearchResult HeuristicSearcherV19::search_fixed_depth(
         if (move_range.lower > root_range.lower) {
             root_range.lower = move_range.lower;
             best_lower_move = scored_move.move;
-            best_lower_index = move_index;
         }
         if (move_range.upper > root_range.upper) {
             root_range.upper = move_range.upper;
             best_upper_move = scored_move.move;
-            best_upper_index = move_index;
         }
 
         if (move_range.lower != -Infinity && move_range.lower > alpha) {
             alpha = move_range.lower;
         }
         if (root_range.lower >= beta) {
-            cutoff_index = move_index;
             root_range.upper = move_index == moves.size() - 1 ? root_range.upper : Infinity;
             break;
-        }
-    }
-
-    const std::size_t best_index = root_range.lower != -Infinity ? best_lower_index : best_upper_index;
-    if (best_index < moves.size()) {
-        const auto predicted_category = static_cast<std::size_t>(moves.front().category);
-        const auto best_category = static_cast<std::size_t>(moves[best_index].category);
-        ++state.move_ordering_stats.searched_nodes;
-        state.move_ordering_stats.best_index_sum += best_index;
-        ++state.move_ordering_stats.predicted_categories[predicted_category];
-        ++state.move_ordering_stats.best_categories[best_category];
-        if (best_index == 0) {
-            ++state.move_ordering_stats.best_index_zero;
-        } else {
-            ++state.move_ordering_stats.missed_best_nodes;
-            ++state.move_ordering_stats.missed_predicted_categories[predicted_category];
-            ++state.move_ordering_stats.missed_best_categories[best_category];
-            ++state.move_ordering_stats
-                  .missed_predicted_to_best_categories[predicted_category][best_category];
-        }
-    }
-    if (cutoff_index < moves.size()) {
-        ++state.move_ordering_stats.cutoff_nodes;
-        state.move_ordering_stats.cutoff_index_sum += cutoff_index;
-        ++state.move_ordering_stats.cutoff_categories[
-            static_cast<std::size_t>(moves[cutoff_index].category)
-        ];
-        if (cutoff_index == 0) {
-            ++state.move_ordering_stats.cutoff_index_zero;
         }
     }
 
@@ -917,9 +876,7 @@ HeuristicSearcherV19::HeuristicSearcherV19(
 SearchResult HeuristicSearcherV19::search_best_move(const Position& pos, int depth) {
     killer_table_.clear();
     SearchState state;
-    SearchResult result = search_fixed_depth(pos, depth, state);
-    move_ordering_stats_ = state.move_ordering_stats;
-    return result;
+    return search_fixed_depth(pos, depth, state);
 }
 
 SearchResult HeuristicSearcherV19::search_best_move(const Position& pos, const SearchLimits& limits) {
@@ -943,7 +900,6 @@ SearchResult HeuristicSearcherV19::search_best_move(const Position& pos, const S
             if (current.stopped || state.stopped) {
                 best.stopped = true;
                 best.nodes = state.nodes;
-                move_ordering_stats_ = state.move_ordering_stats;
                 return best;
             }
             best = current;
@@ -956,7 +912,6 @@ SearchResult HeuristicSearcherV19::search_best_move(const Position& pos, const S
                 if (current.stopped || state.stopped) {
                     best.stopped = true;
                     best.nodes = state.nodes;
-                    move_ordering_stats_ = state.move_ordering_stats;
                     return best;
                 }
                 if (state.root_status == WindowStatus::Inside || (alpha == -Infinity && beta == Infinity)) {
@@ -976,7 +931,6 @@ SearchResult HeuristicSearcherV19::search_best_move(const Position& pos, const S
             if (current.stopped || state.stopped) {
                 best.stopped = true;
                 best.nodes = state.nodes;
-                move_ordering_stats_ = state.move_ordering_stats;
                 return best;
             }
             best = current;
@@ -984,7 +938,6 @@ SearchResult HeuristicSearcherV19::search_best_move(const Position& pos, const S
     }
 
     best.nodes = state.nodes;
-    move_ordering_stats_ = state.move_ordering_stats;
     return best;
 }
 
@@ -1006,14 +959,6 @@ void HeuristicSearcherV19::clear_tt_stats() {
 
 const RangeTranspositionTableStats& HeuristicSearcherV19::tt_stats() const {
     return tt_.stats();
-}
-
-void HeuristicSearcherV19::clear_move_ordering_stats() {
-    move_ordering_stats_ = {};
-}
-
-const HeuristicSearcherV19::MoveOrderingStats& HeuristicSearcherV19::move_ordering_stats() const {
-    return move_ordering_stats_;
 }
 
 } // namespace chess

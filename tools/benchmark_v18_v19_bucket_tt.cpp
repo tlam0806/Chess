@@ -28,6 +28,7 @@ struct Options {
     int bucket_size = 4;
     bool iterative = true;
     bool first_samples = false;
+    bool only_v19 = false;
     std::uint32_t seed = 20260614;
 };
 
@@ -106,6 +107,8 @@ Options parse_args(int argc, char** argv) {
             options.iterative = true;
         } else if (arg == "--first") {
             options.first_samples = true;
+        } else if (arg == "--only-v19") {
+            options.only_v19 = true;
         } else if (arg == "--help") {
             std::cout
                 << "Usage: benchmark_v18_v19_bucket_tt [--input path]\n"
@@ -115,7 +118,8 @@ Options parse_args(int argc, char** argv) {
                 << "                                     [--bucket-size N]\n"
                 << "                                     [--seed N]\n"
                 << "                                     [--iterative|--fixed-depth]\n"
-                << "                                     [--first]\n";
+                << "                                     [--first]\n"
+                << "                                     [--only-v19]\n";
             std::exit(0);
         } else {
             throw std::runtime_error("unknown argument: " + std::string(arg));
@@ -367,6 +371,7 @@ int main(int argc, char** argv) {
                   << " tt_mb=" << options.tt_mb
                   << " bucket_size=" << options.bucket_size
                   << " iterative=" << (options.iterative ? 1 : 0)
+                  << " only_v19=" << (options.only_v19 ? 1 : 0)
                   << " first=" << (options.first_samples ? 1 : 0)
                   << " seed=" << options.seed << '\n' << std::flush;
 
@@ -378,30 +383,36 @@ int main(int argc, char** argv) {
                 static_cast<std::size_t>(options.bucket_size)
             );
 
-            const auto v18_start = std::chrono::steady_clock::now();
-            const chess::SearchResult v18_result = search(v18, sample.pos, options.depth, options.iterative);
-            const auto v18_end = std::chrono::steady_clock::now();
+            chess::SearchResult v18_result;
+            std::uint64_t v18_us = 0;
+            if (!options.only_v19) {
+                const auto v18_start = std::chrono::steady_clock::now();
+                v18_result = search(v18, sample.pos, options.depth, options.iterative);
+                const auto v18_end = std::chrono::steady_clock::now();
+                v18_us = static_cast<std::uint64_t>(
+                    std::chrono::duration_cast<std::chrono::microseconds>(v18_end - v18_start).count()
+                );
+            }
 
             const auto v19_start = std::chrono::steady_clock::now();
             const chess::SearchResult v19_result = search(v19, sample.pos, options.depth, options.iterative);
             const auto v19_end = std::chrono::steady_clock::now();
 
-            const auto v18_us = static_cast<std::uint64_t>(
-                std::chrono::duration_cast<std::chrono::microseconds>(v18_end - v18_start).count()
-            );
             const auto v19_us = static_cast<std::uint64_t>(
                 std::chrono::duration_cast<std::chrono::microseconds>(v19_end - v19_start).count()
             );
 
-            add_result(v18_totals, v18_result, v18_us);
+            if (!options.only_v19) {
+                add_result(v18_totals, v18_result, v18_us);
+                add_tt_stats(v18_tt_totals, v18.tt_stats());
+            }
             add_result(v19_totals, v19_result, v19_us);
-            add_tt_stats(v18_tt_totals, v18.tt_stats());
             add_tt_stats(v19_tt_totals, v19.tt_stats());
-            if (v18_result.score != v19_result.score) {
+            if (!options.only_v19 && v18_result.score != v19_result.score) {
                 ++v18_totals.score_mismatches;
                 ++v19_totals.score_mismatches;
             }
-            if (v18_result.best_move != v19_result.best_move) {
+            if (!options.only_v19 && v18_result.best_move != v19_result.best_move) {
                 ++v18_totals.move_mismatches;
                 ++v19_totals.move_mismatches;
             }
@@ -409,20 +420,23 @@ int main(int argc, char** argv) {
             std::cout << "sample=" << i
                       << " line=" << sample.source_index
                       << " target=" << sample.target
-                      << " legal=" << chess::generate_legal_moves(sample.pos).size()
-                      << " v18_nodes=" << v18_result.nodes
-                      << " v18_us=" << v18_us
-                      << " v18_score=" << v18_result.score
-                      << " v18_best=" << chess::move_to_string(v18_result.best_move)
+                      << " legal=" << chess::generate_legal_moves(sample.pos).size();
+            if (!options.only_v19) {
+                std::cout << " v18_nodes=" << v18_result.nodes
+                          << " v18_us=" << v18_us
+                          << " v18_score=" << v18_result.score
+                          << " v18_best=" << chess::move_to_string(v18_result.best_move);
+            }
+            std::cout
                       << " v19_nodes=" << v19_result.nodes
                       << " v19_us=" << v19_us
                       << " v19_score=" << v19_result.score
                       << " v19_best=" << chess::move_to_string(v19_result.best_move);
-            if (v18_result.nodes != 0) {
+            if (!options.only_v19 && v18_result.nodes != 0) {
                 std::cout << " v19_vs_v18_nodes="
                           << (static_cast<double>(v19_result.nodes) / static_cast<double>(v18_result.nodes));
             }
-            if (v18_us != 0) {
+            if (!options.only_v19 && v18_us != 0) {
                 std::cout << " v19_vs_v18_time="
                           << (static_cast<double>(v19_us) / static_cast<double>(v18_us));
             }
@@ -449,7 +463,9 @@ int main(int argc, char** argv) {
         std::cout << " score_mismatches=" << v18_totals.score_mismatches
                   << " move_mismatches=" << v18_totals.move_mismatches
                   << '\n';
-        print_tt_summary("v18", v18_tt_totals);
+        if (!options.only_v19) {
+            print_tt_summary("v18", v18_tt_totals);
+        }
         print_tt_summary("v19", v19_tt_totals);
     } catch (const std::exception& error) {
         std::cerr << "benchmark_v18_v19_bucket_tt: " << error.what() << '\n';

@@ -5,8 +5,8 @@
 #include "killer_move_table.hpp"
 #include "history_table_v16.hpp"
 #include "counter_history_table.hpp"
+#include "king_safety.hpp"
 
-#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <vector>
@@ -15,23 +15,6 @@ namespace chess {
 
 class HeuristicSearcherV19 final : public Searcher {
 public:
-    enum class MoveOrderingCategory : std::uint8_t {
-        TtLower,
-        TtUpper,
-        Promotion,
-        GoodCapture,
-        BadCapture,
-        Check,
-        CounterHistory,
-        Killer1,
-        Killer2,
-        Quiet,
-        Count
-    };
-
-    static constexpr std::size_t MoveOrderingCategoryCount =
-        static_cast<std::size_t>(MoveOrderingCategory::Count);
-
     struct MoveOrderingWeights {
         int tt_lower_bonus = 765'715'000;
         int tt_upper_bonus = 27'262'000;
@@ -43,25 +26,6 @@ public:
         int killer2_bonus = 40'000;
         int check_bonus = 393'980;
         int counter_history_bonus = 16'000;
-    };
-
-    struct MoveOrderingStats {
-        std::uint64_t searched_nodes = 0;
-        std::uint64_t best_index_zero = 0;
-        std::uint64_t best_index_sum = 0;
-        std::uint64_t cutoff_nodes = 0;
-        std::uint64_t cutoff_index_zero = 0;
-        std::uint64_t cutoff_index_sum = 0;
-        std::uint64_t missed_best_nodes = 0;
-        std::array<std::uint64_t, MoveOrderingCategoryCount> predicted_categories{};
-        std::array<std::uint64_t, MoveOrderingCategoryCount> best_categories{};
-        std::array<std::uint64_t, MoveOrderingCategoryCount> cutoff_categories{};
-        std::array<std::uint64_t, MoveOrderingCategoryCount> missed_predicted_categories{};
-        std::array<std::uint64_t, MoveOrderingCategoryCount> missed_best_categories{};
-        std::array<
-            std::array<std::uint64_t, MoveOrderingCategoryCount>,
-            MoveOrderingCategoryCount
-        > missed_predicted_to_best_categories{};
     };
 
     explicit HeuristicSearcherV19(
@@ -88,13 +52,21 @@ public:
     std::size_t tt_entry_count() const;
     void clear_tt_stats();
     const RangeTranspositionTableStats& tt_stats() const;
-    void clear_move_ordering_stats();
-    const MoveOrderingStats& move_ordering_stats() const;
 
 private:
     struct SearchState;
     enum class ScoringMode;
-    struct ScoredMove;
+    struct ScoredMove {
+        int order_score = 0;
+        Move move{};
+        PieceType moved_piece = PieceType::None;
+        PieceType captured_piece = PieceType::None;
+        bool gives_check = false;
+        bool capture = false;
+        bool promotion = false;
+    };
+    static_assert(sizeof(ScoredMove) == 12);
+    static_assert(alignof(ScoredMove) == 4);
     struct SearchValue;
     struct TTProbeResult;
 
@@ -145,6 +117,7 @@ private:
 
     ScoredMove make_scored_move(
         const Position& pos,
+        const KingSafetyContext& king_safety,
         Move move,
         int ply,
         MoveRange tt_moves,
@@ -155,6 +128,7 @@ private:
     int move_order_score(
         Move move,
         const Position& pos,
+        PieceType moved_piece,
         int ply,
         MoveRange tt_moves,
         Move prev_move,
@@ -184,7 +158,6 @@ private:
     HistoryTableV16 history_table_;
     CounterHistoryTable counter_history_table_;
     MoveOrderingWeights move_ordering_weights_{};
-    MoveOrderingStats move_ordering_stats_{};
 };
 
 } // namespace chess

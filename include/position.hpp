@@ -31,6 +31,7 @@ struct Position {
 
     void set_piece(Color color, PieceType piece, Square square);
     void clear_square(Square square);
+    void clear_piece(Color color, PieceType piece, Square square);
 
     Color color_on_occupied(Square square) const;
     PieceType piece_type_on_occupied(Square square) const;
@@ -40,6 +41,8 @@ struct Position {
     void set_startpos();
     bool set_fen(std::string_view fen);
     void make_move(Move move);
+    void make_move(Move move, PieceType moved_piece);
+    void make_move(Move move, PieceType moved_piece, PieceType captured_piece);
 
 };
 

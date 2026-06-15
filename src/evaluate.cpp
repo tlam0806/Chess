@@ -262,17 +262,23 @@ int evaluate_for_side_to_move(const Position& pos) {
 }
 
 
-int static_exchange_eval(const Position& pos, Move move) {
+int static_exchange_eval(
+    const Position& pos,
+    Move move,
+    PieceType moving_piece,
+    PieceType captured_piece
+) {
     if (move.flag() == MoveFlag::EnPassant) {
         return 0;
     }
+    assert(moving_piece != PieceType::None);
+    assert(!is_capture(move) || captured_piece != PieceType::None);
     Position copied_pos = pos;
-    PieceType captured_piece = pos.piece_type_on_occupied(move.to());
-    PieceType last_attacker = pos.piece_type_on_occupied(move.from());
+    PieceType last_attacker = moving_piece;
     auto tmp = promotion_piece(move);
     int last_attacker_value = tmp != PieceType::None ? get_piece_value(tmp) : get_piece_value(last_attacker);
     int see = get_piece_value(captured_piece);
-    copied_pos.make_move(move);
+    copied_pos.make_move(move, moving_piece, captured_piece);
     int sign = -1;
     bool promotion = on_promotion_rank(move.to());
     while (true) {
@@ -295,6 +301,14 @@ int static_exchange_eval(const Position& pos, Move move) {
     }
 
     return see;
+}
+
+int static_exchange_eval(const Position& pos, Move move) {
+    const PieceType moving_piece = pos.piece_type_on_occupied(move.from());
+    const PieceType captured_piece = move.flag() == MoveFlag::EnPassant
+        ? PieceType::Pawn
+        : pos.piece_type_on_occupied(move.to());
+    return static_exchange_eval(pos, move, moving_piece, captured_piece);
 }
 
 } // namespace chess

@@ -143,20 +143,22 @@ constexpr bool is_capture(Move move) {
 std::string square_to_string(Square square);
 std::string move_to_string(Move move);
 
-template <std::size_t Capacity>
-struct FixedMoveList {
+template <typename T, std::size_t Capacity>
+struct FixedList {
     static_assert(Capacity <= std::numeric_limits<std::uint16_t>::max());
 
-    std::array<Move, Capacity> moves{};
+    using value_type = T;
+
+    std::array<T, Capacity> moves{};
     std::uint16_t count = 0;
 
-    void push(Move move) {
-        assert(count < Capacity && "FixedMoveList capacity exceeded");
-        moves[count++] = move;
+    void push(T item) {
+        assert(count < Capacity && "FixedList capacity exceeded");
+        moves[count++] = item;
     }
 
-    void push_back(Move move) {
-        push(move);
+    void push_back(T item) {
+        push(item);
     }
 
     void clear() {
@@ -171,35 +173,35 @@ struct FixedMoveList {
         return count;
     }
 
-    Move* begin() {
+    T* begin() {
         return moves.data();
     }
 
-    Move* end() {
+    T* end() {
         return moves.data() + count;
     }
 
-    const Move* begin() const {
+    const T* begin() const {
         return moves.data();
     }
 
-    const Move* end() const {
+    const T* end() const {
         return moves.data() + count;
     }
 
-    Move& operator[](std::size_t index) {
+    T& operator[](std::size_t index) {
         assert(index < count);
         return moves[index];
     }
 
-    const Move& operator[](std::size_t index) const {
+    const T& operator[](std::size_t index) const {
         assert(index < count);
         return moves[index];
     }
 };
 
-using MoveList = FixedMoveList<256>;
-using NoisyMoveList = FixedMoveList<128>;
+using MoveList = FixedList<Move, 256>;
+using NoisyMoveList = FixedList<Move, 128>;
 
 void generate_knight_moves(const Position& pos, MoveList& moves);
 void generate_king_moves(const Position& pos, MoveList& moves);

@@ -5,7 +5,7 @@
 namespace chess {
     using Bitboard = std::uint64_t;
 
-    enum class PieceType : int { Pawn = 0, Knight, Bishop, Rook, Queen, King, None};
+    enum class PieceType : std::int8_t { Pawn = 0, Knight, Bishop, Rook, Queen, King, None};
     enum class Color : int { White = 0, Black = 1};
     using HashKey = std::uint64_t;
 

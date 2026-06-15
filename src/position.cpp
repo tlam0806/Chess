@@ -213,6 +213,15 @@ void Position::clear_square(Square square) {
     }
 }
 
+void Position::clear_piece(Color color, PieceType piece, Square square) {
+    assert(piece != PieceType::None);
+
+    Bitboard& bb = pieces[color_index(color)][piece_index(piece)];
+    assert((bb & bit(square)) != EmptyBB);
+    bb &= ~bit(square);
+    zobrist_key ^= zobrist::piece_key(color, piece, square);
+}
+
 Color Position::color_on_occupied(Square square) const {
     assert(!is_empty(square));
 
