@@ -26,7 +26,7 @@ void HistoryTable::reset() {
 
 void HistoryTable::store(const Position& pos, Move move, int depth) {
     const Square from = from_square(move);
-    const PieceType piece = pos.piece_type_on_occupied(from);
+    const PieceType piece = pos.piece_type_on_occupied(pos.side_to_move, from);
     assert(piece != PieceType::None);
 
     piece_to_square_[piece_to_square_index(pos.side_to_move, piece, to_square(move))]
@@ -35,7 +35,7 @@ void HistoryTable::store(const Position& pos, Move move, int depth) {
 
 HistoryTable::Score HistoryTable::get_score(const Position& pos, Move move) const {
     const Square from = from_square(move);
-    const PieceType piece = pos.piece_type_on_occupied(from);
+    const PieceType piece = pos.piece_type_on_occupied(pos.side_to_move, from);
     assert (piece != PieceType::None);
 
     return piece_to_square_[piece_to_square_index(pos.side_to_move, piece, to_square(move))];

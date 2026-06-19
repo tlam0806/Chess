@@ -37,4 +37,11 @@ int KillerMoveTable::score(int ply, Move move) const {
     return 0;
 }
 
+Move KillerMoveTable::move(int ply, int slot) const {
+    if (ply < 0 || ply >= MaxPly || slot < 0 || slot >= Slots) {
+        return Move{};
+    }
+    return killers_[ply][slot];
+}
+
 } // namespace chess

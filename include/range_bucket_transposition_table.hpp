@@ -44,6 +44,7 @@ private:
     std::vector<RangeTTEntry> entries_;
     std::size_t bucket_size_ = 1;
     std::size_t bucket_count_ = 1;
+    std::size_t bucket_mask_ = 0;
     mutable RangeTranspositionTableStats stats_{};
 };
 

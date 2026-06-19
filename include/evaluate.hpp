@@ -24,5 +24,4 @@ int static_exchange_eval(
     PieceType captured_piece
 );
 
-
 } // namespace chess

@@ -1,4 +1,7 @@
 build/
+build-debug/
+build_asan/
+build_debug/
 .venv/
 
 data/

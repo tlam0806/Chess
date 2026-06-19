@@ -27,7 +27,10 @@ void assert_see_matches_overload(const Position& pos, Move move) {
 
 int main() {
     {
-        Position pos = empty_kings(Color::White);
+        Position pos;
+        pos.set_piece(Color::White, PieceType::King, make_square(4, 0));
+        pos.set_piece(Color::Black, PieceType::King, make_square(0, 7));
+        pos.side_to_move = Color::White;
         pos.set_piece(Color::White, PieceType::Rook, make_square(4, 1));
         pos.set_piece(Color::Black, PieceType::Rook, make_square(4, 7));
 
@@ -69,10 +72,14 @@ int main() {
     }
 
     {
-        Position pos = empty_kings(Color::White);
+        Position pos;
+        pos.set_piece(Color::White, PieceType::King, make_square(4, 0));
+        pos.set_piece(Color::Black, PieceType::King, make_square(0, 7));
+        pos.side_to_move = Color::White;
         pos.set_piece(Color::Black, PieceType::Queen, make_square(3, 1));
         pos.set_piece(Color::White, PieceType::Rook, make_square(4, 1));
         pos.set_piece(Color::Black, PieceType::Rook, make_square(4, 7));
+        pos.set_piece(Color::Black, PieceType::Bishop, make_square(6, 4));
 
         const SeeAttacker attacker = find_least_valuable_attacker(pos, make_square(3, 1));
         assert(attacker.piece == PieceType::None);
@@ -94,6 +101,30 @@ int main() {
         pos.set_piece(Color::White, PieceType::Pawn, make_square(4, 3));
         pos.set_piece(Color::Black, PieceType::Pawn, make_square(3, 4));
         pos.set_piece(Color::Black, PieceType::Knight, make_square(5, 5));
+
+        const Move capture = make_move(make_square(4, 3), make_square(3, 4), MoveFlag::Capture);
+        assert_see_matches_overload(pos, capture);
+        assert(static_exchange_eval(pos, capture) == 0);
+    }
+
+    {
+        Position pos = empty_kings(Color::White);
+        pos.set_piece(Color::White, PieceType::Pawn, make_square(4, 3));
+        pos.set_piece(Color::Black, PieceType::Pawn, make_square(3, 4));
+        pos.set_piece(Color::Black, PieceType::Rook, make_square(3, 7));
+
+        const Move capture = make_move(make_square(4, 3), make_square(3, 4), MoveFlag::Capture);
+        assert_see_matches_overload(pos, capture);
+        assert(static_exchange_eval(pos, capture) == 0);
+    }
+
+    {
+        Position pos;
+        pos.set_piece(Color::White, PieceType::King, make_square(4, 0));
+        pos.set_piece(Color::Black, PieceType::King, make_square(4, 5));
+        pos.set_piece(Color::White, PieceType::Pawn, make_square(4, 3));
+        pos.set_piece(Color::Black, PieceType::Pawn, make_square(3, 4));
+        pos.side_to_move = Color::White;
 
         const Move capture = make_move(make_square(4, 3), make_square(3, 4), MoveFlag::Capture);
         assert_see_matches_overload(pos, capture);

@@ -4,6 +4,8 @@
 #include <cctype>
 #include <ostream>
 #include <string_view>
+#include "evaluation_terms.hpp"
+#include "king_safety.hpp"
 #include "zobrist.hpp"
 
 namespace chess {
@@ -18,6 +20,21 @@ constexpr int piece_index(PieceType piece) {
     return static_cast<int>(piece);
 }
 
+std::uint8_t encode_piece(Color color, PieceType piece) {
+    assert(piece != PieceType::None);
+    return static_cast<std::uint8_t>(1 + color_index(color) * 6 + piece_index(piece));
+}
+
+Color decode_color(std::uint8_t encoded) {
+    assert(encoded != 0);
+    return encoded <= 6 ? Color::White : Color::Black;
+}
+
+PieceType decode_piece(std::uint8_t encoded) {
+    assert(encoded != 0);
+    return static_cast<PieceType>((encoded - 1) % 6);
+}
+
 char piece_char(Color color, PieceType piece) {
     constexpr std::array<char, 6> WhiteChars{'P', 'N', 'B', 'R', 'Q', 'K'};
     constexpr std::array<char, 6> BlackChars{'p', 'n', 'b', 'r', 'q', 'k'};
@@ -27,15 +44,9 @@ char piece_char(Color color, PieceType piece) {
 }
 
 char piece_on_square(const Position& position, Square square) {
-    for (Color color : {Color::White, Color::Black}) {
-        for (PieceType piece :
-             {PieceType::Pawn, PieceType::Knight, PieceType::Bishop,
-              PieceType::Rook, PieceType::Queen, PieceType::King}) {
-            const Bitboard bb = position.pieces[color_index(color)][piece_index(piece)];
-            if (bb & bit(square)) {
-                return piece_char(color, piece);
-            }
-        }
+    const std::uint8_t encoded = position.board[square];
+    if (encoded != 0) {
+        return piece_char(decode_color(encoded), decode_piece(encoded));
     }
 
     return '.';
@@ -171,14 +182,7 @@ void Position::print(std::ostream& os) const {
 }
 
 Bitboard Position::occupancy(Color color) const {
-    Bitboard ret = EmptyBB;
-    const int color_idx = color_index(color);
-
-    for (Bitboard bb : pieces[color_idx]) {
-        ret |= bb;
-    }
-
-    return ret;
+    return occupancies[color_index(color)];
 }
 
 Bitboard Position::occupancy(Color color, PieceType piece) const {
@@ -186,31 +190,40 @@ Bitboard Position::occupancy(Color color, PieceType piece) const {
 }
 
 Bitboard Position::occupancy() const {
-    return occupancy(Color::White) | occupancy(Color::Black);
+    return occupancies[color_index(Color::White)] | occupancies[color_index(Color::Black)];
 }
 
 void Position::set_piece(Color color, PieceType piece, Square square) {
     assert(piece != PieceType::None);
-    assert((occupancy() & bit(square)) == EmptyBB);
+    assert(board[square] == 0);
 
-    pieces[color_index(color)][piece_index(piece)] |= bit(square);
+    const Bitboard square_mask = bit(square);
+    pieces[color_index(color)][piece_index(piece)] |= square_mask;
+    occupancies[color_index(color)] |= square_mask;
+    board[square] = encode_piece(color, piece);
+    if (piece == PieceType::King) {
+        king_squares[color_index(color)] = square;
+    }
+    eval_score += evaluation_piece_contribution(color, piece, square);
     zobrist_key ^= zobrist::piece_key(color, piece, square);
 }
 
 void Position::clear_square(Square square) {
-    const Bitboard clear_mask = ~bit(square);
-
-    for (int colorIndex = 0; colorIndex < 2; colorIndex++) {
-        for (int pieceIndex = 0; pieceIndex < 6; pieceIndex++) {
-            Bitboard& bb = pieces[colorIndex][pieceIndex];
-            Bitboard new_bb = bb & clear_mask;
-            if (new_bb != bb) {
-                bb = new_bb;
-                zobrist_key ^= zobrist::piece_key(colorIndex, pieceIndex, static_cast<int>(square));
-                return;
-            }
-        }
+    const std::uint8_t encoded = board[square];
+    if (encoded == 0) {
+        return;
     }
+    const Color color = decode_color(encoded);
+    const PieceType piece = decode_piece(encoded);
+    const Bitboard square_mask = bit(square);
+    pieces[color_index(color)][piece_index(piece)] &= ~square_mask;
+    occupancies[color_index(color)] &= ~square_mask;
+    board[square] = 0;
+    if (piece == PieceType::King) {
+        king_squares[color_index(color)] = NoSquare;
+    }
+    eval_score -= evaluation_piece_contribution(color, piece, square);
+    zobrist_key ^= zobrist::piece_key(color, piece, square);
 }
 
 void Position::clear_piece(Color color, PieceType piece, Square square) {
@@ -218,40 +231,37 @@ void Position::clear_piece(Color color, PieceType piece, Square square) {
 
     Bitboard& bb = pieces[color_index(color)][piece_index(piece)];
     assert((bb & bit(square)) != EmptyBB);
-    bb &= ~bit(square);
+    assert(board[square] == encode_piece(color, piece));
+    const Bitboard square_mask = bit(square);
+    bb &= ~square_mask;
+    occupancies[color_index(color)] &= ~square_mask;
+    board[square] = 0;
+    if (piece == PieceType::King) {
+        king_squares[color_index(color)] = NoSquare;
+    }
+    eval_score -= evaluation_piece_contribution(color, piece, square);
     zobrist_key ^= zobrist::piece_key(color, piece, square);
 }
 
 Color Position::color_on_occupied(Square square) const {
     assert(!is_empty(square));
-
-    const Bitboard square_mask = bit(square);
-    if (occupancy(Color::White) & square_mask) {
-        return Color::White;
-    }
-
-    assert(occupancy(Color::Black) & square_mask);
-    return Color::Black;
+    return decode_color(board[square]);
 }
 
 PieceType Position::piece_type_on_occupied(Square square) const {
     assert(!is_empty(square));
+    return decode_piece(board[square]);
+}
 
-    const Bitboard square_mask = bit(square);
-    for (const auto& color_pieces : pieces) {
-        for (std::size_t piece_index = 0; piece_index < color_pieces.size(); ++piece_index) {
-            if (color_pieces[piece_index] & square_mask) {
-                return static_cast<PieceType>(piece_index);
-            }
-        }
-    }
-
-    assert(false);
-    return PieceType::None;
+PieceType Position::piece_type_on_occupied(Color color, Square square) const {
+    assert(!is_empty(square));
+    assert(color_on_occupied(square) == color);
+    (void)color;
+    return decode_piece(board[square]);
 }
 
 bool Position::is_empty(Square square) const {
-    return (occupancy() & bit(square)) == EmptyBB;
+    return board[square] == 0;
 }
 
 void Position::clear() {
@@ -260,6 +270,8 @@ void Position::clear() {
             bb = EmptyBB;
         }
     }
+    board.fill(0);
+    occupancies = {EmptyBB, EmptyBB};
     side_to_move = Color::White;
     white_can_castle_kingside = false;
     white_can_castle_queenside = false;
@@ -268,11 +280,26 @@ void Position::clear() {
     en_passant_square = NoSquare;
     halfmove_clock = 0;
     fullmove_number = 1;
+    eval_score = 0;
     zobrist_key = 0;
+    king_squares = {NoSquare, NoSquare};
+    king_checkers = {EmptyBB, EmptyBB};
+    king_pinned = {EmptyBB, EmptyBB};
+    king_block_masks = {FullBB, FullBB};
 }
 
 void Position::set_startpos() {
-    pieces = StartPieces;
+    clear();
+    for (Color color : {Color::White, Color::Black}) {
+        for (PieceType piece :
+             {PieceType::Pawn, PieceType::Knight, PieceType::Bishop,
+              PieceType::Rook, PieceType::Queen, PieceType::King}) {
+            Bitboard bb = StartPieces[color_index(color)][piece_index(piece)];
+            while (bb != EmptyBB) {
+                set_piece(color, piece, pop_lsb(bb));
+            }
+        }
+    }
     side_to_move = Color::White;
     white_can_castle_kingside = true;
     white_can_castle_queenside = true;
@@ -282,6 +309,7 @@ void Position::set_startpos() {
     halfmove_clock = 0;
     fullmove_number = 1;
     zobrist_key = zobrist::compute_hash(*this);
+    refresh_king_safety(*this);
 }
 
 bool Position::set_fen(std::string_view fen) {
@@ -452,6 +480,7 @@ bool Position::set_fen(std::string_view fen) {
     }
 
     tmp.zobrist_key = zobrist::compute_hash(tmp);
+    refresh_king_safety(tmp);
     *this = tmp;
     return true;
 }

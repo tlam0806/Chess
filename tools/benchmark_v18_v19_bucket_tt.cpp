@@ -26,9 +26,16 @@ struct Options {
     int depth = 7;
     int tt_mb = 64;
     int bucket_size = 4;
+    int qsearch_promotion_bonus = chess::HeuristicSearcherV19::MoveOrderingWeights{}.qsearch_promotion_bonus;
+    int qsearch_good_capture_bonus = chess::HeuristicSearcherV19::MoveOrderingWeights{}.qsearch_good_capture_bonus;
+    int qsearch_bad_capture_bonus = chess::HeuristicSearcherV19::MoveOrderingWeights{}.qsearch_bad_capture_bonus;
+    int qsearch_see_weight = chess::HeuristicSearcherV19::MoveOrderingWeights{}.qsearch_see_weight;
+    int qsearch_captured_value_weight =
+        chess::HeuristicSearcherV19::MoveOrderingWeights{}.qsearch_captured_value_weight;
     bool iterative = true;
     bool first_samples = false;
     bool only_v19 = false;
+    int warmup_samples = 0;
     std::uint32_t seed = 20260614;
 };
 
@@ -99,8 +106,20 @@ Options parse_args(int argc, char** argv) {
             options.tt_mb = parse_int(require_value(arg), arg);
         } else if (arg == "--bucket-size") {
             options.bucket_size = parse_int(require_value(arg), arg);
+        } else if (arg == "--qsearch-promotion-bonus") {
+            options.qsearch_promotion_bonus = parse_int(require_value(arg), arg);
+        } else if (arg == "--qsearch-good-capture-bonus") {
+            options.qsearch_good_capture_bonus = parse_int(require_value(arg), arg);
+        } else if (arg == "--qsearch-bad-capture-bonus") {
+            options.qsearch_bad_capture_bonus = parse_int(require_value(arg), arg);
+        } else if (arg == "--qsearch-see-weight") {
+            options.qsearch_see_weight = parse_int(require_value(arg), arg);
+        } else if (arg == "--qsearch-captured-value-weight") {
+            options.qsearch_captured_value_weight = parse_int(require_value(arg), arg);
         } else if (arg == "--seed") {
             options.seed = static_cast<std::uint32_t>(parse_int(require_value(arg), arg));
+        } else if (arg == "--warmup-samples") {
+            options.warmup_samples = parse_int(require_value(arg), arg);
         } else if (arg == "--fixed-depth") {
             options.iterative = false;
         } else if (arg == "--iterative") {
@@ -116,7 +135,13 @@ Options parse_args(int argc, char** argv) {
                 << "                                     [--depth D]\n"
                 << "                                     [--tt-mb MB]\n"
                 << "                                     [--bucket-size N]\n"
+                << "                                     [--qsearch-promotion-bonus N]\n"
+                << "                                     [--qsearch-good-capture-bonus N]\n"
+                << "                                     [--qsearch-bad-capture-bonus N]\n"
+                << "                                     [--qsearch-see-weight N]\n"
+                << "                                     [--qsearch-captured-value-weight N]\n"
                 << "                                     [--seed N]\n"
+                << "                                     [--warmup-samples N]\n"
                 << "                                     [--iterative|--fixed-depth]\n"
                 << "                                     [--first]\n"
                 << "                                     [--only-v19]\n";
@@ -126,7 +151,8 @@ Options parse_args(int argc, char** argv) {
         }
     }
 
-    if (options.samples <= 0 || options.depth < 0 || options.tt_mb <= 0 || options.bucket_size <= 0) {
+    if (options.samples <= 0 || options.depth < 0 || options.tt_mb <= 0 || options.bucket_size <= 0
+        || options.warmup_samples < 0) {
         throw std::runtime_error("samples, tt-mb, and bucket-size must be positive; depth must be non-negative");
     }
     return options;
@@ -319,6 +345,68 @@ void add_tt_stats(TtTotals& totals, const chess::RangeTranspositionTableStats& s
     totals.skipped_shallow_replacements += stats.skipped_shallow_replacements;
 }
 
+void add_move_type_stats(
+    chess::HeuristicSearcherV19::MoveTypeStats& totals,
+    const chess::HeuristicSearcherV19::MoveTypeStats& stats
+) {
+    totals.total += stats.total;
+    totals.tt_lower += stats.tt_lower;
+    totals.tt_upper += stats.tt_upper;
+    totals.promotion += stats.promotion;
+    totals.capture += stats.capture;
+    totals.quiet += stats.quiet;
+    totals.check += stats.check;
+    totals.killer1 += stats.killer1;
+    totals.killer2 += stats.killer2;
+    totals.history_positive += stats.history_positive;
+    totals.counter_history_positive += stats.counter_history_positive;
+}
+
+chess::HeuristicSearcherV19::MoveTypeStats total_appeared_move_types(
+    const chess::HeuristicSearcherV19::MoveCutoffStats& stats
+) {
+    chess::HeuristicSearcherV19::MoveTypeStats totals;
+    add_move_type_stats(totals, stats.before_cutoff);
+    add_move_type_stats(totals, stats.cutoff_move);
+    add_move_type_stats(totals, stats.after_cutoff);
+    return totals;
+}
+
+void add_cutoff_stats(
+    chess::HeuristicSearcherV19::MoveCutoffStats& totals,
+    const chess::HeuristicSearcherV19::MoveCutoffStats& stats
+) {
+    totals.nodes_with_moves += stats.nodes_with_moves;
+    totals.beta_cutoffs += stats.beta_cutoffs;
+    totals.cutoff_index_sum += stats.cutoff_index_sum;
+    for (std::size_t i = 0; i < totals.cutoff_index_buckets.size(); ++i) {
+        totals.cutoff_index_buckets[i] += stats.cutoff_index_buckets[i];
+    }
+    add_move_type_stats(totals.before_cutoff, stats.before_cutoff);
+    add_move_type_stats(totals.cutoff_move, stats.cutoff_move);
+    add_move_type_stats(totals.after_cutoff, stats.after_cutoff);
+}
+
+void add_tt_move_quality_stats(
+    chess::HeuristicSearcherV19::TtMoveQualityStats& totals,
+    const chess::HeuristicSearcherV19::TtMoveQualityStats& stats
+) {
+    totals.available += stats.available;
+    totals.legal += stats.legal;
+    totals.index0 += stats.index0;
+    totals.beta_cutoff += stats.beta_cutoff;
+}
+
+void add_ordering_stats(
+    chess::HeuristicSearcherV19::MoveOrderingStats& totals,
+    const chess::HeuristicSearcherV19::MoveOrderingStats& stats
+) {
+    add_cutoff_stats(totals.main, stats.main);
+    add_cutoff_stats(totals.qsearch, stats.qsearch);
+    add_tt_move_quality_stats(totals.tt_lower, stats.tt_lower);
+    add_tt_move_quality_stats(totals.tt_upper, stats.tt_upper);
+}
+
 std::uint64_t avg_u64(std::uint64_t value, int count) {
     return count == 0 ? 0 : value / static_cast<std::uint64_t>(count);
 }
@@ -353,6 +441,95 @@ void print_tt_summary(std::string_view prefix, const TtTotals& stats) {
               << '\n';
 }
 
+void print_move_type_stats(std::string_view prefix, const chess::HeuristicSearcherV19::MoveTypeStats& stats) {
+    std::cout << prefix
+              << " total=" << stats.total
+              << " tt_lower=" << stats.tt_lower
+              << " tt_upper=" << stats.tt_upper
+              << " promotion=" << stats.promotion
+              << " capture=" << stats.capture
+              << " quiet=" << stats.quiet
+              << " check=" << stats.check
+              << " killer1=" << stats.killer1
+              << " killer2=" << stats.killer2
+              << " history_positive=" << stats.history_positive
+              << " counter_history_positive=" << stats.counter_history_positive
+              << '\n';
+}
+
+void print_cutoff_per_appeared_type(
+    std::string_view prefix,
+    const chess::HeuristicSearcherV19::MoveCutoffStats& stats
+) {
+    const chess::HeuristicSearcherV19::MoveTypeStats appeared = total_appeared_move_types(stats);
+    const chess::HeuristicSearcherV19::MoveTypeStats& cutoff = stats.cutoff_move;
+    std::cout << prefix
+              << " appeared_total=" << appeared.total
+              << " cutoff_total=" << cutoff.total
+              << " tt_lower=" << cutoff.tt_lower << '/' << appeared.tt_lower
+              << '(' << ratio(cutoff.tt_lower, appeared.tt_lower) << ')'
+              << " tt_upper=" << cutoff.tt_upper << '/' << appeared.tt_upper
+              << '(' << ratio(cutoff.tt_upper, appeared.tt_upper) << ')'
+              << " promotion=" << cutoff.promotion << '/' << appeared.promotion
+              << '(' << ratio(cutoff.promotion, appeared.promotion) << ')'
+              << " capture=" << cutoff.capture << '/' << appeared.capture
+              << '(' << ratio(cutoff.capture, appeared.capture) << ')'
+              << " quiet=" << cutoff.quiet << '/' << appeared.quiet
+              << '(' << ratio(cutoff.quiet, appeared.quiet) << ')'
+              << " check=" << cutoff.check << '/' << appeared.check
+              << '(' << ratio(cutoff.check, appeared.check) << ')'
+              << " killer1=" << cutoff.killer1 << '/' << appeared.killer1
+              << '(' << ratio(cutoff.killer1, appeared.killer1) << ')'
+              << " killer2=" << cutoff.killer2 << '/' << appeared.killer2
+              << '(' << ratio(cutoff.killer2, appeared.killer2) << ')'
+              << " history_positive=" << cutoff.history_positive << '/' << appeared.history_positive
+              << '(' << ratio(cutoff.history_positive, appeared.history_positive) << ')'
+              << " counter_history_positive=" << cutoff.counter_history_positive << '/'
+              << appeared.counter_history_positive
+              << '(' << ratio(cutoff.counter_history_positive, appeared.counter_history_positive) << ')'
+              << '\n';
+}
+
+void print_cutoff_stats(std::string_view prefix, const chess::HeuristicSearcherV19::MoveCutoffStats& stats) {
+    std::cout << prefix
+              << " nodes_with_moves=" << stats.nodes_with_moves
+              << " beta_cutoffs=" << stats.beta_cutoffs
+              << " cutoff_rate=" << ratio(stats.beta_cutoffs, stats.nodes_with_moves)
+              << " avg_cutoff_index=" << ratio(stats.cutoff_index_sum, stats.beta_cutoffs)
+              << " cutoff_index_buckets=";
+    for (std::size_t i = 0; i < stats.cutoff_index_buckets.size(); ++i) {
+        if (i != 0) {
+            std::cout << ',';
+        }
+        if (i + 1 == stats.cutoff_index_buckets.size()) {
+            std::cout << "15+=" << stats.cutoff_index_buckets[i];
+        } else {
+            std::cout << i << '=' << stats.cutoff_index_buckets[i];
+        }
+    }
+    std::cout << '\n';
+    print_move_type_stats(std::string(prefix) + "_before", stats.before_cutoff);
+    print_move_type_stats(std::string(prefix) + "_cutoff", stats.cutoff_move);
+    print_move_type_stats(std::string(prefix) + "_after", stats.after_cutoff);
+    print_cutoff_per_appeared_type(std::string(prefix) + "_cutoff_per_appeared", stats);
+}
+
+void print_tt_move_quality(
+    std::string_view prefix,
+    const chess::HeuristicSearcherV19::TtMoveQualityStats& stats
+) {
+    std::cout << prefix
+              << " available=" << stats.available
+              << " legal=" << stats.legal
+              << " legal_rate=" << ratio(stats.legal, stats.available)
+              << " index0=" << stats.index0
+              << " index0_per_legal=" << ratio(stats.index0, stats.legal)
+              << " beta_cutoff=" << stats.beta_cutoff
+              << " beta_cutoff_per_legal=" << ratio(stats.beta_cutoff, stats.legal)
+              << " beta_cutoff_per_available=" << ratio(stats.beta_cutoff, stats.available)
+              << '\n';
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -364,23 +541,65 @@ int main(int argc, char** argv) {
         Totals v19_totals;
         TtTotals v18_tt_totals;
         TtTotals v19_tt_totals;
+        chess::HeuristicSearcherV19::MoveOrderingStats v19_ordering_totals;
 
         std::cout << "input=" << options.input
                   << " samples=" << samples.size()
                   << " depth=" << options.depth
                   << " tt_mb=" << options.tt_mb
                   << " bucket_size=" << options.bucket_size
+                  << " qsearch_promotion_bonus=" << options.qsearch_promotion_bonus
+                  << " qsearch_good_capture_bonus=" << options.qsearch_good_capture_bonus
+                  << " qsearch_bad_capture_bonus=" << options.qsearch_bad_capture_bonus
+                  << " qsearch_see_weight=" << options.qsearch_see_weight
+                  << " qsearch_captured_value_weight=" << options.qsearch_captured_value_weight
                   << " iterative=" << (options.iterative ? 1 : 0)
                   << " only_v19=" << (options.only_v19 ? 1 : 0)
+                  << " warmup_samples=" << options.warmup_samples
                   << " first=" << (options.first_samples ? 1 : 0)
                   << " seed=" << options.seed << '\n' << std::flush;
+
+        for (int i = 0; i < options.warmup_samples && i < static_cast<int>(samples.size()); ++i) {
+            const Sample& sample = samples[static_cast<std::size_t>(i)];
+            chess::HeuristicSearcherV19::MoveOrderingWeights weights;
+            weights.qsearch_promotion_bonus = options.qsearch_promotion_bonus;
+            weights.qsearch_good_capture_bonus = options.qsearch_good_capture_bonus;
+            weights.qsearch_bad_capture_bonus = options.qsearch_bad_capture_bonus;
+            weights.qsearch_see_weight = options.qsearch_see_weight;
+            weights.qsearch_captured_value_weight = options.qsearch_captured_value_weight;
+
+            if (!options.only_v19) {
+                chess::HeuristicSearcherV18 v18(static_cast<std::size_t>(options.tt_mb));
+                (void)search(v18, sample.pos, options.depth, options.iterative);
+            }
+
+            chess::HeuristicSearcherV19 v19(
+                static_cast<std::size_t>(options.tt_mb),
+                static_cast<std::size_t>(options.bucket_size),
+                3,
+                7,
+                weights.counter_history_bonus,
+                weights
+            );
+            (void)search(v19, sample.pos, options.depth, options.iterative);
+        }
 
         for (std::size_t i = 0; i < samples.size(); ++i) {
             const Sample& sample = samples[i];
             chess::HeuristicSearcherV18 v18(static_cast<std::size_t>(options.tt_mb));
+            chess::HeuristicSearcherV19::MoveOrderingWeights weights;
+            weights.qsearch_promotion_bonus = options.qsearch_promotion_bonus;
+            weights.qsearch_good_capture_bonus = options.qsearch_good_capture_bonus;
+            weights.qsearch_bad_capture_bonus = options.qsearch_bad_capture_bonus;
+            weights.qsearch_see_weight = options.qsearch_see_weight;
+            weights.qsearch_captured_value_weight = options.qsearch_captured_value_weight;
             chess::HeuristicSearcherV19 v19(
                 static_cast<std::size_t>(options.tt_mb),
-                static_cast<std::size_t>(options.bucket_size)
+                static_cast<std::size_t>(options.bucket_size),
+                3,
+                7,
+                weights.counter_history_bonus,
+                weights
             );
 
             chess::SearchResult v18_result;
@@ -408,6 +627,7 @@ int main(int argc, char** argv) {
             }
             add_result(v19_totals, v19_result, v19_us);
             add_tt_stats(v19_tt_totals, v19.tt_stats());
+            add_ordering_stats(v19_ordering_totals, v19.move_ordering_stats());
             if (!options.only_v19 && v18_result.score != v19_result.score) {
                 ++v18_totals.score_mismatches;
                 ++v19_totals.score_mismatches;
@@ -467,6 +687,10 @@ int main(int argc, char** argv) {
             print_tt_summary("v18", v18_tt_totals);
         }
         print_tt_summary("v19", v19_tt_totals);
+        print_cutoff_stats("v19_order_main", v19_ordering_totals.main);
+        print_cutoff_stats("v19_order_qsearch", v19_ordering_totals.qsearch);
+        print_tt_move_quality("v19_tt_lower_move", v19_ordering_totals.tt_lower);
+        print_tt_move_quality("v19_tt_upper_move", v19_ordering_totals.tt_upper);
     } catch (const std::exception& error) {
         std::cerr << "benchmark_v18_v19_bucket_tt: " << error.what() << '\n';
         return 1;

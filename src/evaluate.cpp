@@ -1,135 +1,181 @@
 #include "evaluate.hpp"
 
-#include "bitboard.hpp"
-#include "move.hpp"
 #include "attacks.hpp"
+#include "bitboard.hpp"
+#include "evaluation_terms.hpp"
+#include "move.hpp"
 #include "position.hpp"
 
 #include <array>
+#include <bit>
 
 namespace chess {
 
 namespace {
 
-constexpr std::array<int, 6> PieceValue{
-    100, 320, 330, 500, 900, 0
-};
-
-constexpr std::array<int, 64> PawnPst{
-      0,   0,   0,   0,   0,   0,   0,   0,
-     50,  50,  50,  50,  50,  50,  50,  50,
-     10,  10,  20,  30,  30,  20,  10,  10,
-      5,   5,  10,  25,  25,  10,   5,   5,
-      0,   0,   0,  20,  20,   0,   0,   0,
-      5,  -5, -10,   0,   0, -10,  -5,   5,
-      5,  10,  10, -20, -20,  10,  10,   5,
-      0,   0,   0,   0,   0,   0,   0,   0
-};
-
-constexpr std::array<int, 64> KnightPst{
-    -50, -40, -30, -30, -30, -30, -40, -50,
-    -40, -20,   0,   5,   5,   0, -20, -40,
-    -30,   5,  10,  15,  15,  10,   5, -30,
-    -30,   0,  15,  20,  20,  15,   0, -30,
-    -30,   5,  15,  20,  20,  15,   5, -30,
-    -30,   0,  10,  15,  15,  10,   0, -30,
-    -40, -20,   0,   0,   0,   0, -20, -40,
-    -50, -40, -30, -30, -30, -30, -40, -50
-};
-
-constexpr std::array<int, 64> BishopPst{
-    -20, -10, -10, -10, -10, -10, -10, -20,
-    -10,   5,   0,   0,   0,   0,   5, -10,
-    -10,  10,  10,  10,  10,  10,  10, -10,
-    -10,   0,  10,  10,  10,  10,   0, -10,
-    -10,   5,   5,  10,  10,   5,   5, -10,
-    -10,   0,   5,  10,  10,   5,   0, -10,
-    -10,   0,   0,   0,   0,   0,   0, -10,
-    -20, -10, -10, -10, -10, -10, -10, -20
-};
-
-constexpr std::array<int, 64> RookPst{
-      0,   0,   0,   5,   5,   0,   0,   0,
-     -5,   0,   0,   0,   0,   0,   0,  -5,
-     -5,   0,   0,   0,   0,   0,   0,  -5,
-     -5,   0,   0,   0,   0,   0,   0,  -5,
-     -5,   0,   0,   0,   0,   0,   0,  -5,
-     -5,   0,   0,   0,   0,   0,   0,  -5,
-      5,  10,  10,  10,  10,  10,  10,   5,
-      0,   0,   0,   0,   0,   0,   0,   0
-};
-
-constexpr std::array<int, 64> QueenPst{
-    -20, -10, -10,  -5,  -5, -10, -10, -20,
-    -10,   0,   5,   0,   0,   0,   0, -10,
-    -10,   5,   5,   5,   5,   5,   0, -10,
-      0,   0,   5,   5,   5,   5,   0,  -5,
-     -5,   0,   5,   5,   5,   5,   0,  -5,
-    -10,   0,   5,   5,   5,   5,   0, -10,
-    -10,   0,   0,   0,   0,   0,   0, -10,
-    -20, -10, -10,  -5,  -5, -10, -10, -20
-};
-
-constexpr std::array<int, 64> KingPst{
-     20,  30,  10,   0,   0,  10,  30,  20,
-     20,  20,   0,   0,   0,   0,  20,  20,
-    -10, -20, -20, -20, -20, -20, -20, -10,
-    -20, -30, -30, -40, -40, -30, -30, -20,
-    -30, -40, -40, -50, -50, -40, -40, -30,
-    -30, -40, -40, -50, -50, -40, -40, -30,
-    -30, -40, -40, -50, -50, -40, -40, -30,
-    -30, -40, -40, -50, -50, -40, -40, -30
-};
-
-constexpr const std::array<int, 64>& piece_square_table(PieceType piece) {
-    switch (piece) {
-        case PieceType::Pawn:
-            return PawnPst;
-        case PieceType::Knight:
-            return KnightPst;
-        case PieceType::Bishop:
-            return BishopPst;
-        case PieceType::Rook:
-            return RookPst;
-        case PieceType::Queen:
-            return QueenPst;
-        case PieceType::King:
-            return KingPst;
-        default:
-            return KingPst;
-    }
-}
-
-int evaluate_piece_set(Bitboard pieces, PieceType piece, Color color) {
-    int score = 0;
-    const int piece_index = static_cast<int>(piece);
-    const auto& pst = piece_square_table(piece);
-
-    while (pieces) {
-        const Square square = pop_lsb(pieces);
-        const Square pst_square = relative_square(color, square);
-        score += PieceValue[piece_index] + pst[pst_square];
-    }
-
-    return color == Color::White ? score : -score;
-}
-
 int get_piece_value(PieceType type) {
     assert(type != PieceType::None);
-    return PieceValue[static_cast<int>(type)];
+    if (type == PieceType::King) {
+        return 20'000;
+    }
+    return EvaluationPieceValue[static_cast<int>(type)];
 }
 
-void apply_see_capture(Position& pos, Square from, Square to) {
-    const Color color = pos.color_on_occupied(from);
-    assert(pos.side_to_move == color);
-    PieceType moving_piece = pos.piece_type_on_occupied(from);
+constexpr int color_idx(Color color) {
+    return static_cast<int>(color);
+}
 
-    pos.clear_square(from);
-    pos.clear_square(to);
+constexpr int piece_idx(PieceType piece) {
+    return static_cast<int>(piece);
+}
 
-    pos.set_piece(color, moving_piece, to);
+struct SeeState {
+    std::array<Bitboard, 2> bishops{};
+    std::array<Bitboard, 2> rooks{};
+    std::array<Bitboard, 2> queens{};
+    std::array<Bitboard, 2> pawn_attackers{};
+    std::array<Bitboard, 2> knight_attackers{};
+    std::array<Bitboard, 2> king_attackers{};
+    Bitboard occupied = EmptyBB;
+    Square target = NoSquare;
+    bool target_is_promotion_rank = false;
+};
 
-    pos.side_to_move = opposite(pos.side_to_move);
+PieceType promoted_see_piece(PieceType piece, bool target_is_promotion_rank) {
+    return piece == PieceType::Pawn && target_is_promotion_rank
+        ? PieceType::Queen
+        : piece;
+}
+
+int see_piece_value(PieceType piece, bool target_is_promotion_rank) {
+    return get_piece_value(promoted_see_piece(piece, target_is_promotion_rank));
+}
+
+void clear_see_piece(SeeState& state, Color color, PieceType piece, Square square) {
+    const Bitboard mask = ~bit(square);
+    const int side_index = color_idx(color);
+    switch (piece) {
+    case PieceType::Pawn:
+        state.pawn_attackers[side_index] &= mask;
+        break;
+    case PieceType::Knight:
+        state.knight_attackers[side_index] &= mask;
+        break;
+    case PieceType::Bishop:
+        state.bishops[side_index] &= mask;
+        break;
+    case PieceType::Rook:
+        state.rooks[side_index] &= mask;
+        break;
+    case PieceType::Queen:
+        state.queens[side_index] &= mask;
+        break;
+    case PieceType::King:
+        state.king_attackers[side_index] &= mask;
+        break;
+    case PieceType::None:
+        break;
+    }
+}
+
+SeeState make_see_state(const Position& pos, Square target, Bitboard occupancy) {
+    SeeState state;
+    state.occupied = occupancy;
+    state.target = target;
+    state.target_is_promotion_rank = on_promotion_rank(target);
+    state.bishops[color_idx(Color::White)] = pos.pieces[color_idx(Color::White)][piece_idx(PieceType::Bishop)];
+    state.bishops[color_idx(Color::Black)] = pos.pieces[color_idx(Color::Black)][piece_idx(PieceType::Bishop)];
+    state.rooks[color_idx(Color::White)] = pos.pieces[color_idx(Color::White)][piece_idx(PieceType::Rook)];
+    state.rooks[color_idx(Color::Black)] = pos.pieces[color_idx(Color::Black)][piece_idx(PieceType::Rook)];
+    state.queens[color_idx(Color::White)] = pos.pieces[color_idx(Color::White)][piece_idx(PieceType::Queen)];
+    state.queens[color_idx(Color::Black)] = pos.pieces[color_idx(Color::Black)][piece_idx(PieceType::Queen)];
+
+    const Bitboard white_pawn_sources = pawn_attacks(Color::Black, target);
+    const Bitboard black_pawn_sources = pawn_attacks(Color::White, target);
+    state.pawn_attackers[color_idx(Color::White)] =
+        white_pawn_sources & pos.pieces[color_idx(Color::White)][piece_idx(PieceType::Pawn)];
+    state.pawn_attackers[color_idx(Color::Black)] =
+        black_pawn_sources & pos.pieces[color_idx(Color::Black)][piece_idx(PieceType::Pawn)];
+
+    const Bitboard knight_sources = knight_attacks(target);
+    state.knight_attackers[color_idx(Color::White)] =
+        knight_sources & pos.pieces[color_idx(Color::White)][piece_idx(PieceType::Knight)];
+    state.knight_attackers[color_idx(Color::Black)] =
+        knight_sources & pos.pieces[color_idx(Color::Black)][piece_idx(PieceType::Knight)];
+
+    const Bitboard king_sources = king_attacks(target);
+    state.king_attackers[color_idx(Color::White)] =
+        king_sources & pos.pieces[color_idx(Color::White)][piece_idx(PieceType::King)];
+    state.king_attackers[color_idx(Color::Black)] =
+        king_sources & pos.pieces[color_idx(Color::Black)][piece_idx(PieceType::King)];
+
+    return state;
+}
+
+SeeAttacker find_least_valuable_pseudo_attacker(const SeeState& state, int side_index) {
+    Bitboard attackers = EmptyBB;
+
+    if (!state.target_is_promotion_rank) {
+        attackers = state.pawn_attackers[side_index];
+        if (attackers != EmptyBB) {
+            return SeeAttacker{static_cast<Square>(std::countr_zero(attackers)), PieceType::Pawn};
+        }
+    }
+
+    attackers = state.knight_attackers[side_index];
+    if (attackers != EmptyBB) {
+        return SeeAttacker{static_cast<Square>(std::countr_zero(attackers)), PieceType::Knight};
+    }
+
+    Bitboard bishop_like = EmptyBB;
+    const Bitboard bishop_like_pieces = state.bishops[side_index] | state.queens[side_index];
+    if (bishop_like_pieces != EmptyBB) {
+        bishop_like = bishop_attacks(state.target, state.occupied);
+        attackers = bishop_like & state.bishops[side_index];
+        if (attackers != EmptyBB) {
+            return SeeAttacker{static_cast<Square>(std::countr_zero(attackers)), PieceType::Bishop};
+        }
+    }
+
+    Bitboard rook_like = EmptyBB;
+    const Bitboard rook_like_pieces = state.rooks[side_index] | state.queens[side_index];
+    if (rook_like_pieces != EmptyBB) {
+        rook_like = rook_attacks(state.target, state.occupied);
+        attackers = rook_like & state.rooks[side_index];
+        if (attackers != EmptyBB) {
+            return SeeAttacker{static_cast<Square>(std::countr_zero(attackers)), PieceType::Rook};
+        }
+    }
+
+    if (state.target_is_promotion_rank) {
+        attackers = state.pawn_attackers[side_index];
+        if (attackers != EmptyBB) {
+            return SeeAttacker{static_cast<Square>(std::countr_zero(attackers)), PieceType::Pawn};
+        }
+    }
+
+    attackers = (bishop_like | rook_like) & state.queens[side_index];
+    if (attackers != EmptyBB) {
+        return SeeAttacker{static_cast<Square>(std::countr_zero(attackers)), PieceType::Queen};
+    }
+
+    attackers = state.king_attackers[side_index];
+    if (attackers != EmptyBB) {
+        return SeeAttacker{static_cast<Square>(std::countr_zero(attackers)), PieceType::King};
+    }
+
+    return SeeAttacker{};
+}
+
+void apply_see_recapture(
+    SeeState& state,
+    Color side,
+    PieceType attacker_piece,
+    Square from
+) {
+    clear_see_piece(state, side, attacker_piece, from);
+    state.occupied &= ~bit(from);
+    state.occupied |= bit(state.target);
 }
 
 } // namespace
@@ -236,31 +282,14 @@ SeeAttacker find_least_valuable_attacker(const Position& pos, Square square) {
     return SeeAttacker{};
 }
 
-
 int evaluate(const Position& pos) {
-    int score = 0;
-
-    for (PieceType piece :
-         {PieceType::Pawn, PieceType::Knight, PieceType::Bishop,
-          PieceType::Rook, PieceType::Queen, PieceType::King}) {
-        score += evaluate_piece_set(
-            pos.pieces[static_cast<int>(Color::White)][static_cast<int>(piece)],
-            piece,
-            Color::White);
-        score += evaluate_piece_set(
-            pos.pieces[static_cast<int>(Color::Black)][static_cast<int>(piece)],
-            piece,
-            Color::Black);
-    }
-
-    return score;
+    return pos.eval_score;
 }
 
 int evaluate_for_side_to_move(const Position& pos) {
     const int white_score = evaluate(pos);
     return pos.side_to_move == Color::White ? white_score : -white_score;
 }
-
 
 int static_exchange_eval(
     const Position& pos,
@@ -273,41 +302,63 @@ int static_exchange_eval(
     }
     assert(moving_piece != PieceType::None);
     assert(!is_capture(move) || captured_piece != PieceType::None);
-    Position copied_pos = pos;
-    PieceType last_attacker = moving_piece;
-    auto tmp = promotion_piece(move);
-    int last_attacker_value = tmp != PieceType::None ? get_piece_value(tmp) : get_piece_value(last_attacker);
+
+    SeeState state = make_see_state(pos, move.to(), pos.occupancy());
+    Color side = pos.side_to_move;
+    PieceType last_attacker = promoted_see_piece(moving_piece, state.target_is_promotion_rank);
+    const PieceType promoted_piece = promotion_piece(move);
+    int last_attacker_value = promoted_piece != PieceType::None
+        ? get_piece_value(promoted_piece)
+        : get_piece_value(last_attacker);
     int see = get_piece_value(captured_piece);
-    copied_pos.make_move(move, moving_piece, captured_piece);
+    if (last_attacker == PieceType::King) {
+        return see;
+    }
+    clear_see_piece(state, side, moving_piece, move.from());
+    clear_see_piece(state, opposite(side), captured_piece, move.to());
+    state.occupied &= ~bit(move.from());
+    state.occupied &= ~bit(move.to());
+    state.occupied |= bit(move.to());
+    side = opposite(side);
+    int side_index = color_idx(side);
     int sign = -1;
-    bool promotion = on_promotion_rank(move.to());
+
     while (true) {
-        auto attacker = find_least_valuable_attacker(copied_pos, move.to());
-        if (attacker.piece == PieceType::None) return see;
-        int attacker_value = get_piece_value(attacker.piece);
-        if (promotion && attacker.piece == PieceType::Pawn) {
-            attacker_value = get_piece_value(PieceType::Queen);
+        assert(last_attacker != PieceType::King);
+        const SeeAttacker attacker = find_least_valuable_pseudo_attacker(state, side_index);
+        if (attacker.piece == PieceType::None) {
+            return see;
         }
 
-        if (attacker_value > last_attacker_value) return see;
-        assert(last_attacker != PieceType::King);
+        const int attacker_value = see_piece_value(attacker.piece, state.target_is_promotion_rank);
 
+        if (attacker_value > last_attacker_value) {
+            apply_see_recapture(
+                state,
+                side,
+                attacker.piece,
+                attacker.square);
+            if (find_least_valuable_pseudo_attacker(state, side_index ^ 1).piece != PieceType::None) {
+                return see;
+            }
+            return see + last_attacker_value * sign;
+        }
         see += last_attacker_value * sign;
 
-        last_attacker = attacker.piece;
         last_attacker_value = attacker_value;
-        apply_see_capture(copied_pos, attacker.square, move.to());
+        apply_see_recapture(state, side, attacker.piece, attacker.square);
+        last_attacker = promoted_see_piece(attacker.piece, state.target_is_promotion_rank);
+        side = opposite(side);
+        side_index ^= 1;
         sign = -sign;
     }
-
-    return see;
 }
 
 int static_exchange_eval(const Position& pos, Move move) {
-    const PieceType moving_piece = pos.piece_type_on_occupied(move.from());
+    const PieceType moving_piece = pos.piece_type_on_occupied(pos.side_to_move, move.from());
     const PieceType captured_piece = move.flag() == MoveFlag::EnPassant
         ? PieceType::Pawn
-        : pos.piece_type_on_occupied(move.to());
+        : pos.piece_type_on_occupied(opposite(pos.side_to_move), move.to());
     return static_exchange_eval(pos, move, moving_piece, captured_piece);
 }
 

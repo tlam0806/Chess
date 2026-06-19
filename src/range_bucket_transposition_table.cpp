@@ -15,6 +15,14 @@ std::size_t entry_count_from_megabytes(std::size_t megabytes) {
     return std::max<std::size_t>(bytes / sizeof(RangeTTEntry), 1);
 }
 
+std::size_t floor_power_of_two(std::size_t value) {
+    std::size_t result = 1;
+    while (result <= value / 2) {
+        result *= 2;
+    }
+    return result;
+}
+
 int score_from_table(int score, int ply) {
     if (score >= Infinity / 2 || score <= -Infinity / 2) {
         return score;
@@ -49,7 +57,8 @@ RangeBucketTranspositionTable::RangeBucketTranspositionTable(
     std::size_t bucket_size
 ) : bucket_size_(std::max<std::size_t>(bucket_size, 1)) {
     const std::size_t total_entries = entry_count_from_megabytes(megabytes);
-    bucket_count_ = std::max<std::size_t>(total_entries / bucket_size_, 1);
+    bucket_count_ = floor_power_of_two(std::max<std::size_t>(total_entries / bucket_size_, 1));
+    bucket_mask_ = bucket_count_ - 1;
     entries_.resize(bucket_count_ * bucket_size_);
 }
 
@@ -78,11 +87,11 @@ const RangeTranspositionTableStats& RangeBucketTranspositionTable::stats() const
 }
 
 RangeTTEntry* RangeBucketTranspositionTable::bucket_begin(HashKey key) {
-    return entries_.data() + (key % bucket_count_) * bucket_size_;
+    return entries_.data() + (key & bucket_mask_) * bucket_size_;
 }
 
 const RangeTTEntry* RangeBucketTranspositionTable::bucket_begin(HashKey key) const {
-    return entries_.data() + (key % bucket_count_) * bucket_size_;
+    return entries_.data() + (key & bucket_mask_) * bucket_size_;
 }
 
 bool RangeBucketTranspositionTable::probe(
@@ -103,7 +112,7 @@ bool RangeBucketTranspositionTable::probe(
     for (std::size_t i = 0; i < bucket_size_; ++i) {
         const RangeTTEntry& entry = bucket[i];
         if (!entry.valid) {
-            continue;
+            break;
         }
         saw_valid_entry = true;
         if (entry.key != key) {

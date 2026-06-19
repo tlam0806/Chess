@@ -227,20 +227,63 @@ constexpr std::array<int, 64> BishopShifts{{
         return bishop_attacks(square, occupancy) | rook_attacks(square, occupancy);
     }
 
-    bool is_square_attacked(const Position& pos, Square square, Color by_color) {
+    bool is_square_attacked(
+        const Position& pos,
+        Square square,
+        Color by_color,
+        Bitboard occupancy
+    ) {
         assert(is_valid_square(square));
         Color other_color = by_color == Color::Black ? Color::White : Color::Black;
         int color_index = static_cast<int>(by_color);
-        const Bitboard occupancy = pos.occupancy();
+        const Bitboard queens = pos.pieces[color_index][static_cast<int>(PieceType::Queen)];
         return (pawn_attacks(other_color, square) & pos.pieces[color_index][0])
-                        || (knight_attacks(square) & pos.pieces[color_index][1])   
-                        || (bishop_attacks(square, occupancy) & pos.pieces[color_index][2])  
-                        || (rook_attacks(square, occupancy) & pos.pieces[color_index][3])  
-                        || (queen_attacks(square, occupancy) & pos.pieces[color_index][4])  
+                        || (knight_attacks(square) & pos.pieces[color_index][1])
+                        || (bishop_attacks(square, occupancy)
+                            & (pos.pieces[color_index][static_cast<int>(PieceType::Bishop)] | queens))
+                        || (rook_attacks(square, occupancy)
+                            & (pos.pieces[color_index][static_cast<int>(PieceType::Rook)] | queens))
                         || (king_attacks(square) & pos.pieces[color_index][5]);
     }
 
+    bool is_square_attacked(
+        const Position& pos,
+        Square square,
+        Color by_color,
+        Bitboard occupancy,
+        Square excluded_attacker_square
+    ) {
+        if (excluded_attacker_square == NoSquare) {
+            return is_square_attacked(pos, square, by_color, occupancy);
+        }
+
+        assert(is_valid_square(square));
+        Color other_color = by_color == Color::Black ? Color::White : Color::Black;
+        int color_index = static_cast<int>(by_color);
+        const Bitboard included = ~bit(excluded_attacker_square);
+        const Bitboard pawns = pos.pieces[color_index][static_cast<int>(PieceType::Pawn)] & included;
+        const Bitboard knights = pos.pieces[color_index][static_cast<int>(PieceType::Knight)] & included;
+        const Bitboard bishops = pos.pieces[color_index][static_cast<int>(PieceType::Bishop)] & included;
+        const Bitboard rooks = pos.pieces[color_index][static_cast<int>(PieceType::Rook)] & included;
+        const Bitboard queens = pos.pieces[color_index][static_cast<int>(PieceType::Queen)] & included;
+        const Bitboard kings = pos.pieces[color_index][static_cast<int>(PieceType::King)] & included;
+        return (pawn_attacks(other_color, square) & pawns)
+                        || (knight_attacks(square) & knights)
+                        || (bishop_attacks(square, occupancy) & (bishops | queens))
+                        || (rook_attacks(square, occupancy) & (rooks | queens))
+                        || (king_attacks(square) & kings);
+    }
+
+    bool is_square_attacked(const Position& pos, Square square, Color by_color) {
+        return is_square_attacked(pos, square, by_color, pos.occupancy());
+    }
+
     Square king_square(const Position& pos, Color color) {
+        const Square cached = pos.king_squares[static_cast<int>(color)];
+        if (cached != NoSquare) {
+            assert((pos.pieces[static_cast<int>(color)][static_cast<int>(PieceType::King)] & bit(cached)) != EmptyBB);
+            return cached;
+        }
         const Bitboard king_board = pos.pieces[static_cast<int>(color)][static_cast<int>(PieceType::King)];
         assert(popcount(king_board) == 1);
         return std::countr_zero(king_board);

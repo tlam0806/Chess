@@ -2,13 +2,112 @@
 
 #include "attacks.hpp"
 
+#include <array>
 #include <bit>
 #include <cassert>
 #include <cstdlib>
-
 namespace chess {
 
 namespace {
+
+constexpr int abs_int(int value) {
+    return value < 0 ? -value : value;
+}
+
+constexpr bool squares_aligned(Square a, Square b) {
+    const int af = file_of(a);
+    const int ar = rank_of(a);
+    const int bf = file_of(b);
+    const int br = rank_of(b);
+    return af == bf
+        || ar == br
+        || abs_int(af - bf) == abs_int(ar - br);
+}
+
+constexpr Bitboard make_ray_to_mask(Square from, Square to) {
+    if (from == to || !squares_aligned(from, to)) {
+        return EmptyBB;
+    }
+
+    const int from_file = file_of(from);
+    const int from_rank = rank_of(from);
+    const int to_file = file_of(to);
+    const int to_rank = rank_of(to);
+    const int file_delta = (to_file > from_file) - (to_file < from_file);
+    const int rank_delta = (to_rank > from_rank) - (to_rank < from_rank);
+
+    Bitboard mask = EmptyBB;
+    int file = from_file + file_delta;
+    int rank = from_rank + rank_delta;
+    while (file != to_file || rank != to_rank) {
+        mask |= bit(make_square(file, rank));
+        file += file_delta;
+        rank += rank_delta;
+    }
+    return mask;
+}
+
+consteval std::array<Bitboard, BoardSize * BoardSize> make_ray_to_masks() {
+    std::array<Bitboard, BoardSize * BoardSize> masks{};
+    for (Square from = 0; from < BoardSize; ++from) {
+        for (Square to = 0; to < BoardSize; ++to) {
+            masks[static_cast<std::size_t>(from) * BoardSize + static_cast<std::size_t>(to)] =
+                make_ray_to_mask(from, to);
+        }
+    }
+    return masks;
+}
+
+constexpr auto RayToMasks = make_ray_to_masks();
+
+constexpr Bitboard make_ray_to_edge_mask(Square from, Square through) {
+    if (from == through || !squares_aligned(from, through)) {
+        return EmptyBB;
+    }
+
+    const int from_file = file_of(from);
+    const int from_rank = rank_of(from);
+    const int through_file = file_of(through);
+    const int through_rank = rank_of(through);
+    const int file_delta = (through_file > from_file) - (through_file < from_file);
+    const int rank_delta = (through_rank > from_rank) - (through_rank < from_rank);
+
+    Bitboard mask = EmptyBB;
+    int file = from_file + file_delta;
+    int rank = from_rank + rank_delta;
+    while (is_valid_square(file, rank)) {
+        mask |= bit(make_square(file, rank));
+        file += file_delta;
+        rank += rank_delta;
+    }
+    return mask;
+}
+
+consteval std::array<Bitboard, BoardSize * BoardSize> make_ray_to_edge_masks() {
+    std::array<Bitboard, BoardSize * BoardSize> masks{};
+    for (Square from = 0; from < BoardSize; ++from) {
+        for (Square through = 0; through < BoardSize; ++through) {
+            masks[static_cast<std::size_t>(from) * BoardSize + static_cast<std::size_t>(through)] =
+                make_ray_to_edge_mask(from, through);
+        }
+    }
+    return masks;
+}
+
+constexpr auto RayToEdgeMasks = make_ray_to_edge_masks();
+
+Bitboard ray_to_mask(Square from, Square to) {
+    assert(is_valid_square(from));
+    assert(is_valid_square(to));
+    return RayToMasks[static_cast<std::size_t>(from) * BoardSize + static_cast<std::size_t>(to)];
+}
+
+Bitboard ray_to_edge_mask(Square from, Square through) {
+    assert(is_valid_square(from));
+    assert(is_valid_square(through));
+    return RayToEdgeMasks[
+        static_cast<std::size_t>(from) * BoardSize + static_cast<std::size_t>(through)];
+}
 
 struct Direction {
     int file_delta = 0;
@@ -76,31 +175,6 @@ Bitboard ray_between_exclusive(Square from, Square to) {
     return ray;
 }
 
-bool is_square_attacked_with_occupancy(
-    const Position& pos,
-    Square square,
-    Color by_color,
-    Bitboard occupancy,
-    Square excluded_attacker_square
-) {
-    assert(is_valid_square(square));
-    const Bitboard excluded = excluded_attacker_square == NoSquare ? EmptyBB : bit(excluded_attacker_square);
-    const int color_idx = static_cast<int>(by_color);
-    const Color other_color = opposite(by_color);
-    return (pawn_attacks(other_color, square)
-                & (pos.pieces[color_idx][static_cast<int>(PieceType::Pawn)] & ~excluded))
-        || (knight_attacks(square)
-                & (pos.pieces[color_idx][static_cast<int>(PieceType::Knight)] & ~excluded))
-        || (bishop_attacks(square, occupancy)
-                & (pos.pieces[color_idx][static_cast<int>(PieceType::Bishop)] & ~excluded))
-        || (rook_attacks(square, occupancy)
-                & (pos.pieces[color_idx][static_cast<int>(PieceType::Rook)] & ~excluded))
-        || (queen_attacks(square, occupancy)
-                & (pos.pieces[color_idx][static_cast<int>(PieceType::Queen)] & ~excluded))
-        || (king_attacks(square)
-                & (pos.pieces[color_idx][static_cast<int>(PieceType::King)] & ~excluded));
-}
-
 Bitboard occupancy_after_move(const Position& pos, Move move) {
     const Square from = from_square(move);
     const Square to = to_square(move);
@@ -142,27 +216,361 @@ bool piece_attacks_square(
 
 } // namespace
 
-KingSafetyContext make_king_safety_context(const Position& pos) {
+KingSafetyContext make_king_safety_context(const Position& pos, Color color) {
     KingSafetyContext context;
-    const Color us = pos.side_to_move;
+    const Color us = color;
     const Color them = opposite(us);
     const int them_idx = static_cast<int>(them);
-    context.king_square = king_square(pos, us);
-    const Bitboard occupancy = pos.occupancy();
+    const Bitboard king_board = pos.pieces[static_cast<int>(us)][static_cast<int>(PieceType::King)];
+    assert(popcount(king_board) == 1);
+    context.king_square = std::countr_zero(king_board);
+    const Bitboard our_pieces = pos.occupancy(us);
+    const Bitboard their_pieces = pos.occupancy(them);
+    const Bitboard occupancy = our_pieces | their_pieces;
+    const Bitboard enemy_rooks_or_queens =
+        pos.pieces[them_idx][static_cast<int>(PieceType::Rook)]
+        | pos.pieces[them_idx][static_cast<int>(PieceType::Queen)];
+    const Bitboard enemy_bishops_or_queens =
+        pos.pieces[them_idx][static_cast<int>(PieceType::Bishop)]
+        | pos.pieces[them_idx][static_cast<int>(PieceType::Queen)];
+    const Bitboard rook_attack_from_king = rook_attacks(context.king_square, occupancy);
+    const Bitboard bishop_attack_from_king = bishop_attacks(context.king_square, occupancy);
+    const Bitboard slider_checkers =
+        (bishop_attack_from_king & enemy_bishops_or_queens)
+        | (rook_attack_from_king & enemy_rooks_or_queens);
 
     context.checkers =
         (pawn_attacks(us, context.king_square)
             & pos.pieces[them_idx][static_cast<int>(PieceType::Pawn)])
         | (knight_attacks(context.king_square)
             & pos.pieces[them_idx][static_cast<int>(PieceType::Knight)])
-        | (king_attacks(context.king_square)
-            & pos.pieces[them_idx][static_cast<int>(PieceType::King)])
-        | (bishop_attacks(context.king_square, occupancy)
-            & (pos.pieces[them_idx][static_cast<int>(PieceType::Bishop)]
-                | pos.pieces[them_idx][static_cast<int>(PieceType::Queen)]))
-        | (rook_attacks(context.king_square, occupancy)
-            & (pos.pieces[them_idx][static_cast<int>(PieceType::Rook)]
-                | pos.pieces[them_idx][static_cast<int>(PieceType::Queen)]));
+        | slider_checkers;
+
+    if (context.checkers == EmptyBB) {
+        context.block_mask = FullBB;
+    } else if (popcount(context.checkers) == 1) {
+        const Square checker = std::countr_zero(context.checkers);
+        const Bitboard checker_mask = bit(checker);
+        if ((slider_checkers & checker_mask) != EmptyBB) {
+            context.block_mask = ray_to_mask(context.king_square, checker);
+        } else {
+            context.block_mask = checker_mask;
+        }
+    } else {
+        context.block_mask = EmptyBB;
+    }
+
+    const Bitboard rook_first_blockers = rook_attack_from_king & our_pieces;
+    if (rook_first_blockers != EmptyBB) {
+        Bitboard pinners =
+            rook_attacks(context.king_square, occupancy ^ rook_first_blockers)
+            & enemy_rooks_or_queens;
+        while (pinners != EmptyBB) {
+            const Square pinner = pop_lsb(pinners);
+            context.pinned |= ray_to_mask(context.king_square, pinner) & rook_first_blockers;
+        }
+    }
+
+    const Bitboard bishop_first_blockers = bishop_attack_from_king & our_pieces;
+    if (bishop_first_blockers != EmptyBB) {
+        Bitboard pinners =
+            bishop_attacks(context.king_square, occupancy ^ bishop_first_blockers)
+            & enemy_bishops_or_queens;
+        while (pinners != EmptyBB) {
+            const Square pinner = pop_lsb(pinners);
+            context.pinned |= ray_to_mask(context.king_square, pinner) & bishop_first_blockers;
+        }
+    }
+
+    return context;
+}
+
+KingSafetyContext make_king_safety_context(const Position& pos) {
+    return make_king_safety_context(pos, pos.side_to_move);
+}
+
+KingSafetyContext cached_king_safety_context(const Position& pos, Color color) {
+    const int color_idx = static_cast<int>(color);
+    return KingSafetyContext{
+        pos.king_squares[color_idx],
+        pos.king_checkers[color_idx],
+        pos.king_pinned[color_idx],
+        pos.king_block_masks[color_idx],
+    };
+}
+
+void refresh_king_safety(Position& pos) {
+    for (Color color : {Color::White, Color::Black}) {
+        const int color_idx = static_cast<int>(color);
+        if (popcount(pos.pieces[color_idx][static_cast<int>(PieceType::King)]) != 1) {
+            pos.king_squares[color_idx] = NoSquare;
+            pos.king_checkers[color_idx] = EmptyBB;
+            pos.king_pinned[color_idx] = EmptyBB;
+            pos.king_block_masks[color_idx] = FullBB;
+            continue;
+        }
+        const KingSafetyContext context = make_king_safety_context(pos, color);
+        pos.king_squares[color_idx] = context.king_square;
+        pos.king_checkers[color_idx] = context.checkers;
+        pos.king_pinned[color_idx] = context.pinned;
+        pos.king_block_masks[color_idx] = context.block_mask;
+    }
+}
+
+namespace {
+
+constexpr bool same_rook_line(Square a, Square b) {
+    return file_of(a) == file_of(b) || rank_of(a) == rank_of(b);
+}
+
+constexpr bool same_bishop_line(Square a, Square b) {
+    return abs_int(file_of(a) - file_of(b)) == abs_int(rank_of(a) - rank_of(b));
+}
+
+Square nearest_square_on_ray(Bitboard squares, bool increasing_square_index) {
+    assert(squares != EmptyBB);
+    return increasing_square_index
+        ? std::countr_zero(squares)
+        : (BoardSize - 1 - std::countl_zero(squares));
+}
+
+bool direct_piece_attacks_king(PieceType piece, Color attacker_color, Square from, Square king) {
+    switch (piece) {
+        case PieceType::Pawn:
+            return (pawn_attacks(opposite(attacker_color), king) & bit(from)) != EmptyBB;
+        case PieceType::Knight:
+            return (knight_attacks(from) & bit(king)) != EmptyBB;
+        case PieceType::King:
+            return (king_attacks(from) & bit(king)) != EmptyBB;
+        default:
+            return false;
+    }
+}
+
+constexpr bool is_direct_checker_piece(PieceType piece) {
+    return piece == PieceType::Pawn
+        || piece == PieceType::Knight
+        || piece == PieceType::King;
+}
+
+Bitboard block_mask_from_checkers(const Position& pos, Color color, Square king, Bitboard checkers) {
+    if (checkers == EmptyBB) {
+        return FullBB;
+    }
+    if (popcount(checkers) != 1) {
+        return EmptyBB;
+    }
+
+    const Color enemy = opposite(color);
+    const int enemy_idx = static_cast<int>(enemy);
+    const Square checker = std::countr_zero(checkers);
+    const Bitboard checker_mask = bit(checker);
+    const Bitboard enemy_rooks_or_queens =
+        pos.pieces[enemy_idx][static_cast<int>(PieceType::Rook)]
+        | pos.pieces[enemy_idx][static_cast<int>(PieceType::Queen)];
+    const Bitboard enemy_bishops_or_queens =
+        pos.pieces[enemy_idx][static_cast<int>(PieceType::Bishop)]
+        | pos.pieces[enemy_idx][static_cast<int>(PieceType::Queen)];
+    if ((enemy_rooks_or_queens & checker_mask) != EmptyBB
+        && same_rook_line(king, checker)) {
+        return ray_to_mask(king, checker);
+    }
+    if ((enemy_bishops_or_queens & checker_mask) != EmptyBB
+        && same_bishop_line(king, checker)) {
+        return ray_to_mask(king, checker);
+    }
+    return checker_mask;
+}
+
+void update_rook_ray(
+    const Position& pos,
+    Color color,
+    Square king,
+    Square affected_square,
+    Bitboard& checkers,
+    Bitboard& pinned
+) {
+    assert(same_rook_line(king, affected_square));
+    const Color enemy = opposite(color);
+    const int enemy_idx = static_cast<int>(enemy);
+    const Bitboard ray = ray_to_edge_mask(king, affected_square);
+    const Bitboard enemy_sliders =
+        pos.pieces[enemy_idx][static_cast<int>(PieceType::Rook)]
+        | pos.pieces[enemy_idx][static_cast<int>(PieceType::Queen)];
+    Bitboard checker = EmptyBB;
+    Bitboard pinned_piece = EmptyBB;
+    const Bitboard sliders = ray & enemy_sliders;
+    if (sliders != EmptyBB) {
+        const Square slider = nearest_square_on_ray(sliders, affected_square > king);
+        const Bitboard occupancy = pos.occupancy();
+        const Bitboard our_pieces = pos.occupancy(color);
+        const Bitboard blockers = ray_to_mask(king, slider) & occupancy;
+        const int blocker_count = popcount(blockers);
+        if (blocker_count == 0) {
+            checker = bit(slider);
+        } else if (blocker_count == 1 && (blockers & our_pieces) != EmptyBB) {
+            pinned_piece = blockers;
+        }
+    }
+
+    checkers &= ~(ray & enemy_sliders);
+    checkers |= checker;
+    pinned &= ~ray;
+    pinned |= pinned_piece;
+}
+
+void update_bishop_ray(
+    const Position& pos,
+    Color color,
+    Square king,
+    Square affected_square,
+    Bitboard& checkers,
+    Bitboard& pinned
+) {
+    assert(same_bishop_line(king, affected_square));
+    const Color enemy = opposite(color);
+    const int enemy_idx = static_cast<int>(enemy);
+    const Bitboard ray = ray_to_edge_mask(king, affected_square);
+    const Bitboard enemy_sliders =
+        pos.pieces[enemy_idx][static_cast<int>(PieceType::Bishop)]
+        | pos.pieces[enemy_idx][static_cast<int>(PieceType::Queen)];
+    Bitboard checker = EmptyBB;
+    Bitboard pinned_piece = EmptyBB;
+    const Bitboard sliders = ray & enemy_sliders;
+    if (sliders != EmptyBB) {
+        const Square slider = nearest_square_on_ray(sliders, affected_square > king);
+        const Bitboard occupancy = pos.occupancy();
+        const Bitboard our_pieces = pos.occupancy(color);
+        const Bitboard blockers = ray_to_mask(king, slider) & occupancy;
+        const int blocker_count = popcount(blockers);
+        if (blocker_count == 0) {
+            checker = bit(slider);
+        } else if (blocker_count == 1 && (blockers & our_pieces) != EmptyBB) {
+            pinned_piece = blockers;
+        }
+    }
+
+    checkers &= ~(ray & enemy_sliders);
+    checkers |= checker;
+    pinned &= ~ray;
+    pinned |= pinned_piece;
+}
+
+void update_slider_ray(
+    const Position& pos,
+    Color color,
+    Square king,
+    Square affected_square,
+    Bitboard& checkers,
+    Bitboard& pinned
+) {
+    if (same_rook_line(king, affected_square)) {
+        update_rook_ray(pos, color, king, affected_square, checkers, pinned);
+    } else if (same_bishop_line(king, affected_square)) {
+        update_bishop_ray(pos, color, king, affected_square, checkers, pinned);
+    }
+}
+
+void store_king_safety(Position& pos, Color color, const KingSafetyContext& context) {
+    const int color_idx = static_cast<int>(color);
+    pos.king_squares[color_idx] = context.king_square;
+    pos.king_checkers[color_idx] = context.checkers;
+    pos.king_pinned[color_idx] = context.pinned;
+    pos.king_block_masks[color_idx] = context.block_mask;
+}
+
+void recompute_cached_king_safety(Position& pos) {
+    store_king_safety(pos, Color::White, make_king_safety_context(pos, Color::White));
+    store_king_safety(pos, Color::Black, make_king_safety_context(pos, Color::Black));
+}
+
+} // namespace
+
+void update_king_safety_after_move(
+    Position& pos,
+    Move move,
+    Color moved_color,
+    PieceType moved_piece,
+    PieceType captured_piece,
+    Square captured_square
+) {
+    const Square from = from_square(move);
+    const Square to = to_square(move);
+    const MoveFlag flag = move_flag(move);
+    (void)captured_piece;
+
+    const bool special_move =
+        moved_piece == PieceType::King
+        || flag == MoveFlag::KingCastle
+        || flag == MoveFlag::QueenCastle
+        || flag == MoveFlag::EnPassant
+        || promotion_piece(move) != PieceType::None;
+    if (special_move) {
+        recompute_cached_king_safety(pos);
+        return;
+    }
+
+    const Color enemy_color = opposite(moved_color);
+    const Square enemy_king = pos.king_squares[static_cast<int>(enemy_color)];
+    assert(enemy_king != NoSquare);
+    const Bitboard enemy_direct_checker =
+        is_direct_checker_piece(moved_piece)
+            && direct_piece_attacks_king(moved_piece, moved_color, to, enemy_king)
+        ? bit(to)
+        : EmptyBB;
+
+    for (Color color : {Color::White, Color::Black}) {
+        const int color_idx = static_cast<int>(color);
+        assert(popcount(pos.pieces[color_idx][static_cast<int>(PieceType::King)]) == 1);
+
+        const Square king = pos.king_squares[color_idx];
+        assert(king != NoSquare);
+        Bitboard checkers = EmptyBB;
+        Bitboard pinned = pos.king_pinned[color_idx];
+        update_slider_ray(pos, color, king, from, checkers, pinned);
+        update_slider_ray(pos, color, king, to, checkers, pinned);
+        if (captured_square != NoSquare) {
+            update_slider_ray(pos, color, king, captured_square, checkers, pinned);
+        }
+
+        if (color == enemy_color) {
+            checkers |= enemy_direct_checker;
+        }
+
+        pos.king_checkers[color_idx] = checkers;
+        pos.king_pinned[color_idx] = pinned;
+        pos.king_block_masks[color_idx] =
+            block_mask_from_checkers(pos, color, king, checkers);
+    }
+}
+
+KingSafetyContext make_old_king_safety_context(const Position& pos) {
+    KingSafetyContext context;
+    const Color us = pos.side_to_move;
+    const Color them = opposite(us);
+    const int them_idx = static_cast<int>(them);
+    const Bitboard king_board = pos.pieces[static_cast<int>(us)][static_cast<int>(PieceType::King)];
+    assert(popcount(king_board) == 1);
+    context.king_square = std::countr_zero(king_board);
+    const Bitboard our_pieces = pos.occupancy(us);
+    const Bitboard their_pieces = pos.occupancy(them);
+    const Bitboard occupancy = our_pieces | their_pieces;
+    const Bitboard enemy_rooks_or_queens =
+        pos.pieces[them_idx][static_cast<int>(PieceType::Rook)]
+        | pos.pieces[them_idx][static_cast<int>(PieceType::Queen)];
+    const Bitboard enemy_bishops_or_queens =
+        pos.pieces[them_idx][static_cast<int>(PieceType::Bishop)]
+        | pos.pieces[them_idx][static_cast<int>(PieceType::Queen)];
+    const Bitboard rook_attack_from_king = rook_attacks(context.king_square, occupancy);
+    const Bitboard bishop_attack_from_king = bishop_attacks(context.king_square, occupancy);
+
+    context.checkers =
+        (pawn_attacks(us, context.king_square)
+            & pos.pieces[them_idx][static_cast<int>(PieceType::Pawn)])
+        | (knight_attacks(context.king_square)
+            & pos.pieces[them_idx][static_cast<int>(PieceType::Knight)])
+        | (bishop_attack_from_king & enemy_bishops_or_queens)
+        | (rook_attack_from_king & enemy_rooks_or_queens);
 
     if (context.checkers == EmptyBB) {
         context.block_mask = FullBB;
@@ -183,8 +591,6 @@ KingSafetyContext make_king_safety_context(const Position& pos) {
         context.block_mask = EmptyBB;
     }
 
-    const Bitboard our_pieces = pos.occupancy(us);
-    const Bitboard their_pieces = pos.occupancy(them);
     for (const Direction direction : KingRayDirections) {
         Square blocker = NoSquare;
         int file = file_of(context.king_square) + direction.file_delta;
@@ -247,7 +653,7 @@ bool is_pseudo_move_legal(
             excluded_attacker_square = to;
         }
         occupancy |= bit(to);
-        return !is_square_attacked_with_occupancy(
+        return !is_square_attacked(
             pos,
             to,
             opposite(pos.side_to_move),

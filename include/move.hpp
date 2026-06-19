@@ -7,11 +7,16 @@
 #include <cstdint>
 #include <cstddef>
 #include <limits>
+#include <memory>
+#include <new>
 #include <string>
+#include <type_traits>
 #include <vector>
 #include "position.hpp"
 
 namespace chess {
+
+struct KingSafetyContext;
 
 enum class MoveFlag : std::uint8_t {
     Quiet = 0,
@@ -146,15 +151,44 @@ std::string move_to_string(Move move);
 template <typename T, std::size_t Capacity>
 struct FixedList {
     static_assert(Capacity <= std::numeric_limits<std::uint16_t>::max());
+    static_assert(std::is_trivially_destructible_v<T>);
 
     using value_type = T;
 
-    std::array<T, Capacity> moves{};
+    alignas(T) std::array<std::byte, sizeof(T) * Capacity> storage;
     std::uint16_t count = 0;
+
+    FixedList() = default;
+
+    FixedList(const FixedList& other) {
+        for (const T& item : other) {
+            push(item);
+        }
+    }
+
+    FixedList& operator=(const FixedList& other) {
+        if (this == &other) {
+            return *this;
+        }
+        clear();
+        for (const T& item : other) {
+            push(item);
+        }
+        return *this;
+    }
+
+    T* data() {
+        return std::launder(reinterpret_cast<T*>(storage.data()));
+    }
+
+    const T* data() const {
+        return std::launder(reinterpret_cast<const T*>(storage.data()));
+    }
 
     void push(T item) {
         assert(count < Capacity && "FixedList capacity exceeded");
-        moves[count++] = item;
+        std::construct_at(data() + count, item);
+        ++count;
     }
 
     void push_back(T item) {
@@ -174,29 +208,29 @@ struct FixedList {
     }
 
     T* begin() {
-        return moves.data();
+        return data();
     }
 
     T* end() {
-        return moves.data() + count;
+        return data() + count;
     }
 
     const T* begin() const {
-        return moves.data();
+        return data();
     }
 
     const T* end() const {
-        return moves.data() + count;
+        return data() + count;
     }
 
     T& operator[](std::size_t index) {
         assert(index < count);
-        return moves[index];
+        return data()[index];
     }
 
     const T& operator[](std::size_t index) const {
         assert(index < count);
-        return moves[index];
+        return data()[index];
     }
 };
 
@@ -211,6 +245,14 @@ void generate_queen_moves(const Position& pos, MoveList& moves);
 void generate_pawn_moves(const Position& pos, MoveList& moves);
 
 void generate_pseudo_legal_moves(const Position& pos, MoveList& moves);
+void generate_pseudo_capture_moves(const Position& pos, MoveList& moves);
+void generate_pseudo_non_capture_moves(const Position& pos, MoveList& moves);
+void generate_pseudo_promotion_moves(const Position& pos, MoveList& moves);
+void generate_pseudo_noisy_moves(const Position& pos, MoveList& moves);
+void generate_legal_capture_moves(const Position& pos, const KingSafetyContext& king_safety, MoveList& moves);
+void generate_legal_noisy_moves(const Position& pos, const KingSafetyContext& king_safety, MoveList& moves);
+void generate_legal_non_capture_moves(const Position& pos, const KingSafetyContext& king_safety, MoveList& moves);
+void generate_legal_evasion_moves(const Position& pos, const KingSafetyContext& king_safety, MoveList& moves);
 void generate_legal_moves(const Position& pos, MoveList& moves);
 
 std::vector<Move> generate_knight_moves(const Position& pos);
@@ -221,6 +263,8 @@ std::vector<Move> generate_queen_moves(const Position& pos);
 std::vector<Move> generate_pawn_moves(const Position& pos);
 
 std::vector<Move> generate_pseudo_legal_moves(const Position& pos);
+std::vector<Move> generate_pseudo_non_capture_moves(const Position& pos);
+std::vector<Move> generate_pseudo_noisy_moves(const Position& pos);
 
 std::vector<Move> generate_legal_moves(const Position& pos);
 

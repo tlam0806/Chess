@@ -22,6 +22,16 @@ bool contains_move(const std::vector<Move>& moves, Move target) {
     return false;
 }
 
+Move require_legal_move(const Position& pos, std::string_view text) {
+    for (Move move : generate_legal_moves(pos)) {
+        if (move_to_string(move) == text) {
+            return move;
+        }
+    }
+    assert(false && "required legal move not found");
+    return Move{};
+}
+
 char piece_char(Color color, PieceType piece) {
     char result = '?';
     switch (piece) {
@@ -193,13 +203,80 @@ int main() {
         assert(pos.set_fen("7k/5K2/8/8/8/8/1Q6/8 w - - 0 1"));
 
         HeuristicSearcherV19 v19(1);
-        const SearchResult result = v19.search_best_move(pos, 1);
-        assert(result.score == CheckmateScore - 1);
+        for (int depth = 1; depth <= 3; ++depth) {
+            v19.clear_tt();
+            const SearchResult result = v19.search_best_move(pos, depth);
+            assert(result.score == CheckmateScore - 1);
+            assert(contains_move(generate_legal_moves(pos), result.best_move));
 
-        Position next = pos;
-        next.make_move(result.best_move);
-        assert(generate_legal_moves(next).empty());
-        assert(in_check(next, next.side_to_move));
+            Position next = pos;
+            next.make_move(result.best_move);
+            assert(generate_legal_moves(next).empty());
+            assert(in_check(next, next.side_to_move));
+        }
+    }
+
+    {
+        Position pos;
+        assert(pos.set_fen("7k/5K2/6Q1/8/8/8/8/8 b - - 0 1"));
+        assert(generate_legal_moves(pos).empty());
+        assert(!in_check(pos, pos.side_to_move));
+
+        HeuristicSearcherV19 v19(1);
+        for (int depth = 1; depth <= 3; ++depth) {
+            v19.clear_tt();
+            const SearchResult result = v19.search_best_move(pos, depth);
+            assert(result.score == 0);
+            assert(result.nodes == 1);
+            assert(result.best_move.value == 0);
+        }
+    }
+
+    {
+        Position pos;
+        assert(pos.set_fen("7k/6Q1/6K1/8/8/8/8/8 b - - 0 1"));
+        assert(generate_legal_moves(pos).empty());
+        assert(in_check(pos, pos.side_to_move));
+
+        HeuristicSearcherV19 v19(1);
+        for (int depth = 1; depth <= 3; ++depth) {
+            v19.clear_tt();
+            const SearchResult result = v19.search_best_move(pos, depth);
+            assert(result.score == -CheckmateScore);
+            assert(result.nodes == 1);
+            assert(result.best_move.value == 0);
+        }
+    }
+
+    {
+        Position pos;
+        assert(pos.set_fen("7k/5K2/8/6Q1/8/8/8/8 w - - 0 1"));
+        const Move stalemate_move = require_legal_move(pos, "g5g6");
+
+        Position stalemate_child = pos;
+        stalemate_child.make_move(stalemate_move);
+        assert(generate_legal_moves(stalemate_child).empty());
+        assert(!in_check(stalemate_child, stalemate_child.side_to_move));
+
+        HeuristicSearcherV19 v19(1);
+        const SearchResult child_result = v19.search_best_move(stalemate_child, 1);
+        assert(child_result.score == 0);
+        assert(child_result.nodes == 1);
+
+        const SearchResult parent_depth_2 = v19.search_best_move(pos, 2);
+        assert(parent_depth_2.best_move != stalemate_move);
+        assert(parent_depth_2.score > 0);
+        assert(contains_move(generate_legal_moves(pos), parent_depth_2.best_move));
+    }
+
+    {
+        Position pos;
+        assert(pos.set_fen("7k/6Q1/6K1/8/8/8/8/8 b - - 0 1"));
+
+        HeuristicSearcherV19 v19(1);
+        const SearchResult qsearch_result = v19.search_best_move(pos, 0);
+        assert(qsearch_result.score == -CheckmateScore);
+        assert(qsearch_result.best_move.value == 0);
     }
 
     {

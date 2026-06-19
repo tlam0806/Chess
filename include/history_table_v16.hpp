@@ -18,8 +18,11 @@ public:
     void reset();
 
     void store(const Position& pos, Move move, int depth);
+    void store(Color color, PieceType piece, Move move, int depth);
     void penalize(const Position& pos, Move move, int depth);
+    void penalize(Color color, PieceType piece, Move move, int depth);
     Score get_score(const Position& pos, Move move) const;
+    Score get_score(Color color, PieceType piece, Move move) const;
 
 private:
     static constexpr int ColorEncoder = 2;

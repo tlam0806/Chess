@@ -1,4 +1,5 @@
 #include "attacks.hpp"
+#include "king_safety.hpp"
 #include "move.hpp"
 #include "position.hpp"
 
@@ -26,6 +27,10 @@ std::set<std::string> move_keys(const std::vector<Move>& moves) {
         assert(inserted && "duplicate move generated");
     }
     return keys;
+}
+
+std::vector<Move> to_vector(const MoveList& moves) {
+    return std::vector<Move>(moves.begin(), moves.end());
 }
 
 bool contains_move(const std::vector<Move>& moves, Move move) {
@@ -66,10 +71,108 @@ void assert_pseudo_matches_piece_generators(const Position& pos) {
     (void)move_keys(pseudo_moves);
 }
 
+void assert_noisy_matches_filtered_pseudo(const Position& pos) {
+    const std::vector<Move> pseudo_moves = generate_pseudo_legal_moves(pos);
+    const std::vector<Move> noisy_moves = generate_pseudo_noisy_moves(pos);
+
+    std::vector<Move> filtered;
+    for (Move move : pseudo_moves) {
+        if (is_capture(move) || promotion_piece(move) != PieceType::None) {
+            filtered.push_back(move);
+        }
+    }
+
+    assert(move_keys(noisy_moves) == move_keys(filtered));
+}
+
+void assert_capture_plus_non_capture_matches_pseudo(const Position& pos) {
+    const std::vector<Move> pseudo_moves = generate_pseudo_legal_moves(pos);
+
+    MoveList capture_list;
+    generate_pseudo_capture_moves(pos, capture_list);
+    const std::vector<Move> capture_moves = to_vector(capture_list);
+
+    const std::vector<Move> non_capture_moves = generate_pseudo_non_capture_moves(pos);
+
+    for (Move move : capture_moves) {
+        assert(is_capture(move));
+    }
+    for (Move move : non_capture_moves) {
+        assert(!is_capture(move));
+    }
+
+    std::vector<Move> combined = capture_moves;
+    combined.insert(combined.end(), non_capture_moves.begin(), non_capture_moves.end());
+
+    assert(move_keys(combined) == move_keys(pseudo_moves));
+}
+
+void assert_legal_noisy_matches_filtered_legal(const Position& pos) {
+    const std::vector<Move> legal_moves = generate_legal_moves(pos);
+    std::vector<Move> filtered;
+    for (Move move : legal_moves) {
+        if (is_capture(move) || promotion_piece(move) != PieceType::None) {
+            filtered.push_back(move);
+        }
+    }
+
+    MoveList legal_noisy_list;
+    const KingSafetyContext king_safety = make_king_safety_context(pos);
+    generate_legal_noisy_moves(pos, king_safety, legal_noisy_list);
+    assert(move_keys(to_vector(legal_noisy_list)) == move_keys(filtered));
+}
+
+void assert_legal_capture_matches_filtered_legal(const Position& pos) {
+    const std::vector<Move> legal_moves = generate_legal_moves(pos);
+    std::vector<Move> filtered;
+    for (Move move : legal_moves) {
+        if (is_capture(move)) {
+            filtered.push_back(move);
+        }
+    }
+
+    MoveList legal_capture_list;
+    const KingSafetyContext king_safety = make_king_safety_context(pos);
+    generate_legal_capture_moves(pos, king_safety, legal_capture_list);
+    assert(move_keys(to_vector(legal_capture_list)) == move_keys(filtered));
+}
+
+void assert_legal_non_capture_matches_filtered_legal(const Position& pos) {
+    const std::vector<Move> legal_moves = generate_legal_moves(pos);
+    std::vector<Move> filtered;
+    for (Move move : legal_moves) {
+        if (!is_capture(move)) {
+            filtered.push_back(move);
+        }
+    }
+
+    MoveList legal_non_capture_list;
+    const KingSafetyContext king_safety = make_king_safety_context(pos);
+    generate_legal_non_capture_moves(pos, king_safety, legal_non_capture_list);
+    assert(move_keys(to_vector(legal_non_capture_list)) == move_keys(filtered));
+}
+
+void assert_legal_evasion_matches_legal_when_in_check(const Position& pos) {
+    const KingSafetyContext king_safety = make_king_safety_context(pos);
+    if (king_safety.checkers == EmptyBB) {
+        return;
+    }
+
+    MoveList legal_evasion_list;
+    generate_legal_evasion_moves(pos, king_safety, legal_evasion_list);
+    assert(move_keys(to_vector(legal_evasion_list)) == move_keys(generate_legal_moves(pos)));
+}
+
 void assert_fen_legal_count(std::string_view fen, std::size_t expected_count) {
     Position pos;
     assert(pos.set_fen(fen));
     assert_pseudo_matches_piece_generators(pos);
+    assert_noisy_matches_filtered_pseudo(pos);
+    assert_capture_plus_non_capture_matches_pseudo(pos);
+    assert_legal_noisy_matches_filtered_legal(pos);
+    assert_legal_capture_matches_filtered_legal(pos);
+    assert_legal_non_capture_matches_filtered_legal(pos);
+    assert_legal_evasion_matches_legal_when_in_check(pos);
     assert_legal_moves_are_unique_and_safe(pos, expected_count);
 }
 
@@ -80,6 +183,12 @@ int main() {
         Position pos;
         pos.set_startpos();
         assert_pseudo_matches_piece_generators(pos);
+        assert_noisy_matches_filtered_pseudo(pos);
+        assert_capture_plus_non_capture_matches_pseudo(pos);
+        assert_legal_noisy_matches_filtered_legal(pos);
+        assert_legal_capture_matches_filtered_legal(pos);
+        assert_legal_non_capture_matches_filtered_legal(pos);
+        assert_legal_evasion_matches_legal_when_in_check(pos);
         assert_legal_moves_are_unique_and_safe(pos, 20);
         const std::vector<Move> moves = generate_legal_moves(pos);
         assert(contains_move(moves, make_move(make_square(4, 1), make_square(4, 3), MoveFlag::DoublePawnPush)));
@@ -90,6 +199,12 @@ int main() {
         Position pos;
         assert(pos.set_fen("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1"));
         assert_pseudo_matches_piece_generators(pos);
+        assert_noisy_matches_filtered_pseudo(pos);
+        assert_capture_plus_non_capture_matches_pseudo(pos);
+        assert_legal_noisy_matches_filtered_legal(pos);
+        assert_legal_capture_matches_filtered_legal(pos);
+        assert_legal_non_capture_matches_filtered_legal(pos);
+        assert_legal_evasion_matches_legal_when_in_check(pos);
         assert_legal_moves_are_unique_and_safe(pos, 48);
         const std::vector<Move> moves = generate_legal_moves(pos);
         assert(contains_move(moves, make_move(make_square(4, 0), make_square(6, 0), MoveFlag::KingCastle)));
@@ -100,6 +215,12 @@ int main() {
         Position pos;
         assert(pos.set_fen("8/8/8/3pP3/8/8/8/4K2k w - d6 0 1"));
         assert_pseudo_matches_piece_generators(pos);
+        assert_noisy_matches_filtered_pseudo(pos);
+        assert_capture_plus_non_capture_matches_pseudo(pos);
+        assert_legal_noisy_matches_filtered_legal(pos);
+        assert_legal_capture_matches_filtered_legal(pos);
+        assert_legal_non_capture_matches_filtered_legal(pos);
+        assert_legal_evasion_matches_legal_when_in_check(pos);
         const std::vector<Move> moves = generate_legal_moves(pos);
         (void)move_keys(moves);
         assert(contains_move(moves, make_move(make_square(4, 4), make_square(3, 5), MoveFlag::EnPassant)));
@@ -109,6 +230,12 @@ int main() {
         Position pos;
         assert(pos.set_fen("1r2k3/P7/8/8/8/8/8/4K3 w - - 0 1"));
         assert_pseudo_matches_piece_generators(pos);
+        assert_noisy_matches_filtered_pseudo(pos);
+        assert_capture_plus_non_capture_matches_pseudo(pos);
+        assert_legal_noisy_matches_filtered_legal(pos);
+        assert_legal_capture_matches_filtered_legal(pos);
+        assert_legal_non_capture_matches_filtered_legal(pos);
+        assert_legal_evasion_matches_legal_when_in_check(pos);
         const std::vector<Move> moves = generate_legal_moves(pos);
         (void)move_keys(moves);
         assert(contains_move(moves, make_move(make_square(0, 6), make_square(0, 7), MoveFlag::KnightPromotion)));
@@ -132,11 +259,27 @@ int main() {
         pos.side_to_move = Color::White;
 
         assert_pseudo_matches_piece_generators(pos);
+        assert_noisy_matches_filtered_pseudo(pos);
+        assert_capture_plus_non_capture_matches_pseudo(pos);
+        assert_legal_noisy_matches_filtered_legal(pos);
+        assert_legal_capture_matches_filtered_legal(pos);
+        assert_legal_non_capture_matches_filtered_legal(pos);
+        assert_legal_evasion_matches_legal_when_in_check(pos);
         const std::vector<Move> moves = generate_legal_moves(pos);
         (void)move_keys(moves);
         assert(!contains_move(moves, make_move(make_square(4, 1), make_square(3, 1))));
         assert(contains_move(moves, make_move(make_square(4, 1), make_square(4, 7), MoveFlag::Capture)));
         assert_legal_moves_are_unique_and_safe(pos, moves.size());
+    }
+
+    {
+        Position pos;
+        assert(pos.set_fen("4r1k1/8/8/8/8/8/8/2B1K3 w - - 0 1"));
+        const KingSafetyContext king_safety = make_king_safety_context(pos);
+        assert(king_safety.checkers != EmptyBB);
+        assert_legal_evasion_matches_legal_when_in_check(pos);
+        const std::vector<Move> moves = generate_legal_moves(pos);
+        assert(contains_move(moves, make_move(make_square(2, 0), make_square(4, 2))));
     }
 
     assert_fen_legal_count("8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1", 14);

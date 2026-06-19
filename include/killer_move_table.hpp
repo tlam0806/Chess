@@ -15,6 +15,7 @@ public:
     void store(int ply, Move move);
 
     int score(int ply, Move move) const;
+    Move move(int ply, int slot) const;
 
 private:
     std::array<std::array<Move, Slots>, MaxPly> killers_{};

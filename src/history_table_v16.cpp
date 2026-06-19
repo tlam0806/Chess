@@ -59,19 +59,31 @@ void HistoryTableV16::reset() {
 
 void HistoryTableV16::store(const Position& pos, Move move, int depth) {
     const Square from = from_square(move);
-    const PieceType piece = pos.piece_type_on_occupied(from);
+    const PieceType piece = pos.piece_type_on_occupied(pos.side_to_move, from);
     assert(piece != PieceType::None);
 
-    Score& score = piece_to_square_[piece_to_square_index(pos.side_to_move, piece, to_square(move))];
+    store(pos.side_to_move, piece, move, depth);
+}
+
+void HistoryTableV16::store(Color color, PieceType piece, Move move, int depth) {
+    assert(piece != PieceType::None);
+
+    Score& score = piece_to_square_[piece_to_square_index(color, piece, to_square(move))];
     score = gravity_update(score, history_bonus(depth));
 }
 
 void HistoryTableV16::penalize(const Position& pos, Move move, int depth) {
     const Square from = from_square(move);
-    const PieceType piece = pos.piece_type_on_occupied(from);
+    const PieceType piece = pos.piece_type_on_occupied(pos.side_to_move, from);
     assert(piece != PieceType::None);
 
-    Score& score = piece_to_square_[piece_to_square_index(pos.side_to_move, piece, to_square(move))];
+    penalize(pos.side_to_move, piece, move, depth);
+}
+
+void HistoryTableV16::penalize(Color color, PieceType piece, Move move, int depth) {
+    assert(piece != PieceType::None);
+
+    Score& score = piece_to_square_[piece_to_square_index(color, piece, to_square(move))];
     score = gravity_update(
         score,
         -history_penalty(depth, penalty_divisor_numerator_, penalty_divisor_denominator_)
@@ -80,10 +92,16 @@ void HistoryTableV16::penalize(const Position& pos, Move move, int depth) {
 
 HistoryTableV16::Score HistoryTableV16::get_score(const Position& pos, Move move) const {
     const Square from = from_square(move);
-    const PieceType piece = pos.piece_type_on_occupied(from);
+    const PieceType piece = pos.piece_type_on_occupied(pos.side_to_move, from);
     assert(piece != PieceType::None);
 
-    return piece_to_square_[piece_to_square_index(pos.side_to_move, piece, to_square(move))];
+    return get_score(pos.side_to_move, piece, move);
+}
+
+HistoryTableV16::Score HistoryTableV16::get_score(Color color, PieceType piece, Move move) const {
+    assert(piece != PieceType::None);
+
+    return piece_to_square_[piece_to_square_index(color, piece, to_square(move))];
 }
 
 } // namespace chess
