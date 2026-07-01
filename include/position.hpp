@@ -14,8 +14,6 @@ struct Move;
 
 struct UndoState {
     HashKey zobrist_key = 0;
-    std::array<Bitboard, 2> occupancies{EmptyBB, EmptyBB};
-    std::array<Square, 2> king_squares{NoSquare, NoSquare};
     std::array<Bitboard, 2> king_checkers{EmptyBB, EmptyBB};
     std::array<Bitboard, 2> king_pinned{EmptyBB, EmptyBB};
     std::array<Bitboard, 2> king_block_masks{FullBB, FullBB};
@@ -25,6 +23,24 @@ struct UndoState {
     Square en_passant_square = NoSquare;
     std::int8_t captured_square = NoSquare;
     std::uint8_t castling_rights = 0;
+    PieceType moved_piece = PieceType::None;
+    PieceType captured_piece = PieceType::None;
+};
+
+struct PositionStateSnapshot {
+    HashKey zobrist_key = 0;
+    std::array<Bitboard, 2> king_checkers{EmptyBB, EmptyBB};
+    std::array<Bitboard, 2> king_pinned{EmptyBB, EmptyBB};
+    std::array<Bitboard, 2> king_block_masks{FullBB, FullBB};
+    int eval_score = 0;
+    int halfmove_clock = 0;
+    int fullmove_number = 1;
+    Square en_passant_square = NoSquare;
+    std::uint8_t castling_rights = 0;
+};
+
+struct MoveUndoState {
+    std::int8_t captured_square = NoSquare;
     PieceType moved_piece = PieceType::None;
     PieceType captured_piece = PieceType::None;
 };
@@ -73,6 +89,11 @@ struct Position {
     void make_move(Move move, PieceType moved_piece, UndoState& undo);
     void make_move(Move move, PieceType moved_piece, PieceType captured_piece, UndoState& undo);
     void unmake_move(Move move, const UndoState& undo);
+    PositionStateSnapshot make_state_snapshot() const;
+    void make_move(Move move, MoveUndoState& undo);
+    void make_move(Move move, PieceType moved_piece, MoveUndoState& undo);
+    void make_move(Move move, PieceType moved_piece, PieceType captured_piece, MoveUndoState& undo);
+    void unmake_move(Move move, const PositionStateSnapshot& snapshot, const MoveUndoState& undo);
 
 };
 

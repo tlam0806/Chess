@@ -2114,11 +2114,67 @@ void Position::make_move(
     undo.fullmove_number = fullmove_number;
     undo.eval_score = eval_score;
     undo.zobrist_key = zobrist_key;
-    undo.occupancies = occupancies;
-    undo.king_squares = king_squares;
     undo.king_checkers = king_checkers;
     undo.king_pinned = king_pinned;
     undo.king_block_masks = king_block_masks;
+    undo.moved_piece = moved_piece;
+    undo.captured_piece = PieceType::None;
+    undo.captured_square = NoSquare;
+
+    if (capture) {
+        if (flag == MoveFlag::EnPassant) {
+            undo.captured_piece = PieceType::Pawn;
+            undo.captured_square = static_cast<std::int8_t>(
+                side_to_move == Color::White ? move.to() - 8 : move.to() + 8);
+        } else {
+            if (captured_piece == PieceType::None) {
+                captured_piece = piece_type_on_occupied(enemy, move.to());
+            }
+            undo.captured_piece = captured_piece;
+            undo.captured_square = static_cast<std::int8_t>(move.to());
+        }
+    }
+
+    make_move(move, moved_piece, captured_piece);
+}
+
+PositionStateSnapshot Position::make_state_snapshot() const {
+    return PositionStateSnapshot{
+        zobrist_key,
+        king_checkers,
+        king_pinned,
+        king_block_masks,
+        eval_score,
+        halfmove_clock,
+        fullmove_number,
+        en_passant_square,
+        pack_castling_rights(*this)
+    };
+}
+
+void Position::make_move(Move move, MoveUndoState& undo) {
+    make_move(move, piece_type_on_occupied(side_to_move, move.from()), undo);
+}
+
+void Position::make_move(Move move, PieceType moved_piece, MoveUndoState& undo) {
+    const MoveFlag flag = move.flag();
+    const PieceType captured_piece =
+        (is_capture(flag) && flag != MoveFlag::EnPassant)
+            ? piece_type_on_occupied(opposite(side_to_move), move.to())
+            : PieceType::None;
+    make_move(move, moved_piece, captured_piece, undo);
+}
+
+void Position::make_move(
+    Move move,
+    PieceType moved_piece,
+    PieceType captured_piece,
+    MoveUndoState& undo
+) {
+    const MoveFlag flag = move.flag();
+    const bool capture = is_capture(flag);
+    const Color enemy = opposite(side_to_move);
+
     undo.moved_piece = moved_piece;
     undo.captured_piece = PieceType::None;
     undo.captured_square = NoSquare;
@@ -2160,6 +2216,7 @@ void Position::unmake_move(Move move, const UndoState& undo) {
         const Bitboard square_mask = bit(square);
         assert((pieces[color_index][piece_index] & square_mask) != EmptyBB);
         pieces[color_index][piece_index] &= ~square_mask;
+        occupancies[color_index] &= ~square_mask;
         board[square] = 0;
     };
     const auto set_raw = [this](int color_index, Color piece_color, PieceType piece, Square square) {
@@ -2168,6 +2225,7 @@ void Position::unmake_move(Move move, const UndoState& undo) {
         const Bitboard square_mask = bit(square);
         assert(board[square] == 0);
         pieces[color_index][piece_index] |= square_mask;
+        occupancies[color_index] |= square_mask;
         board[square] = encode_piece_for_move(piece_color, piece);
     };
 
@@ -2195,17 +2253,93 @@ void Position::unmake_move(Move move, const UndoState& undo) {
     }
 
     side_to_move = color;
+    if (undo.moved_piece == PieceType::King) {
+        king_squares[color_idx] = from;
+    }
     restore_castling_rights(*this, undo.castling_rights);
     en_passant_square = undo.en_passant_square;
     halfmove_clock = undo.halfmove_clock;
     fullmove_number = undo.fullmove_number;
     eval_score = undo.eval_score;
     zobrist_key = undo.zobrist_key;
-    occupancies = undo.occupancies;
-    king_squares = undo.king_squares;
     king_checkers = undo.king_checkers;
     king_pinned = undo.king_pinned;
     king_block_masks = undo.king_block_masks;
+}
+
+void Position::unmake_move(
+    Move move,
+    const PositionStateSnapshot& snapshot,
+    const MoveUndoState& undo
+) {
+    assert(undo.moved_piece != PieceType::None);
+
+    const Color enemy = side_to_move;
+    const Color color = opposite(enemy);
+    const int color_idx = static_cast<int>(color);
+    const int enemy_idx = static_cast<int>(enemy);
+    const Square from = move.from();
+    const Square to = move.to();
+    const MoveFlag flag = move.flag();
+    PieceType placed_piece = promotion_piece(move);
+    if (placed_piece == PieceType::None) {
+        placed_piece = undo.moved_piece;
+    }
+    const auto clear_raw = [this](int color_index, PieceType piece, Square square) {
+        assert(piece != PieceType::None);
+        const int piece_index = static_cast<int>(piece);
+        const Bitboard square_mask = bit(square);
+        assert((pieces[color_index][piece_index] & square_mask) != EmptyBB);
+        pieces[color_index][piece_index] &= ~square_mask;
+        occupancies[color_index] &= ~square_mask;
+        board[square] = 0;
+    };
+    const auto set_raw = [this](int color_index, Color piece_color, PieceType piece, Square square) {
+        assert(piece != PieceType::None);
+        const int piece_index = static_cast<int>(piece);
+        const Bitboard square_mask = bit(square);
+        assert(board[square] == 0);
+        pieces[color_index][piece_index] |= square_mask;
+        occupancies[color_index] |= square_mask;
+        board[square] = encode_piece_for_move(piece_color, piece);
+    };
+
+    if (flag == MoveFlag::KingCastle || flag == MoveFlag::QueenCastle) {
+        clear_raw(color_idx, PieceType::King, to);
+        set_raw(color_idx, color, PieceType::King, from);
+
+        const bool king_side = flag == MoveFlag::KingCastle;
+        const Square rook_from = color == Color::White
+            ? make_square(king_side ? 7 : 0, 0)
+            : make_square(king_side ? 7 : 0, 7);
+        const Square rook_to = color == Color::White
+            ? make_square(king_side ? 5 : 3, 0)
+            : make_square(king_side ? 5 : 3, 7);
+        clear_raw(color_idx, PieceType::Rook, rook_to);
+        set_raw(color_idx, color, PieceType::Rook, rook_from);
+    } else {
+        clear_raw(color_idx, placed_piece, to);
+        set_raw(color_idx, color, undo.moved_piece, from);
+
+        if (undo.captured_piece != PieceType::None) {
+            assert(undo.captured_square != NoSquare);
+            set_raw(enemy_idx, enemy, undo.captured_piece, static_cast<Square>(undo.captured_square));
+        }
+    }
+
+    side_to_move = color;
+    if (undo.moved_piece == PieceType::King) {
+        king_squares[color_idx] = from;
+    }
+    restore_castling_rights(*this, snapshot.castling_rights);
+    en_passant_square = snapshot.en_passant_square;
+    halfmove_clock = snapshot.halfmove_clock;
+    fullmove_number = snapshot.fullmove_number;
+    eval_score = snapshot.eval_score;
+    zobrist_key = snapshot.zobrist_key;
+    king_checkers = snapshot.king_checkers;
+    king_pinned = snapshot.king_pinned;
+    king_block_masks = snapshot.king_block_masks;
 }
 
 void generate_legal_moves(const Position& pos, MoveList& legal_moves) {
