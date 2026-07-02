@@ -1,7 +1,7 @@
-#include "heuristic_searcher_v29.hpp"
+#include "heuristic_searcher_v29_see.hpp"
 
 #include "attacks.hpp"
-#include "heuristic_searcher_v29_detail.hpp"
+#include "heuristic_searcher_v29_see_detail.hpp"
 #include "evaluate.hpp"
 #include "legal_noisy_generator.hpp"
 #include "legal_non_capture_generator.hpp"
@@ -16,7 +16,7 @@
 
 namespace chess {
 
-void HeuristicSearcherV29::reward_quiet_cutoff(
+void HeuristicSearcherV29See::reward_quiet_cutoff(
     Color side_to_move,
     int depth,
     int ply,
@@ -41,12 +41,12 @@ void HeuristicSearcherV29::reward_quiet_cutoff(
     }
 }
 
-void HeuristicSearcherV29::penalize_failed_quiets(
+void HeuristicSearcherV29See::penalize_failed_quiets(
     Color side_to_move,
     int depth,
     Move prev_move,
     PieceType prev_moved_piece,
-    const HeuristicSearcherV29::ScoredMoveList& failed_quiet_moves
+    const HeuristicSearcherV29See::ScoredMoveList& failed_quiet_moves
 ) {
     for (const ScoredMove& failed_quiet : failed_quiet_moves) {
         history_table_.penalize(side_to_move, failed_quiet.moved_piece, failed_quiet.move, depth);
@@ -63,7 +63,7 @@ void HeuristicSearcherV29::penalize_failed_quiets(
     }
 }
 
-bool HeuristicSearcherV29::should_stop(SearchState& state) const {
+bool HeuristicSearcherV29See::should_stop(SearchState& state) const {
     if (!state.has_deadline) {
         return false;
     }
@@ -77,17 +77,17 @@ bool HeuristicSearcherV29::should_stop(SearchState& state) const {
     return false;
 }
 
-KingSafetyContext HeuristicSearcherV29::current_king_safety_context(const Position& pos) const {
+KingSafetyContext HeuristicSearcherV29See::current_king_safety_context(const Position& pos) const {
     return cached_king_safety_context(pos, pos.side_to_move);
 }
 
-int HeuristicSearcherV29::evaluate_current_position(const Position& pos) const {
+int HeuristicSearcherV29See::evaluate_current_position(const Position& pos) const {
     return evaluate_for_side_to_move(pos);
 }
 
 
 
-HeuristicSearcherV29::SearchValue HeuristicSearcherV29::quiescence(
+HeuristicSearcherV29See::SearchValue HeuristicSearcherV29See::quiescence(
     Position& pos,
     int alpha,
     int beta,
@@ -238,7 +238,7 @@ HeuristicSearcherV29::SearchValue HeuristicSearcherV29::quiescence(
     return SearchValue{node_range};
 }
 
-HeuristicSearcherV29::SearchValue HeuristicSearcherV29::negamax(
+HeuristicSearcherV29See::SearchValue HeuristicSearcherV29See::negamax(
     Position& pos,
     int depth,
     int ply,
@@ -456,7 +456,7 @@ HeuristicSearcherV29::SearchValue HeuristicSearcherV29::negamax(
     return SearchValue{node_range};
 }
 
-SearchResult HeuristicSearcherV29::make_fallback_result(const Position& pos) const {
+SearchResult HeuristicSearcherV29See::make_fallback_result(const Position& pos) const {
     SearchResult result;
     const ScoredMoveList moves = ordered_moves(pos, 0);
     if (moves.empty()) {
@@ -470,7 +470,7 @@ SearchResult HeuristicSearcherV29::make_fallback_result(const Position& pos) con
     return result;
 }
 
-HeuristicSearcherV29::RootSearchResult HeuristicSearcherV29::search_fixed_depth(
+HeuristicSearcherV29See::RootSearchResult HeuristicSearcherV29See::search_fixed_depth(
     Position pos,
     int depth,
     SearchState& state,
@@ -650,7 +650,7 @@ HeuristicSearcherV29::RootSearchResult HeuristicSearcherV29::search_fixed_depth(
     return root_result;
 }
 
-SearchResult HeuristicSearcherV29::search_root_without_tt_probe(
+SearchResult HeuristicSearcherV29See::search_root_without_tt_probe(
     const Position& pos,
     int depth,
     SearchState& state
@@ -658,13 +658,13 @@ SearchResult HeuristicSearcherV29::search_root_without_tt_probe(
     return search_fixed_depth(pos, depth, state, -Infinity, Infinity, false).result;
 }
 
-SearchResult HeuristicSearcherV29::search_best_move(const Position& pos, int depth) {
+SearchResult HeuristicSearcherV29See::search_best_move(const Position& pos, int depth) {
     killer_table_.clear();
     SearchState state;
     return search_fixed_depth(pos, depth, state).result;
 }
 
-SearchResult HeuristicSearcherV29::search_best_move(const Position& pos, const SearchLimits& limits) {
+SearchResult HeuristicSearcherV29See::search_best_move(const Position& pos, const SearchLimits& limits) {
     assert(limits.max_depth >= 0);
 
     killer_table_.clear();

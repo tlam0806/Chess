@@ -1,6 +1,7 @@
 #include "range_bucket_transposition_table.hpp"
 
 #include <algorithm>
+#include <cassert>
 #include <cstdlib>
 
 namespace chess {
@@ -59,11 +60,14 @@ RangeBucketTranspositionTable::RangeBucketTranspositionTable(
     const std::size_t total_entries = entry_count_from_megabytes(megabytes);
     bucket_count_ = floor_power_of_two(std::max<std::size_t>(total_entries / bucket_size_, 1));
     bucket_mask_ = bucket_count_ - 1;
-    entries_.resize(bucket_count_ * bucket_size_);
+    const std::size_t entry_count = bucket_count_ * bucket_size_;
+    keys_.resize(entry_count);
+    values_.resize(entry_count);
 }
 
 void RangeBucketTranspositionTable::clear() {
-    std::fill(entries_.begin(), entries_.end(), RangeTTEntry{});
+    std::fill(keys_.begin(), keys_.end(), HashKey{});
+    std::fill(values_.begin(), values_.end(), TTValue{});
 }
 
 void RangeBucketTranspositionTable::clear_stats() {
@@ -71,7 +75,7 @@ void RangeBucketTranspositionTable::clear_stats() {
 }
 
 std::size_t RangeBucketTranspositionTable::entry_count() const {
-    return entries_.size();
+    return keys_.size();
 }
 
 std::size_t RangeBucketTranspositionTable::bucket_size() const {
@@ -86,12 +90,8 @@ const RangeTranspositionTableStats& RangeBucketTranspositionTable::stats() const
     return stats_;
 }
 
-RangeTTEntry* RangeBucketTranspositionTable::bucket_begin(HashKey key) {
-    return entries_.data() + (key & bucket_mask_) * bucket_size_;
-}
-
-const RangeTTEntry* RangeBucketTranspositionTable::bucket_begin(HashKey key) const {
-    return entries_.data() + (key & bucket_mask_) * bucket_size_;
+std::size_t RangeBucketTranspositionTable::bucket_offset(HashKey key) const {
+    return (key & bucket_mask_) * bucket_size_;
 }
 
 bool RangeBucketTranspositionTable::probe(
@@ -104,34 +104,37 @@ bool RangeBucketTranspositionTable::probe(
     bool& score_available,
     TTDepthPolicy depth_policy
 ) const {
+    assert(key != 0);
     score_available = false;
     ++stats_.probes;
 
-    const RangeTTEntry* bucket = bucket_begin(key);
+    const std::size_t offset = bucket_offset(key);
     bool saw_valid_entry = false;
     for (std::size_t i = 0; i < bucket_size_; ++i) {
-        const RangeTTEntry& entry = bucket[i];
-        if (!entry.valid) {
+        const std::size_t index = offset + i;
+        const HashKey entry_key = keys_[index];
+        if (entry_key == 0) {
             break;
         }
         saw_valid_entry = true;
-        if (entry.key != key) {
+        if (entry_key != key) {
             continue;
         }
 
         ++stats_.key_hits;
-        stored_move = entry.move;
+        const TTValue& value = values_[index];
+        stored_move = value.move;
         if (stored_move.lower.value != 0 || stored_move.upper.value != 0) {
             ++stats_.move_hint_hits;
         }
 
-        if (!depth_matches_policy(entry.depth, depth, depth_policy)) {
+        if (!depth_matches_policy(value.depth, depth, depth_policy)) {
             ++stats_.depth_misses;
             return false;
         }
 
-        stored_score.lower = score_from_table(entry.score.lower, ply);
-        stored_score.upper = score_from_table(entry.score.upper, ply);
+        stored_score.lower = score_from_table(value.score.lower, ply);
+        stored_score.upper = score_from_table(value.score.upper, ply);
 
         if (is_mate_score(stored_score.lower) || is_mate_score(stored_score.upper)) {
             return false;
@@ -189,40 +192,34 @@ void RangeBucketTranspositionTable::store(
     ScoreRange score,
     MoveRange move
 ) {
+    assert(key != 0);
     ++stats_.stores;
-    RangeTTEntry* bucket = bucket_begin(key);
+    const std::size_t offset = bucket_offset(key);
 
-    RangeTTEntry* shallowest = &bucket[0];
+    std::size_t shallowest_index = offset;
     for (std::size_t i = 0; i < bucket_size_; ++i) {
-        RangeTTEntry& entry = bucket[i];
-        if (entry.valid && entry.key == key) {
+        const std::size_t index = offset + i;
+        const HashKey entry_key = keys_[index];
+        if (entry_key == key) {
             ++stats_.same_key_updates;
-            entry.depth = depth;
-            entry.score = score;
-            entry.move = move;
+            values_[index] = TTValue{depth, score, move};
             return;
         }
-        if (!entry.valid) {
+        if (entry_key == 0) {
             ++stats_.new_stores;
-            entry.key = key;
-            entry.valid = true;
-            entry.depth = depth;
-            entry.score = score;
-            entry.move = move;
+            keys_[index] = key;
+            values_[index] = TTValue{depth, score, move};
             return;
         }
-        if (entry.depth < shallowest->depth) {
-            shallowest = &entry;
+        if (values_[index].depth < values_[shallowest_index].depth) {
+            shallowest_index = index;
         }
     }
 
-    if (depth >= shallowest->depth) {
+    if (depth >= values_[shallowest_index].depth) {
         ++stats_.replacement_collisions;
-        shallowest->key = key;
-        shallowest->valid = true;
-        shallowest->depth = depth;
-        shallowest->score = score;
-        shallowest->move = move;
+        keys_[shallowest_index] = key;
+        values_[shallowest_index] = TTValue{depth, score, move};
     } else {
         ++stats_.skipped_shallow_replacements;
     }

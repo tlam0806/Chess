@@ -42,6 +42,10 @@ bool depth_matches_policy(int entry_depth, int requested_depth, TTDepthPolicy po
     return false;
 }
 
+bool is_valid_entry(const RangeTTEntry& entry) {
+    return entry.depth >= 0;
+}
+
 } // namespace
 
 RangeTranspositionTable::RangeTranspositionTable(std::size_t megabytes)
@@ -78,7 +82,7 @@ bool RangeTranspositionTable::probe(
     ++stats_.probes;
     const RangeTTEntry& entry = entries_[key % entries_.size()];
 
-    if (!entry.valid) {
+    if (!is_valid_entry(entry)) {
         ++stats_.empty_misses;
         return false;
     }
@@ -152,8 +156,8 @@ void RangeTranspositionTable::store(
 ) {
     ++stats_.stores;
     RangeTTEntry& entry = entries_[key % entries_.size()];
-    if (!entry.valid || entry.key == key || depth >= entry.depth) {
-        if (!entry.valid) {
+    if (!is_valid_entry(entry) || entry.key == key || depth >= entry.depth) {
+        if (!is_valid_entry(entry)) {
             ++stats_.new_stores;
         } else if (entry.key == key) {
             ++stats_.same_key_updates;
@@ -161,7 +165,6 @@ void RangeTranspositionTable::store(
             ++stats_.replacement_collisions;
         }
         entry.key = key;
-        entry.valid = true;
         entry.depth = depth;
         entry.score = score;
         entry.move = move;

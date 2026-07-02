@@ -38,10 +38,16 @@ public:
     );
 
 private:
-    RangeTTEntry* bucket_begin(HashKey key);
-    const RangeTTEntry* bucket_begin(HashKey key) const;
+    struct TTValue {
+        int depth = -1;
+        ScoreRange score{};
+        MoveRange move{};
+    };
 
-    std::vector<RangeTTEntry> entries_;
+    std::size_t bucket_offset(HashKey key) const;
+
+    std::vector<HashKey> keys_;
+    std::vector<TTValue> values_;
     std::size_t bucket_size_ = 1;
     std::size_t bucket_count_ = 1;
     std::size_t bucket_mask_ = 0;

@@ -15,7 +15,7 @@
 
 namespace chess {
 
-class HeuristicSearcherV29 final : public Searcher {
+class HeuristicSearcherV30 final : public Searcher {
 public:
     struct MoveOrderingWeights {
         int tt_lower_bonus = 1'200'000'000;
@@ -34,15 +34,16 @@ public:
         int qsearch_bad_capture_bonus = 282'000;
         int qsearch_see_weight = 48;
         int qsearch_captured_value_weight = 486;
+        int qsearch_capture_metric_weight = 160;
     };
-    explicit HeuristicSearcherV29(
+    explicit HeuristicSearcherV30(
         std::size_t tt_mb = 64,
         std::size_t bucket_size = 4,
         int history_penalty_divisor_numerator = 10,
         int history_penalty_divisor_denominator = 14,
         int counter_history_bonus = 14'000
     );
-    HeuristicSearcherV29(
+    HeuristicSearcherV30(
         std::size_t tt_mb,
         std::size_t bucket_size,
         int history_penalty_divisor_numerator,
@@ -219,8 +220,8 @@ private:
     int qsearch_order_score(
         bool capture,
         bool promotion,
-        PieceType captured_piece,
-        int see_score
+        PieceType moved_piece,
+        PieceType captured_piece
     ) const;
     bool should_stop(SearchState& state) const;
     KingSafetyContext current_king_safety_context(const Position& pos) const;

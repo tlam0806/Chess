@@ -66,6 +66,10 @@ add_library(chess_core
     src/searchers/strict/heuristic_searcher_v29_api.cpp
     src/searchers/strict/heuristic_searcher_v29_ordering.cpp
     src/searchers/strict/heuristic_searcher_v29_tt.cpp
+    src/searchers/strict/heuristic_searcher_v30.cpp
+    src/searchers/strict/heuristic_searcher_v30_api.cpp
+    src/searchers/strict/heuristic_searcher_v30_ordering.cpp
+    src/searchers/strict/heuristic_searcher_v30_tt.cpp
     src/searchers/fast/heuristic_searcher_v15_pvs.cpp
     src/searchers/fast/nn_searcher.cpp
     src/searchers/fast/nn_searcher_v6.cpp
@@ -205,6 +209,9 @@ target_link_libraries(benchmark_v25_v26_v27 PRIVATE chess_core)
 
 add_executable(benchmark_v27_v28 tools/benchmark_v27_v28.cpp)
 target_link_libraries(benchmark_v27_v28 PRIVATE chess_core)
+
+add_executable(benchmark_v29_v30 tools/benchmark_v29_v30.cpp)
+target_link_libraries(benchmark_v29_v30 PRIVATE chess_core)
 
 add_executable(analyze_nn_buckets tools/analyze_nn_buckets.cpp)
 target_link_libraries(analyze_nn_buckets PRIVATE chess_core)

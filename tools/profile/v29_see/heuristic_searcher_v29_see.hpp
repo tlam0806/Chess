@@ -15,8 +15,14 @@
 
 namespace chess {
 
-class HeuristicSearcherV29 final : public Searcher {
+class HeuristicSearcherV29See final : public Searcher {
 public:
+    struct SeeTimingStats {
+        std::uint64_t main_calls = 0;
+        std::uint64_t main_ns = 0;
+        std::uint64_t qsearch_calls = 0;
+        std::uint64_t qsearch_ns = 0;
+    };
     struct MoveOrderingWeights {
         int tt_lower_bonus = 1'200'000'000;
         int tt_upper_bonus = 0;
@@ -35,14 +41,14 @@ public:
         int qsearch_see_weight = 48;
         int qsearch_captured_value_weight = 486;
     };
-    explicit HeuristicSearcherV29(
+    explicit HeuristicSearcherV29See(
         std::size_t tt_mb = 64,
         std::size_t bucket_size = 4,
         int history_penalty_divisor_numerator = 10,
         int history_penalty_divisor_denominator = 14,
         int counter_history_bonus = 14'000
     );
-    HeuristicSearcherV29(
+    HeuristicSearcherV29See(
         std::size_t tt_mb,
         std::size_t bucket_size,
         int history_penalty_divisor_numerator,
@@ -59,6 +65,8 @@ public:
     std::size_t tt_entry_count() const;
     void clear_tt_stats();
     const RangeTranspositionTableStats& tt_stats() const;
+    void clear_see_timing_stats();
+    SeeTimingStats see_timing_stats() const;
 
 private:
     struct SearchState {
@@ -275,6 +283,7 @@ private:
     HistoryTableV16 history_table_;
     CounterHistoryTable counter_history_table_;
     MoveOrderingWeights move_ordering_weights_{};
+    mutable SeeTimingStats see_timing_stats_{};
 };
 
 } // namespace chess

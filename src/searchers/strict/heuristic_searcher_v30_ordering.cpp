@@ -1,37 +1,37 @@
-#include "heuristic_searcher_v29.hpp"
+#include "heuristic_searcher_v30.hpp"
 
 #include "evaluate.hpp"
-#include "heuristic_searcher_v29_detail.hpp"
+#include "heuristic_searcher_v30_detail.hpp"
 #include "legal_noisy_generator.hpp"
 #include "legal_non_capture_generator.hpp"
 
 namespace chess {
 
-int HeuristicSearcherV29::qsearch_order_score(
+ int HeuristicSearcherV30::qsearch_order_score(
     bool capture,
     bool promotion,
-    PieceType captured_piece,
-    int see_score
+    PieceType moved_piece,
+    PieceType captured_piece
 ) const {
     const MoveOrderingWeights& weights = move_ordering_weights_;
-    int score = weights.qsearch_see_weight * see_score;
+    int score = 0;
     if (promotion) {
         score += weights.qsearch_promotion_bonus;
     }
     if (capture) {
         score += weights.qsearch_captured_value_weight * ordering_piece_value(captured_piece);
-        score += see_score >= 0
-            ? weights.qsearch_good_capture_bonus
-            : weights.qsearch_bad_capture_bonus;
+        score += weights.qsearch_capture_metric_weight
+            * (ordering_piece_value(captured_piece) * 10 - ordering_piece_value(moved_piece));
+        score += weights.qsearch_good_capture_bonus;
     }
     return score;
 }
 
-bool HeuristicSearcherV29::is_quiet_move(const ScoredMove& scored_move) const {
+bool HeuristicSearcherV30::is_quiet_move(const ScoredMove& scored_move) const {
     return !scored_move.capture && !scored_move.promotion && !scored_move.gives_check;
 }
 
-int HeuristicSearcherV29::main_order_score(
+int HeuristicSearcherV30::main_order_score(
     Move move,
     const Position& pos,
     PieceType moved_piece,
@@ -99,7 +99,7 @@ int HeuristicSearcherV29::main_order_score(
     return score;
 }
 
-HeuristicSearcherV29::ScoredMove HeuristicSearcherV29::make_scored_move(
+HeuristicSearcherV30::ScoredMove HeuristicSearcherV30::make_scored_move(
     const Position& pos,
     const KingSafetyContext& king_safety,
     Move move,
@@ -138,7 +138,7 @@ HeuristicSearcherV29::ScoredMove HeuristicSearcherV29::make_scored_move(
         stage);
 }
 
-HeuristicSearcherV29::ScoredMove HeuristicSearcherV29::make_tt_lower_scored_move(
+HeuristicSearcherV30::ScoredMove HeuristicSearcherV30::make_tt_lower_scored_move(
     const Position& pos,
     Move move
 ) const {
@@ -171,7 +171,7 @@ HeuristicSearcherV29::ScoredMove HeuristicSearcherV29::make_tt_lower_scored_move
     };
 }
 
-HeuristicSearcherV29::ScoredMove HeuristicSearcherV29::make_scored_legal_move(
+HeuristicSearcherV30::ScoredMove HeuristicSearcherV30::make_scored_legal_move(
     const Position& pos,
     Move move,
     PieceType moved_piece,
@@ -189,7 +189,7 @@ HeuristicSearcherV29::ScoredMove HeuristicSearcherV29::make_scored_legal_move(
     }
     const bool promotion = is_promotion(move);
     int see_score = 0;
-    if (capture) {
+    if (capture && stage != ScoringMode::Quiescence) {
         see_score = static_exchange_eval(pos, move, moved_piece, captured_piece);
     }
 
@@ -198,8 +198,8 @@ HeuristicSearcherV29::ScoredMove HeuristicSearcherV29::make_scored_legal_move(
             qsearch_order_score(
                 capture,
                 promotion,
-                captured_piece,
-                see_score),
+                moved_piece,
+                captured_piece),
             see_score,
             move,
             moved_piece,
@@ -233,14 +233,14 @@ HeuristicSearcherV29::ScoredMove HeuristicSearcherV29::make_scored_legal_move(
     };
 }
 
-bool HeuristicSearcherV29::better_scored_move(
+bool HeuristicSearcherV30::better_scored_move(
     const ScoredMove& lhs,
     const ScoredMove& rhs
 ) const {
     return lhs.order_score > rhs.order_score;
 }
 
-void HeuristicSearcherV29::sort_scored_moves(ScoredMoveList& moves) const {
+void HeuristicSearcherV30::sort_scored_moves(ScoredMoveList& moves) const {
     for (std::size_t i = 1; i < moves.size(); ++i) {
         ScoredMove current = moves[i];
         std::size_t j = i;
@@ -252,7 +252,7 @@ void HeuristicSearcherV29::sort_scored_moves(ScoredMoveList& moves) const {
     }
 }
 
-HeuristicSearcherV29::ScoredMoveList HeuristicSearcherV29::ordered_moves(
+HeuristicSearcherV30::ScoredMoveList HeuristicSearcherV30::ordered_moves(
     const Position& pos,
     int ply,
     MoveRange tt_moves,
@@ -291,8 +291,8 @@ HeuristicSearcherV29::ScoredMoveList HeuristicSearcherV29::ordered_moves(
     return ordered;
 }
 
-HeuristicSearcherV29::ScoredMoveList
-HeuristicSearcherV29::generate_legal_promotion_scored_moves_for_searcher(
+HeuristicSearcherV30::ScoredMoveList
+HeuristicSearcherV30::generate_legal_promotion_scored_moves_for_searcher(
     const Position& pos,
     const KingSafetyContext& king_safety,
     int ply,
@@ -327,8 +327,8 @@ HeuristicSearcherV29::generate_legal_promotion_scored_moves_for_searcher(
     return ordered;
 }
 
-HeuristicSearcherV29::ScoredMoveList
-HeuristicSearcherV29::generate_legal_capture_scored_moves_for_searcher(
+HeuristicSearcherV30::ScoredMoveList
+HeuristicSearcherV30::generate_legal_capture_scored_moves_for_searcher(
     const Position& pos,
     const KingSafetyContext& king_safety,
     int ply,
@@ -371,7 +371,7 @@ HeuristicSearcherV29::generate_legal_capture_scored_moves_for_searcher(
     return ordered;
 }
 
-HeuristicSearcherV29::ScoredMoveList HeuristicSearcherV29::ordered_moves_for_stage(
+HeuristicSearcherV30::ScoredMoveList HeuristicSearcherV30::ordered_moves_for_stage(
     const Position& pos,
     const KingSafetyContext& king_safety,
     int ply,

@@ -27,7 +27,6 @@ enum class TTDepthPolicy : std::uint8_t {
 
 struct RangeTTEntry {
     HashKey key = 0;
-    bool valid = false;
     int depth = -1;
     ScoreRange score{};
     MoveRange move{};
