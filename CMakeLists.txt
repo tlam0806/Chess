@@ -6,6 +6,8 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+option(CHESS_ENABLE_TT_STATS "Enable transposition-table counters in hot paths" OFF)
+
 add_library(chess_core
     src/attacks.cpp
     src/bitboard.cpp
@@ -86,6 +88,10 @@ target_include_directories(chess_core PUBLIC
     include/searchers/fast
     include/searchers/strict
 )
+
+if (CHESS_ENABLE_TT_STATS)
+    target_compile_definitions(chess_core PRIVATE CHESS_ENABLE_TT_STATS=1)
+endif()
 
 if (MSVC)
     target_compile_options(chess_core PRIVATE /W4)

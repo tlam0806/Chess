@@ -16,6 +16,20 @@
 
 namespace chess {
 
+namespace {
+
+PieceType captured_piece_for_move(const Position& pos, Move move) {
+    if (!is_capture(move)) {
+        return PieceType::None;
+    }
+    if (move_flag(move) == MoveFlag::EnPassant) {
+        return PieceType::Pawn;
+    }
+    return pos.piece_type_on_occupied(opposite(pos.side_to_move), to_square(move));
+}
+
+} // namespace
+
 void HeuristicSearcherV30::reward_quiet_cutoff(
     Color side_to_move,
     int depth,
@@ -113,23 +127,16 @@ HeuristicSearcherV30::SearchValue HeuristicSearcherV30::quiescence(
     };
     const KingSafetyContext king_safety = current_king_safety_context(pos);
     const bool side_in_check = king_safety.checkers != EmptyBB;
-    auto make_qsearch_scored_move =
-        [&](Move move, PieceType moved_piece, PieceType captured_piece) {
-            return make_scored_legal_move(
-                pos,
-                move,
-                moved_piece,
-                captured_piece,
-                ply,
-                MoveRange{},
-                Move{},
-                PieceType::None,
-                ScoringMode::Quiescence);
-        };
     auto generate_qsearch_promotion_stage = [&]() {
         ScoredMoveList moves;
         auto score_move = [&](Move move, PieceType moved_piece, PieceType captured_piece) {
-            moves.push_back(make_qsearch_scored_move(move, moved_piece, captured_piece));
+            if (captured_piece == PieceType::None) {
+                moves.push_back(make_scored_legal_move<ScoringMode::Quiescence, false, true>(
+                    pos, move, moved_piece, captured_piece, ply, MoveRange{}, Move{}, PieceType::None));
+            } else {
+                moves.push_back(make_scored_legal_move<ScoringMode::Quiescence, true, true>(
+                    pos, move, moved_piece, captured_piece, ply, MoveRange{}, Move{}, PieceType::None));
+            }
         };
         generate_legal_promotion_moves_with_info(pos, king_safety, score_move);
         sort_scored_moves(moves);
@@ -138,7 +145,8 @@ HeuristicSearcherV30::SearchValue HeuristicSearcherV30::quiescence(
     auto generate_qsearch_capture_stage = [&]() {
         ScoredMoveList moves;
         auto score_move = [&](Move move, PieceType moved_piece, PieceType captured_piece) {
-            moves.push_back(make_qsearch_scored_move(move, moved_piece, captured_piece));
+            moves.push_back(make_scored_legal_move<ScoringMode::Quiescence, true, false>(
+                pos, move, moved_piece, captured_piece, ply, MoveRange{}, Move{}, PieceType::None));
         };
         generate_legal_non_promotion_capture_moves_with_info(pos, king_safety, score_move);
         sort_scored_moves(moves);
@@ -147,7 +155,8 @@ HeuristicSearcherV30::SearchValue HeuristicSearcherV30::quiescence(
     auto generate_qsearch_quiet_evasion_stage = [&]() {
         ScoredMoveList moves;
         auto score_move = [&](Move move, PieceType moved_piece) {
-            moves.push_back(make_qsearch_scored_move(move, moved_piece, PieceType::None));
+            moves.push_back(make_scored_legal_move<ScoringMode::Quiescence, false, false>(
+                pos, move, moved_piece, PieceType::None, ply, MoveRange{}, Move{}, PieceType::None));
         };
         generate_legal_quiet_non_promotion_moves_with_info(pos, king_safety, score_move);
         sort_scored_moves(moves);
@@ -158,7 +167,12 @@ HeuristicSearcherV30::SearchValue HeuristicSearcherV30::quiescence(
             const ScoredMove& scored_move = staged_moves[move_index];
             ScoreRange move_range;
             {
-                SnapshotMoveUndoGuard move_guard(pos, get_node_snapshot(), scored_move.move, scored_move.moved_piece, scored_move.captured_piece);
+                SnapshotMoveUndoGuard move_guard(
+                    pos,
+                    get_node_snapshot(),
+                    scored_move.move,
+                    scored_move.moved_piece,
+                    captured_piece_for_move(pos, scored_move.move));
                 SearchValue child = quiescence(pos, -beta, -alpha, ply + 1, q_depth + 1, state);
                 move_range = negate_range(child.range);
             }
@@ -317,7 +331,12 @@ HeuristicSearcherV30::SearchValue HeuristicSearcherV30::negamax(
 
             ScoreRange move_range;
             {
-                SnapshotMoveUndoGuard move_guard(pos, get_node_snapshot(), scored_move.move, scored_move.moved_piece, scored_move.captured_piece);
+                SnapshotMoveUndoGuard move_guard(
+                    pos,
+                    get_node_snapshot(),
+                    scored_move.move,
+                    scored_move.moved_piece,
+                    captured_piece_for_move(pos, scored_move.move));
                 SearchValue child = negamax(
                     pos,
                     depth - 1,
@@ -359,26 +378,11 @@ HeuristicSearcherV30::SearchValue HeuristicSearcherV30::negamax(
     }
 
     bool cutoff = node_range.lower >= beta;
-    for (MoveGenerationStage generation_stage : {
-             MoveGenerationStage::Promotion,
-             MoveGenerationStage::GoodCapture,
-             MoveGenerationStage::QuietNonPromotion,
-             MoveGenerationStage::BadCapture
-         }) {
-        if (cutoff) {
-            break;
+    bool stage_stopped = false;
+    auto search_scored_moves = [&]<MoveGenerationStage Stage>(const ScoredMoveList& moves) {
+        if (cutoff || stage_stopped) {
+            return;
         }
-        const KingSafetyContext& king_safety = get_king_safety();
-        const ScoredMoveList moves = ordered_moves_for_stage(
-            pos,
-            king_safety,
-            ply,
-            tt_probe.moves,
-            prev_move,
-            prev_moved_piece,
-            searched_tt_move,
-            generation_stage);
-
         for (std::size_t move_index = 0; move_index < moves.size(); ++move_index) {
             const ScoredMove& scored_move = moves[move_index];
             const PieceType moved_piece = scored_move.moved_piece;
@@ -388,7 +392,12 @@ HeuristicSearcherV30::SearchValue HeuristicSearcherV30::negamax(
 
             ScoreRange move_range;
             {
-                SnapshotMoveUndoGuard move_guard(pos, get_node_snapshot(), scored_move.move, scored_move.moved_piece, scored_move.captured_piece);
+                SnapshotMoveUndoGuard move_guard(
+                    pos,
+                    get_node_snapshot(),
+                    scored_move.move,
+                    scored_move.moved_piece,
+                    captured_piece_for_move(pos, scored_move.move));
 
                 if (searched_any_move && beta > alpha + 1) {
                     SearchValue scout = negamax(
@@ -403,7 +412,8 @@ HeuristicSearcherV30::SearchValue HeuristicSearcherV30::negamax(
                     );
                     move_range = negate_range(scout.range);
                     if (state.stopped) {
-                        return SearchValue{exact_range(0)};
+                        stage_stopped = true;
+                        return;
                     }
 
                     const bool scout_proves_fail_low = move_range.upper <= alpha;
@@ -421,7 +431,8 @@ HeuristicSearcherV30::SearchValue HeuristicSearcherV30::negamax(
                         );
                         move_range = negate_range(full.range);
                         if (state.stopped) {
-                            return SearchValue{exact_range(0)};
+                            stage_stopped = true;
+                            return;
                         }
                     }
                 } else {
@@ -437,26 +448,82 @@ HeuristicSearcherV30::SearchValue HeuristicSearcherV30::negamax(
                     );
                     move_range = negate_range(child.range);
                     if (state.stopped) {
-                        return SearchValue{exact_range(0)};
+                        stage_stopped = true;
+                        return;
                     }
                 }
             }
             searched_any_move = true;
             update_best_range(node_range, best_lower_move, best_upper_move, alpha, scored_move.move, move_range);
             if (node_range.lower >= beta) {
-                reward_quiet_cutoff(pos.side_to_move, depth, ply, scored_move, prev_move, prev_moved_piece);
+                if constexpr (Stage == MoveGenerationStage::QuietNonPromotion) {
+                    if (!scored_move.gives_check) {
+                        reward_quiet_cutoff(
+                            pos.side_to_move,
+                            depth,
+                            ply,
+                            scored_move,
+                            prev_move,
+                            prev_moved_piece);
+                    }
+                }
                 penalize_failed_quiets(pos.side_to_move, depth, prev_move, prev_moved_piece, failed_quiet_moves);
                 const bool has_unsearched_stage =
-                    generation_stage != MoveGenerationStage::BadCapture
+                    Stage != MoveGenerationStage::BadCapture
                     || move_index + 1 < moves.size();
                 node_range.upper = has_unsearched_stage ? Infinity : node_range.upper;
                 cutoff = true;
-                break;
+                return;
             }
-            if (is_quiet_move(scored_move)) {
-                failed_quiet_moves.push_back(scored_move);
+            if constexpr (Stage == MoveGenerationStage::QuietNonPromotion) {
+                if (!scored_move.gives_check) {
+                    failed_quiet_moves.push_back(scored_move);
+                }
             }
         }
+    };
+    if (!cutoff && !stage_stopped) {
+        const KingSafetyContext& king_safety = get_king_safety();
+        const ScoredMoveList promotion_moves = ordered_moves_for_stage<MoveGenerationStage::Promotion>(
+            pos,
+            king_safety,
+            ply,
+            tt_probe.moves,
+            prev_move,
+            prev_moved_piece,
+            searched_tt_move);
+        search_scored_moves.template operator()<MoveGenerationStage::Promotion>(promotion_moves);
+    }
+    if (!cutoff && !stage_stopped) {
+        const KingSafetyContext& king_safety = get_king_safety();
+        CaptureMoveLists capture_moves = generate_legal_capture_scored_move_lists_for_searcher(
+            pos,
+            king_safety,
+            ply,
+            tt_probe.moves,
+            prev_move,
+            prev_moved_piece,
+            searched_tt_move);
+        sort_scored_moves(capture_moves.good);
+        search_scored_moves.template operator()<MoveGenerationStage::GoodCapture>(capture_moves.good);
+        if (!cutoff && !stage_stopped) {
+            const ScoredMoveList quiet_moves = ordered_moves_for_stage<MoveGenerationStage::QuietNonPromotion>(
+                pos,
+                king_safety,
+                ply,
+                tt_probe.moves,
+                prev_move,
+                prev_moved_piece,
+                searched_tt_move);
+            search_scored_moves.template operator()<MoveGenerationStage::QuietNonPromotion>(quiet_moves);
+        }
+        if (!cutoff && !stage_stopped) {
+            sort_scored_moves(capture_moves.bad);
+            search_scored_moves.template operator()<MoveGenerationStage::BadCapture>(capture_moves.bad);
+        }
+    }
+    if (stage_stopped) {
+        return SearchValue{exact_range(0)};
     }
     if (!searched_any_move) {
         return SearchValue{exact_range(in_check(pos, pos.side_to_move) ? -CheckmateScore + ply : 0)};
@@ -546,7 +613,12 @@ HeuristicSearcherV30::RootSearchResult HeuristicSearcherV30::search_fixed_depth(
 
             ScoreRange move_range;
             {
-                SnapshotMoveUndoGuard move_guard(pos, node_snapshot, scored_move.move, scored_move.moved_piece, scored_move.captured_piece);
+                SnapshotMoveUndoGuard move_guard(
+                    pos,
+                    node_snapshot,
+                    scored_move.move,
+                    scored_move.moved_piece,
+                    captured_piece_for_move(pos, scored_move.move));
                 SearchValue child = negamax(
                     pos,
                     depth - 1,
@@ -573,26 +645,11 @@ HeuristicSearcherV30::RootSearchResult HeuristicSearcherV30::search_fixed_depth(
     }
 
     bool cutoff = root_range.lower >= beta;
-    for (MoveGenerationStage generation_stage : {
-             MoveGenerationStage::Promotion,
-             MoveGenerationStage::GoodCapture,
-             MoveGenerationStage::QuietNonPromotion,
-             MoveGenerationStage::BadCapture
-         }) {
-        if (cutoff) {
-            break;
+    bool root_stage_stopped = false;
+    auto search_root_scored_moves = [&]<MoveGenerationStage Stage>(const ScoredMoveList& moves) {
+        if (cutoff || root_stage_stopped) {
+            return;
         }
-        const KingSafetyContext& king_safety = get_king_safety();
-        const ScoredMoveList moves = ordered_moves_for_stage(
-            pos,
-            king_safety,
-            0,
-            tt_probe.moves,
-            Move{},
-            PieceType::None,
-            searched_tt_move,
-            generation_stage);
-
         for (std::size_t move_index = 0; root_range.lower < beta && move_index < moves.size(); ++move_index) {
             const ScoredMove& scored_move = moves[move_index];
             const PieceType moved_piece = scored_move.moved_piece;
@@ -602,7 +659,12 @@ HeuristicSearcherV30::RootSearchResult HeuristicSearcherV30::search_fixed_depth(
 
             ScoreRange move_range;
             {
-                SnapshotMoveUndoGuard move_guard(pos, node_snapshot, scored_move.move, scored_move.moved_piece, scored_move.captured_piece);
+                SnapshotMoveUndoGuard move_guard(
+                    pos,
+                    node_snapshot,
+                    scored_move.move,
+                    scored_move.moved_piece,
+                    captured_piece_for_move(pos, scored_move.move));
                 SearchValue child = negamax(
                     pos,
                     depth - 1,
@@ -618,7 +680,8 @@ HeuristicSearcherV30::RootSearchResult HeuristicSearcherV30::search_fixed_depth(
             if (state.stopped) {
                 result.stopped = true;
                 result.nodes = state.nodes;
-                return root_result;
+                root_stage_stopped = true;
+                return;
             }
 
             searched_any_move = true;
@@ -626,13 +689,56 @@ HeuristicSearcherV30::RootSearchResult HeuristicSearcherV30::search_fixed_depth(
             update_best_range(root_range, best_lower_move, best_upper_move, alpha, scored_move.move, move_range);
             if (root_range.lower >= beta) {
                 const bool has_unsearched_stage =
-                    generation_stage != MoveGenerationStage::BadCapture
+                    Stage != MoveGenerationStage::BadCapture
                     || move_index + 1 < moves.size();
                 root_range.upper = has_unsearched_stage ? Infinity : root_range.upper;
                 cutoff = true;
-                break;
+                return;
             }
         }
+    };
+    if (!cutoff && !root_stage_stopped) {
+        const KingSafetyContext& king_safety = get_king_safety();
+        const ScoredMoveList promotion_moves = ordered_moves_for_stage<MoveGenerationStage::Promotion>(
+            pos,
+            king_safety,
+            0,
+            tt_probe.moves,
+            Move{},
+            PieceType::None,
+            searched_tt_move);
+        search_root_scored_moves.template operator()<MoveGenerationStage::Promotion>(promotion_moves);
+    }
+    if (!cutoff && !root_stage_stopped) {
+        const KingSafetyContext& king_safety = get_king_safety();
+        CaptureMoveLists capture_moves = generate_legal_capture_scored_move_lists_for_searcher(
+            pos,
+            king_safety,
+            0,
+            tt_probe.moves,
+            Move{},
+            PieceType::None,
+            searched_tt_move);
+        sort_scored_moves(capture_moves.good);
+        search_root_scored_moves.template operator()<MoveGenerationStage::GoodCapture>(capture_moves.good);
+        if (!cutoff && !root_stage_stopped) {
+            const ScoredMoveList quiet_moves = ordered_moves_for_stage<MoveGenerationStage::QuietNonPromotion>(
+                pos,
+                king_safety,
+                0,
+                tt_probe.moves,
+                Move{},
+                PieceType::None,
+                searched_tt_move);
+            search_root_scored_moves.template operator()<MoveGenerationStage::QuietNonPromotion>(quiet_moves);
+        }
+        if (!cutoff && !root_stage_stopped) {
+            sort_scored_moves(capture_moves.bad);
+            search_root_scored_moves.template operator()<MoveGenerationStage::BadCapture>(capture_moves.bad);
+        }
+    }
+    if (root_stage_stopped) {
+        return root_result;
     }
 
     if (!searched_any_move) {

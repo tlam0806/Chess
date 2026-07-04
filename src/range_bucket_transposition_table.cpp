@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cassert>
 #include <cstdlib>
+#include <limits>
 
 namespace chess {
 
@@ -10,6 +11,13 @@ namespace {
 
 constexpr std::size_t BytesPerMegabyte = 1024 * 1024;
 constexpr int MateScoreThreshold = CheckmateScore - 1024;
+constexpr std::uint8_t MissingDepth = std::numeric_limits<std::uint8_t>::max();
+
+#ifdef CHESS_ENABLE_TT_STATS
+#define CHESS_TT_STAT(counter) (++(counter))
+#else
+#define CHESS_TT_STAT(counter) ((void)0)
+#endif // CHESS_ENABLE_TT_STATS
 
 std::size_t entry_count_from_megabytes(std::size_t megabytes) {
     const std::size_t bytes = std::max<std::size_t>(megabytes, 1) * BytesPerMegabyte;
@@ -41,14 +49,87 @@ bool is_mate_score(int score) {
     return score != -Infinity && score != Infinity && std::abs(score) >= MateScoreThreshold;
 }
 
-bool depth_matches_policy(int entry_depth, int requested_depth, TTDepthPolicy policy) {
+bool depth_matches_policy(std::uint8_t entry_depth, int requested_depth, TTDepthPolicy policy) {
+    if (entry_depth == MissingDepth) {
+        return false;
+    }
+    const int stored_depth = static_cast<int>(entry_depth);
     switch (policy) {
     case TTDepthPolicy::Exact:
-        return entry_depth == requested_depth;
+        return stored_depth == requested_depth;
     case TTDepthPolicy::AtLeast:
-        return entry_depth >= requested_depth;
+        return stored_depth >= requested_depth;
     }
     return false;
+}
+
+int replacement_depth(const RangeBucketTranspositionTable::TTValue& value) {
+    const int lower_depth = value.lower_depth == MissingDepth
+        ? -1
+        : static_cast<int>(value.lower_depth);
+    const int upper_depth = value.upper_depth == MissingDepth
+        ? -1
+        : static_cast<int>(value.upper_depth);
+    return std::max(lower_depth, upper_depth);
+}
+
+std::uint8_t depth_to_table(int depth) {
+    assert(depth >= 0);
+    assert(depth < static_cast<int>(MissingDepth));
+    return static_cast<std::uint8_t>(depth);
+}
+
+void store_lower_bound(
+    RangeBucketTranspositionTable::TTValue& value,
+    int depth,
+    int score,
+    Move move
+) {
+    if (score == -Infinity) {
+        return;
+    }
+    if (value.lower_depth == MissingDepth || depth >= static_cast<int>(value.lower_depth)) {
+        value.lower_depth = depth_to_table(depth);
+        value.score.lower = score;
+        value.move.lower = move;
+    }
+}
+
+void store_upper_bound(
+    RangeBucketTranspositionTable::TTValue& value,
+    int depth,
+    int score,
+    Move move
+) {
+    if (score == Infinity) {
+        return;
+    }
+    if (value.upper_depth == MissingDepth || depth >= static_cast<int>(value.upper_depth)) {
+        value.upper_depth = depth_to_table(depth);
+        value.score.upper = score;
+        value.move.upper = move;
+    }
+}
+
+RangeBucketTranspositionTable::TTValue make_tt_value(
+    int depth,
+    ScoreRange score,
+    MoveRange move
+) {
+    RangeBucketTranspositionTable::TTValue value{};
+    store_lower_bound(value, depth, score.lower, move.lower);
+    store_upper_bound(value, depth, score.upper, move.upper);
+    return value;
+}
+
+void merge_tt_value(
+    RangeBucketTranspositionTable::TTValue& value,
+    int depth,
+    ScoreRange score,
+    MoveRange move
+) {
+    store_lower_bound(value, depth, score.lower, move.lower);
+    store_upper_bound(value, depth, score.upper, move.upper);
 }
 
 } // namespace
@@ -106,7 +187,7 @@ bool RangeBucketTranspositionTable::probe(
 ) const {
     assert(key != 0);
     score_available = false;
-    ++stats_.probes;
+    CHESS_TT_STAT(stats_.probes);
 
     const std::size_t offset = bucket_offset(key);
     bool saw_valid_entry = false;
@@ -121,20 +202,31 @@ bool RangeBucketTranspositionTable::probe(
             continue;
         }
 
-        ++stats_.key_hits;
+        CHESS_TT_STAT(stats_.key_hits);
         const TTValue& value = values_[index];
         stored_move = value.move;
         if (stored_move.lower.value != 0 || stored_move.upper.value != 0) {
-            ++stats_.move_hint_hits;
+            CHESS_TT_STAT(stats_.move_hint_hits);
         }
 
-        if (!depth_matches_policy(value.depth, depth, depth_policy)) {
-            ++stats_.depth_misses;
+        const bool lower_depth_matches =
+            value.score.lower != -Infinity
+            && depth_matches_policy(value.lower_depth, depth, depth_policy);
+        const bool upper_depth_matches =
+            value.score.upper != Infinity
+            && depth_matches_policy(value.upper_depth, depth, depth_policy);
+        if (!lower_depth_matches && !upper_depth_matches) {
+            CHESS_TT_STAT(stats_.depth_misses);
             return false;
         }
 
-        stored_score.lower = score_from_table(value.score.lower, ply);
-        stored_score.upper = score_from_table(value.score.upper, ply);
+        stored_score = ScoreRange{};
+        if (lower_depth_matches) {
+            stored_score.lower = score_from_table(value.score.lower, ply);
+        }
+        if (upper_depth_matches) {
+            stored_score.upper = score_from_table(value.score.upper, ply);
+        }
 
         if (is_mate_score(stored_score.lower) || is_mate_score(stored_score.upper)) {
             return false;
@@ -143,13 +235,13 @@ bool RangeBucketTranspositionTable::probe(
 
         const bool exact = stored_score.lower == stored_score.upper;
         if (exact) {
-            ++stats_.exact_hits;
+            CHESS_TT_STAT(stats_.exact_hits);
         } else {
             if (stored_score.lower != -Infinity) {
-                ++stats_.lower_score_hits;
+                CHESS_TT_STAT(stats_.lower_score_hits);
             }
             if (stored_score.upper != Infinity) {
-                ++stats_.upper_score_hits;
+                CHESS_TT_STAT(stats_.upper_score_hits);
             }
         }
 
@@ -162,7 +254,7 @@ bool RangeBucketTranspositionTable::probe(
         }
         if (search_window.lower != search_window_before.lower
             || search_window.upper != search_window_before.upper) {
-            ++stats_.window_narrowings;
+            CHESS_TT_STAT(stats_.window_narrowings);
         }
 
         const bool enough_to_return =
@@ -170,7 +262,7 @@ bool RangeBucketTranspositionTable::probe(
             || (stored_score.upper != Infinity && stored_score.upper <= search_window_before.lower);
         if (exact || enough_to_return) {
             if (!exact) {
-                ++stats_.score_returns;
+                CHESS_TT_STAT(stats_.score_returns);
             }
             return true;
         }
@@ -179,9 +271,9 @@ bool RangeBucketTranspositionTable::probe(
     }
 
     if (saw_valid_entry) {
-        ++stats_.index_collisions;
+        CHESS_TT_STAT(stats_.index_collisions);
     } else {
-        ++stats_.empty_misses;
+        CHESS_TT_STAT(stats_.empty_misses);
     }
     return false;
 }
@@ -193,7 +285,7 @@ void RangeBucketTranspositionTable::store(
     MoveRange move
 ) {
     assert(key != 0);
-    ++stats_.stores;
+    CHESS_TT_STAT(stats_.stores);
     const std::size_t offset = bucket_offset(key);
 
     std::size_t shallowest_index = offset;
@@ -201,27 +293,27 @@ void RangeBucketTranspositionTable::store(
         const std::size_t index = offset + i;
         const HashKey entry_key = keys_[index];
         if (entry_key == key) {
-            ++stats_.same_key_updates;
-            values_[index] = TTValue{depth, score, move};
+            CHESS_TT_STAT(stats_.same_key_updates);
+            merge_tt_value(values_[index], depth, score, move);
             return;
         }
         if (entry_key == 0) {
-            ++stats_.new_stores;
+            CHESS_TT_STAT(stats_.new_stores);
             keys_[index] = key;
-            values_[index] = TTValue{depth, score, move};
+            values_[index] = make_tt_value(depth, score, move);
             return;
         }
-        if (values_[index].depth < values_[shallowest_index].depth) {
+        if (replacement_depth(values_[index]) < replacement_depth(values_[shallowest_index])) {
             shallowest_index = index;
         }
     }
 
-    if (depth >= values_[shallowest_index].depth) {
-        ++stats_.replacement_collisions;
+    if (depth >= replacement_depth(values_[shallowest_index])) {
+        CHESS_TT_STAT(stats_.replacement_collisions);
         keys_[shallowest_index] = key;
-        values_[shallowest_index] = TTValue{depth, score, move};
+        values_[shallowest_index] = make_tt_value(depth, score, move);
     } else {
-        ++stats_.skipped_shallow_replacements;
+        CHESS_TT_STAT(stats_.skipped_shallow_replacements);
     }
 }
 

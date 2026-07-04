@@ -3,6 +3,7 @@
 #include "range_transposition_table.hpp"
 
 #include <cstddef>
+#include <cstdint>
 #include <vector>
 
 namespace chess {
@@ -37,13 +38,14 @@ public:
         MoveRange move
     );
 
-private:
     struct TTValue {
-        int depth = -1;
+        std::uint8_t lower_depth = 255;
+        std::uint8_t upper_depth = 255;
         ScoreRange score{};
         MoveRange move{};
     };
 
+private:
     std::size_t bucket_offset(HashKey key) const;
 
     std::vector<HashKey> keys_;

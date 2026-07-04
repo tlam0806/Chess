@@ -80,17 +80,17 @@ private:
     };
     struct ScoredMove {
         int order_score = 0;
-        int see_score = 0;
         Move move{};
         PieceType moved_piece = PieceType::None;
-        PieceType captured_piece = PieceType::None;
         bool gives_check = false;
-        bool capture = false;
-        bool promotion = false;
     };
-    static_assert(sizeof(ScoredMove) == 16);
+    static_assert(sizeof(ScoredMove) == 8);
     static_assert(alignof(ScoredMove) == 4);
     using ScoredMoveList = FixedList<ScoredMove, 256>;
+    struct CaptureMoveLists {
+        ScoredMoveList good;
+        ScoredMoveList bad;
+    };
     struct SearchValue {
         ScoreRange range{};
     };
@@ -149,6 +149,7 @@ private:
         PieceType prev_moved_piece = PieceType::None,
         Move skip_move = Move{}
     ) const;
+    template <MoveGenerationStage Stage>
     ScoredMoveList ordered_moves_for_stage(
         const Position& pos,
         const KingSafetyContext& king_safety,
@@ -156,8 +157,7 @@ private:
         MoveRange tt_moves,
         Move prev_move,
         PieceType prev_moved_piece,
-        Move skip_tt_move,
-        MoveGenerationStage generation_stage
+        Move skip_tt_move
     );
 
     ScoredMove make_scored_move(
@@ -174,6 +174,7 @@ private:
         const Position& pos,
         Move move
     ) const;
+    template <ScoringMode Mode, bool IsCapture, bool IsPromotion>
     ScoredMove make_scored_legal_move(
         const Position& pos,
         Move move,
@@ -182,8 +183,7 @@ private:
         int ply,
         MoveRange tt_moves,
         Move prev_move,
-        PieceType prev_moved_piece,
-        ScoringMode stage
+        PieceType prev_moved_piece
     ) const;
     ScoredMoveList generate_legal_promotion_scored_moves_for_searcher(
         const Position& pos,
@@ -194,16 +194,16 @@ private:
         PieceType prev_moved_piece,
         Move skip_tt_move
     );
-    ScoredMoveList generate_legal_capture_scored_moves_for_searcher(
+    CaptureMoveLists generate_legal_capture_scored_move_lists_for_searcher(
         const Position& pos,
         const KingSafetyContext& king_safety,
         int ply,
         MoveRange tt_moves,
         Move prev_move,
         PieceType prev_moved_piece,
-        Move skip_tt_move,
-        bool good_captures
+        Move skip_tt_move
     );
+    template <bool IsCapture, bool IsPromotion>
     int main_order_score(
         Move move,
         const Position& pos,
@@ -213,8 +213,6 @@ private:
         Move prev_move,
         PieceType prev_moved_piece,
         bool gives_check,
-        bool capture,
-        bool promotion,
         int see_score
     ) const;
     int qsearch_order_score(
