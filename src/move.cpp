@@ -105,26 +105,38 @@ void capture_piece_fast(
     pos.zobrist_key ^= zobrist::piece_key(enemy, captured_piece, to);
 }
 
-void finish_move_metadata(
-    Position& pos,
-    MoveFlag flag,
-    Color color,
-    Color enemy,
-    Square to,
-    bool pawn_move,
-    bool capture
-) {
+void clear_en_passant_metadata(Position& pos) {
     if (pos.en_passant_square != NoSquare) {
         pos.zobrist_key ^= zobrist::en_passant_file_key(file_of(pos.en_passant_square));
+        pos.en_passant_square = NoSquare;
     }
-    pos.en_passant_square = flag == MoveFlag::DoublePawnPush
-        ? (color == Color::White ? to - 8 : to + 8)
-        : NoSquare;
-    if (pos.en_passant_square != NoSquare) {
-        pos.zobrist_key ^= zobrist::en_passant_file_key(file_of(pos.en_passant_square));
-    }
+}
 
-    pos.halfmove_clock = (pawn_move || capture) ? 0 : pos.halfmove_clock + 1;
+void finish_quiet_move_metadata(Position& pos, Color color, Color enemy) {
+    clear_en_passant_metadata(pos);
+    ++pos.halfmove_clock;
+    if (color == Color::Black) {
+        ++pos.fullmove_number;
+    }
+    pos.zobrist_key ^= zobrist::side_key();
+    pos.side_to_move = enemy;
+}
+
+void finish_capture_or_pawn_move_metadata(Position& pos, Color color, Color enemy) {
+    clear_en_passant_metadata(pos);
+    pos.halfmove_clock = 0;
+    if (color == Color::Black) {
+        ++pos.fullmove_number;
+    }
+    pos.zobrist_key ^= zobrist::side_key();
+    pos.side_to_move = enemy;
+}
+
+void finish_double_pawn_push_metadata(Position& pos, Color color, Color enemy, Square to) {
+    clear_en_passant_metadata(pos);
+    pos.en_passant_square = color == Color::White ? to - 8 : to + 8;
+    pos.zobrist_key ^= zobrist::en_passant_file_key(file_of(pos.en_passant_square));
+    pos.halfmove_clock = 0;
     if (color == Color::Black) {
         ++pos.fullmove_number;
     }
@@ -1992,6 +2004,122 @@ std::vector<Move> generate_pseudo_noisy_moves(const Position& pos) {
     return to_vector(moves);
 }
 
+namespace {
+
+template <bool UpdateKingSafety>
+void make_move_impl(Position& pos, Move move, PieceType moved_piece, PieceType captured_piece) {
+    assert(moved_piece != PieceType::None);
+
+    const Square from = move.from();
+    const Square to = move.to();
+    const Color color = pos.side_to_move;
+    const MoveFlag flag = move.flag();
+    assert(pos.side_to_move == color);
+    const Color enemy = opposite(color);
+
+    if (moved_piece == PieceType::King) {
+        remove_castling_rights_for_king(pos, color);
+    } else if (moved_piece == PieceType::Rook) {
+        remove_castling_right_for_rook_square(pos, from);
+    }
+
+    if (flag == MoveFlag::Quiet) {
+        move_piece_fast(pos, color, moved_piece, from, to);
+        finish_quiet_move_metadata(pos, color, enemy);
+        if constexpr (UpdateKingSafety) {
+            update_king_safety_after_move(pos, move, color, moved_piece, PieceType::None, NoSquare);
+        }
+        return;
+    }
+
+    if (flag == MoveFlag::Capture) {
+        if (captured_piece == PieceType::None) {
+            captured_piece = pos.piece_type_on_occupied(enemy, to);
+        }
+        assert(captured_piece != PieceType::None);
+        remove_castling_right_for_rook_square(pos, to);
+        capture_piece_fast(pos, color, moved_piece, enemy, captured_piece, from, to);
+        finish_capture_or_pawn_move_metadata(pos, color, enemy);
+        if constexpr (UpdateKingSafety) {
+            update_king_safety_after_move(pos, move, color, moved_piece, captured_piece, to);
+        }
+        return;
+    }
+
+    if (flag == MoveFlag::DoublePawnPush) {
+        assert(moved_piece == PieceType::Pawn);
+        move_piece_fast(pos, color, moved_piece, from, to);
+        finish_double_pawn_push_metadata(pos, color, enemy, to);
+        if constexpr (UpdateKingSafety) {
+            update_king_safety_after_move(pos, move, color, moved_piece, PieceType::None, NoSquare);
+        }
+        return;
+    }
+
+    if (flag == MoveFlag::EnPassant) {
+        assert(moved_piece == PieceType::Pawn);
+        assert(to == pos.en_passant_square);
+        const Square captured_square = color == Color::White ? to - 8 : to + 8;
+        pos.clear_piece(color, PieceType::Pawn, from);
+        pos.clear_piece(enemy, PieceType::Pawn, captured_square);
+        pos.set_piece(color, PieceType::Pawn, to);
+        finish_capture_or_pawn_move_metadata(pos, color, enemy);
+        if constexpr (UpdateKingSafety) {
+            update_king_safety_after_move(
+                pos, move, color, PieceType::Pawn, PieceType::Pawn, captured_square);
+        }
+        return;
+    }
+
+    if (flag == MoveFlag::KingCastle || flag == MoveFlag::QueenCastle) {
+        assert(moved_piece == PieceType::King);
+        pos.clear_piece(color, PieceType::King, from);
+        const bool king_side = flag == MoveFlag::KingCastle;
+        const Square rook_from = color == Color::White
+            ? make_square(king_side ? 7 : 0, 0)
+            : make_square(king_side ? 7 : 0, 7);
+        const Square rook_to = color == Color::White
+            ? make_square(king_side ? 5 : 3, 0)
+            : make_square(king_side ? 5 : 3, 7);
+        pos.clear_piece(color, PieceType::Rook, rook_from);
+        pos.set_piece(color, PieceType::Rook, rook_to);
+        pos.set_piece(color, PieceType::King, to);
+        finish_quiet_move_metadata(pos, color, enemy);
+        if constexpr (UpdateKingSafety) {
+            update_king_safety_after_move(pos, move, color, PieceType::King, PieceType::None, NoSquare);
+        }
+        return;
+    }
+
+    PieceType placed_piece = promotion_piece(move);
+    assert(placed_piece != PieceType::None);
+    assert(moved_piece == PieceType::Pawn);
+    const bool capture = is_capture(flag);
+    Square captured_square = NoSquare;
+    if (capture) {
+        captured_square = to;
+        if (captured_piece == PieceType::None) {
+            captured_piece = pos.piece_type_on_occupied(enemy, to);
+        }
+        remove_castling_right_for_rook_square(pos, to);
+    }
+    assert(!capture || captured_piece != PieceType::None);
+
+    pos.clear_piece(color, moved_piece, from);
+    if (capture) {
+        pos.clear_piece(enemy, captured_piece, to);
+    }
+
+    pos.set_piece(color, placed_piece, to);
+
+    finish_capture_or_pawn_move_metadata(pos, color, enemy);
+    if constexpr (UpdateKingSafety) {
+        update_king_safety_after_move(pos, move, color, moved_piece, captured_piece, captured_square);
+    }
+}
+
+} // namespace
+
 void Position::make_move(Move move) {
     make_move(move, piece_type_on_occupied(side_to_move, move.from()));
 }
@@ -2006,83 +2134,15 @@ void Position::make_move(Move move, PieceType moved_piece) {
 }
 
 void Position::make_move(Move move, PieceType moved_piece, PieceType captured_piece) {
-    assert(moved_piece != PieceType::None);
+    make_move_impl<true>(*this, move, moved_piece, captured_piece);
+}
 
-    const Square from = move.from();
-    const Square to = move.to();
-    const Color color = side_to_move;
-    const MoveFlag flag = move.flag();
-    assert(side_to_move == color);
-    PieceType placed_piece = promotion_piece(move);
-    if (placed_piece == PieceType::None) {
-        placed_piece = moved_piece;
-    }
-    const bool pawn_move = moved_piece == PieceType::Pawn;
-    const bool capture = is_capture(flag);
-    const Color enemy = opposite(color);
-    Square captured_square = NoSquare;
-    if (capture && flag != MoveFlag::EnPassant && captured_piece == PieceType::None) {
-        captured_piece = piece_type_on_occupied(enemy, to);
-    }
-    assert(!capture || flag == MoveFlag::EnPassant || captured_piece != PieceType::None);
-    if (capture) {
-        captured_square = flag == MoveFlag::EnPassant
-            ? (color == Color::White ? to - 8 : to + 8)
-            : to;
-        if (flag == MoveFlag::EnPassant) {
-            captured_piece = PieceType::Pawn;
-        }
-    }
-
-    if (moved_piece == PieceType::King) {
-        remove_castling_rights_for_king(*this, color);
-    } else if (moved_piece == PieceType::Rook) {
-        remove_castling_right_for_rook_square(*this, from);
-    }
-
-    if (capture && flag != MoveFlag::EnPassant) {
-        remove_castling_right_for_rook_square(*this, to);
-    }
-
-    if (flag == MoveFlag::Quiet || flag == MoveFlag::DoublePawnPush) {
-        move_piece_fast(*this, color, moved_piece, from, to);
-        finish_move_metadata(*this, flag, color, enemy, to, pawn_move, capture);
-        update_king_safety_after_move(*this, move, color, moved_piece, captured_piece, captured_square);
-        return;
-    }
-
-    if (flag == MoveFlag::Capture) {
-        capture_piece_fast(*this, color, moved_piece, enemy, captured_piece, from, to);
-        finish_move_metadata(*this, flag, color, enemy, to, pawn_move, capture);
-        update_king_safety_after_move(*this, move, color, moved_piece, captured_piece, captured_square);
-        return;
-    }
-
-    clear_piece(color, moved_piece, from);
-
-  
-    if (flag == MoveFlag::EnPassant) {
-        assert(to == en_passant_square);
-        clear_piece(enemy, PieceType::Pawn, captured_square);
-    } else if (flag == MoveFlag::KingCastle) {
-        const Square rook_from = color == Color::White ? make_square(7, 0) : make_square(7, 7);
-        const Square rook_to = color == Color::White ? make_square(5, 0) : make_square(5, 7);
-        clear_piece(color, PieceType::Rook, rook_from);
-        set_piece(color, PieceType::Rook, rook_to);
-    } else if (flag == MoveFlag::QueenCastle) {
-        const Square rook_from = color == Color::White ? make_square(0, 0) : make_square(0, 7);
-        const Square rook_to = color == Color::White ? make_square(3, 0) : make_square(3, 7);
-        clear_piece(color, PieceType::Rook, rook_from);
-        set_piece(color, PieceType::Rook, rook_to);
-    } else if (capture) {
-        clear_piece(enemy, captured_piece, to);
-    }
-
-
-    set_piece(color, placed_piece, to);
-
-    finish_move_metadata(*this, flag, color, enemy, to, pawn_move, capture);
-    update_king_safety_after_move(*this, move, color, moved_piece, captured_piece, captured_square);
+void Position::make_move_without_king_safety(
+    Move move,
+    PieceType moved_piece,
+    PieceType captured_piece
+) {
+    make_move_impl<false>(*this, move, moved_piece, captured_piece);
 }
 
 void Position::make_move(Move move, UndoState& undo) {
@@ -2194,6 +2254,37 @@ void Position::make_move(
     }
 
     make_move(move, moved_piece, captured_piece);
+}
+
+void Position::make_move_without_king_safety(
+    Move move,
+    PieceType moved_piece,
+    PieceType captured_piece,
+    MoveUndoState& undo
+) {
+    const MoveFlag flag = move.flag();
+    const bool capture = is_capture(flag);
+    const Color enemy = opposite(side_to_move);
+
+    undo.moved_piece = moved_piece;
+    undo.captured_piece = PieceType::None;
+    undo.captured_square = NoSquare;
+
+    if (capture) {
+        if (flag == MoveFlag::EnPassant) {
+            undo.captured_piece = PieceType::Pawn;
+            undo.captured_square = static_cast<std::int8_t>(
+                side_to_move == Color::White ? move.to() - 8 : move.to() + 8);
+        } else {
+            if (captured_piece == PieceType::None) {
+                captured_piece = piece_type_on_occupied(enemy, move.to());
+            }
+            undo.captured_piece = captured_piece;
+            undo.captured_square = static_cast<std::int8_t>(move.to());
+        }
+    }
+
+    make_move_without_king_safety(move, moved_piece, captured_piece);
 }
 
 void Position::unmake_move(Move move, const UndoState& undo) {

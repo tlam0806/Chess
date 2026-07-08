@@ -1,14 +1,14 @@
-#include "heuristic_searcher_v30.hpp"
+#include "heuristic_searcher_fast_v35.hpp"
 
 #include "evaluate.hpp"
-#include "heuristic_searcher_v30_detail.hpp"
+#include "heuristic_searcher_fast_v35_detail.hpp"
 #include "legal_noisy_generator.hpp"
 #include "legal_non_capture_generator.hpp"
 
 namespace chess {
 
 template <bool IsCapture, bool IsPromotion>
-int HeuristicSearcherV30::qsearch_order_score(
+int HeuristicSearcherFastV35::qsearch_order_score(
     PieceType moved_piece,
     PieceType captured_piece
 ) const {
@@ -26,28 +26,28 @@ int HeuristicSearcherV30::qsearch_order_score(
     return score;
 }
 
-template int HeuristicSearcherV30::qsearch_order_score<false, false>(
+template int HeuristicSearcherFastV35::qsearch_order_score<false, false>(
     PieceType,
     PieceType
 ) const;
 
-template int HeuristicSearcherV30::qsearch_order_score<true, false>(
+template int HeuristicSearcherFastV35::qsearch_order_score<true, false>(
     PieceType,
     PieceType
 ) const;
 
-template int HeuristicSearcherV30::qsearch_order_score<false, true>(
+template int HeuristicSearcherFastV35::qsearch_order_score<false, true>(
     PieceType,
     PieceType
 ) const;
 
-template int HeuristicSearcherV30::qsearch_order_score<true, true>(
+template int HeuristicSearcherFastV35::qsearch_order_score<true, true>(
     PieceType,
     PieceType
 ) const;
 
 template <bool IsCapture, bool IsPromotion>
-HeuristicSearcherV30::ScoredMove HeuristicSearcherV30::make_qsearch_scored_move(
+HeuristicSearcherFastV35::ScoredMove HeuristicSearcherFastV35::make_qsearch_scored_move(
     Move move,
     PieceType moved_piece,
     PieceType captured_piece
@@ -61,42 +61,42 @@ HeuristicSearcherV30::ScoredMove HeuristicSearcherV30::make_qsearch_scored_move(
     };
 }
 
-template HeuristicSearcherV30::ScoredMove
-HeuristicSearcherV30::make_qsearch_scored_move<false, false>(
+template HeuristicSearcherFastV35::ScoredMove
+HeuristicSearcherFastV35::make_qsearch_scored_move<false, false>(
     Move,
     PieceType,
     PieceType
 ) const;
 
-template HeuristicSearcherV30::ScoredMove
-HeuristicSearcherV30::make_qsearch_scored_move<true, false>(
+template HeuristicSearcherFastV35::ScoredMove
+HeuristicSearcherFastV35::make_qsearch_scored_move<true, false>(
     Move,
     PieceType,
     PieceType
 ) const;
 
-template HeuristicSearcherV30::ScoredMove
-HeuristicSearcherV30::make_qsearch_scored_move<false, true>(
+template HeuristicSearcherFastV35::ScoredMove
+HeuristicSearcherFastV35::make_qsearch_scored_move<false, true>(
     Move,
     PieceType,
     PieceType
 ) const;
 
-template HeuristicSearcherV30::ScoredMove
-HeuristicSearcherV30::make_qsearch_scored_move<true, true>(
+template HeuristicSearcherFastV35::ScoredMove
+HeuristicSearcherFastV35::make_qsearch_scored_move<true, true>(
     Move,
     PieceType,
     PieceType
 ) const;
 
-bool HeuristicSearcherV30::is_quiet_move(const ScoredMove& scored_move) const {
+bool HeuristicSearcherFastV35::is_quiet_move(const ScoredMove& scored_move) const {
     return !is_capture(scored_move.move)
         && promotion_piece(scored_move.move) == PieceType::None
         && !scored_gives_check(scored_move);
 }
 
 template <bool IsCapture, bool IsPromotion>
-int HeuristicSearcherV30::main_order_score(
+int HeuristicSearcherFastV35::main_order_score(
     Move move,
     const Position& pos,
     PieceType moved_piece,
@@ -164,7 +164,7 @@ int HeuristicSearcherV30::main_order_score(
     return score;
 }
 
-template int HeuristicSearcherV30::main_order_score<false, false>(
+template int HeuristicSearcherFastV35::main_order_score<false, false>(
     Move,
     const Position&,
     PieceType,
@@ -176,7 +176,7 @@ template int HeuristicSearcherV30::main_order_score<false, false>(
     int
 ) const;
 
-template int HeuristicSearcherV30::main_order_score<true, false>(
+template int HeuristicSearcherFastV35::main_order_score<true, false>(
     Move,
     const Position&,
     PieceType,
@@ -188,7 +188,7 @@ template int HeuristicSearcherV30::main_order_score<true, false>(
     int
 ) const;
 
-template int HeuristicSearcherV30::main_order_score<false, true>(
+template int HeuristicSearcherFastV35::main_order_score<false, true>(
     Move,
     const Position&,
     PieceType,
@@ -200,7 +200,7 @@ template int HeuristicSearcherV30::main_order_score<false, true>(
     int
 ) const;
 
-template int HeuristicSearcherV30::main_order_score<true, true>(
+template int HeuristicSearcherFastV35::main_order_score<true, true>(
     Move,
     const Position&,
     PieceType,
@@ -212,7 +212,7 @@ template int HeuristicSearcherV30::main_order_score<true, true>(
     int
 ) const;
 
-HeuristicSearcherV30::ScoredMove HeuristicSearcherV30::make_scored_move(
+HeuristicSearcherFastV35::ScoredMove HeuristicSearcherFastV35::make_scored_move(
     const Position& pos,
     const KingSafetyContext& king_safety,
     Move move,
@@ -256,23 +256,30 @@ HeuristicSearcherV30::ScoredMove HeuristicSearcherV30::make_scored_move(
         pos, move, moved_piece, captured_piece, ply, tt_moves, prev_move, prev_moved_piece);
 }
 
-HeuristicSearcherV30::ScoredMove HeuristicSearcherV30::make_tt_lower_scored_move(
+HeuristicSearcherFastV35::ScoredMove HeuristicSearcherFastV35::make_tt_lower_scored_move(
     const Position& pos,
     Move move
 ) const {
-    const PieceType moved_piece = pos.piece_type_on_occupied(pos.side_to_move, from_square(move));
     const bool capture = is_capture(move);
+    const bool promotion = is_promotion(move);
+    const PieceType moved_piece =
+        piece_type_on_square_for_color(pos, pos.side_to_move, from_square(move));
+    if (moved_piece == PieceType::None) {
+        return ScoredMove{};
+    }
+    const bool legal = !capture && !promotion
+        ? is_quiet_non_promotion_move_legal_by_attack_check(pos, move, moved_piece)
+        : is_move_legal_by_attack_check(pos, move, moved_piece);
+    if (!legal) {
+        return ScoredMove{};
+    }
+
     PieceType captured_piece = PieceType::None;
     if (capture && move_flag(move) != MoveFlag::EnPassant) {
         captured_piece = pos.piece_type_on_occupied(opposite(pos.side_to_move), to_square(move));
     } else if (move_flag(move) == MoveFlag::EnPassant) {
         captured_piece = PieceType::Pawn;
     }
-    if (!is_move_legal_by_attack_check(pos, move, moved_piece)) {
-        return ScoredMove{};
-    }
-
-    const bool promotion = is_promotion(move);
     const bool gives_check = !capture && !promotion
         ? gives_check_fast(pos, move, moved_piece, captured_piece)
         : false;
@@ -284,8 +291,8 @@ HeuristicSearcherV30::ScoredMove HeuristicSearcherV30::make_tt_lower_scored_move
     };
 }
 
-template <HeuristicSearcherV30::ScoringMode Mode, bool IsCapture, bool IsPromotion>
-HeuristicSearcherV30::ScoredMove HeuristicSearcherV30::make_scored_legal_move(
+template <HeuristicSearcherFastV35::ScoringMode Mode, bool IsCapture, bool IsPromotion>
+HeuristicSearcherFastV35::ScoredMove HeuristicSearcherFastV35::make_scored_legal_move(
     const Position& pos,
     Move move,
     PieceType moved_piece,
@@ -332,8 +339,8 @@ HeuristicSearcherV30::ScoredMove HeuristicSearcherV30::make_scored_legal_move(
     };
 }
 
-template HeuristicSearcherV30::ScoredMove
-HeuristicSearcherV30::make_scored_legal_move<HeuristicSearcherV30::ScoringMode::MainSearch, false, false>(
+template HeuristicSearcherFastV35::ScoredMove
+HeuristicSearcherFastV35::make_scored_legal_move<HeuristicSearcherFastV35::ScoringMode::MainSearch, false, false>(
     const Position&,
     Move,
     PieceType,
@@ -344,8 +351,8 @@ HeuristicSearcherV30::make_scored_legal_move<HeuristicSearcherV30::ScoringMode::
     PieceType
 ) const;
 
-template HeuristicSearcherV30::ScoredMove
-HeuristicSearcherV30::make_scored_legal_move<HeuristicSearcherV30::ScoringMode::MainSearch, true, false>(
+template HeuristicSearcherFastV35::ScoredMove
+HeuristicSearcherFastV35::make_scored_legal_move<HeuristicSearcherFastV35::ScoringMode::MainSearch, true, false>(
     const Position&,
     Move,
     PieceType,
@@ -356,8 +363,8 @@ HeuristicSearcherV30::make_scored_legal_move<HeuristicSearcherV30::ScoringMode::
     PieceType
 ) const;
 
-template HeuristicSearcherV30::ScoredMove
-HeuristicSearcherV30::make_scored_legal_move<HeuristicSearcherV30::ScoringMode::MainSearch, false, true>(
+template HeuristicSearcherFastV35::ScoredMove
+HeuristicSearcherFastV35::make_scored_legal_move<HeuristicSearcherFastV35::ScoringMode::MainSearch, false, true>(
     const Position&,
     Move,
     PieceType,
@@ -368,8 +375,8 @@ HeuristicSearcherV30::make_scored_legal_move<HeuristicSearcherV30::ScoringMode::
     PieceType
 ) const;
 
-template HeuristicSearcherV30::ScoredMove
-HeuristicSearcherV30::make_scored_legal_move<HeuristicSearcherV30::ScoringMode::MainSearch, true, true>(
+template HeuristicSearcherFastV35::ScoredMove
+HeuristicSearcherFastV35::make_scored_legal_move<HeuristicSearcherFastV35::ScoringMode::MainSearch, true, true>(
     const Position&,
     Move,
     PieceType,
@@ -380,8 +387,8 @@ HeuristicSearcherV30::make_scored_legal_move<HeuristicSearcherV30::ScoringMode::
     PieceType
 ) const;
 
-template HeuristicSearcherV30::ScoredMove
-HeuristicSearcherV30::make_scored_legal_move<HeuristicSearcherV30::ScoringMode::Quiescence, false, false>(
+template HeuristicSearcherFastV35::ScoredMove
+HeuristicSearcherFastV35::make_scored_legal_move<HeuristicSearcherFastV35::ScoringMode::Quiescence, false, false>(
     const Position&,
     Move,
     PieceType,
@@ -392,8 +399,8 @@ HeuristicSearcherV30::make_scored_legal_move<HeuristicSearcherV30::ScoringMode::
     PieceType
 ) const;
 
-template HeuristicSearcherV30::ScoredMove
-HeuristicSearcherV30::make_scored_legal_move<HeuristicSearcherV30::ScoringMode::Quiescence, true, false>(
+template HeuristicSearcherFastV35::ScoredMove
+HeuristicSearcherFastV35::make_scored_legal_move<HeuristicSearcherFastV35::ScoringMode::Quiescence, true, false>(
     const Position&,
     Move,
     PieceType,
@@ -404,8 +411,8 @@ HeuristicSearcherV30::make_scored_legal_move<HeuristicSearcherV30::ScoringMode::
     PieceType
 ) const;
 
-template HeuristicSearcherV30::ScoredMove
-HeuristicSearcherV30::make_scored_legal_move<HeuristicSearcherV30::ScoringMode::Quiescence, false, true>(
+template HeuristicSearcherFastV35::ScoredMove
+HeuristicSearcherFastV35::make_scored_legal_move<HeuristicSearcherFastV35::ScoringMode::Quiescence, false, true>(
     const Position&,
     Move,
     PieceType,
@@ -416,8 +423,8 @@ HeuristicSearcherV30::make_scored_legal_move<HeuristicSearcherV30::ScoringMode::
     PieceType
 ) const;
 
-template HeuristicSearcherV30::ScoredMove
-HeuristicSearcherV30::make_scored_legal_move<HeuristicSearcherV30::ScoringMode::Quiescence, true, true>(
+template HeuristicSearcherFastV35::ScoredMove
+HeuristicSearcherFastV35::make_scored_legal_move<HeuristicSearcherFastV35::ScoringMode::Quiescence, true, true>(
     const Position&,
     Move,
     PieceType,
@@ -428,14 +435,14 @@ HeuristicSearcherV30::make_scored_legal_move<HeuristicSearcherV30::ScoringMode::
     PieceType
 ) const;
 
-bool HeuristicSearcherV30::better_scored_move(
+bool HeuristicSearcherFastV35::better_scored_move(
     const ScoredMove& lhs,
     const ScoredMove& rhs
 ) const {
     return lhs.order_score > rhs.order_score;
 }
 
-void HeuristicSearcherV30::sort_scored_moves(ScoredMoveList& moves) const {
+void HeuristicSearcherFastV35::sort_scored_moves(ScoredMoveList& moves) const {
     for (std::size_t i = 1; i < moves.size(); ++i) {
         ScoredMove current = moves[i];
         std::size_t j = i;
@@ -447,7 +454,7 @@ void HeuristicSearcherV30::sort_scored_moves(ScoredMoveList& moves) const {
     }
 }
 
-HeuristicSearcherV30::ScoredMoveList HeuristicSearcherV30::ordered_moves(
+HeuristicSearcherFastV35::ScoredMoveList HeuristicSearcherFastV35::ordered_moves(
     const Position& pos,
     int ply,
     MoveRange tt_moves,
@@ -486,8 +493,8 @@ HeuristicSearcherV30::ScoredMoveList HeuristicSearcherV30::ordered_moves(
     return ordered;
 }
 
-HeuristicSearcherV30::CaptureMoveLists
-HeuristicSearcherV30::generate_legal_capture_scored_move_lists_for_searcher(
+HeuristicSearcherFastV35::CaptureMoveLists
+HeuristicSearcherFastV35::generate_legal_capture_scored_move_lists_for_searcher(
     const Position& pos,
     const KingSafetyContext& king_safety,
     int ply,
@@ -534,21 +541,80 @@ HeuristicSearcherV30::generate_legal_capture_scored_move_lists_for_searcher(
     return ordered;
 }
 
-template <HeuristicSearcherV30::MoveGenerationStage Stage>
-HeuristicSearcherV30::ScoredMoveList HeuristicSearcherV30::ordered_moves_for_stage(
+HeuristicSearcherFastV35::ScoredMoveList HeuristicSearcherFastV35::ordered_priority_quiet_moves_for_stage(
+    const Position& pos,
+    int ply,
+    MoveRange tt_moves,
+    Move prev_move,
+    PieceType prev_moved_piece,
+    Move skip_tt_move
+) const {
+    ScoredMoveList ordered;
+    const Move killer1 = killer_table_.move(ply, 0);
+    const Move killer2 = killer_table_.move(ply, 1);
+    const Move counter_move = counter_move_table_.move(pos.side_to_move, prev_moved_piece, prev_move);
+
+    auto try_push_priority = [&](Move move) {
+        if (!is_valid_move(move) || matches_any(move, skip_tt_move)) {
+            return;
+        }
+        if (is_capture(move)
+            || promotion_piece(move) != PieceType::None) {
+            return;
+        }
+        const PieceType moved_piece =
+            piece_type_on_square_for_color(pos, pos.side_to_move, from_square(move));
+        if (moved_piece == PieceType::None
+            || !is_quiet_non_promotion_move_legal_by_attack_check(pos, move, moved_piece)) {
+            return;
+        }
+        ScoredMove scored_move =
+            make_scored_legal_move<ScoringMode::MainSearch, false, false>(
+                pos,
+                move,
+                moved_piece,
+                PieceType::None,
+                ply,
+                tt_moves,
+                prev_move,
+                prev_moved_piece);
+        if (!is_valid_move(scored_move.move)
+            || is_capture(scored_move.move)
+            || promotion_piece(scored_move.move) != PieceType::None) {
+            return;
+        }
+        ordered.push_back(scored_move);
+    };
+
+    try_push_priority(killer1);
+    if (killer2 != killer1) {
+        try_push_priority(killer2);
+    }
+    if (!matches_any(counter_move, killer1, killer2)) {
+        try_push_priority(counter_move);
+    }
+    sort_scored_moves(ordered);
+    return ordered;
+}
+
+template <HeuristicSearcherFastV35::MoveGenerationStage Stage>
+HeuristicSearcherFastV35::ScoredMoveList HeuristicSearcherFastV35::ordered_moves_for_stage(
     const Position& pos,
     const KingSafetyContext& king_safety,
     int ply,
     MoveRange tt_moves,
-    Move prev_move,  
+    Move prev_move,
     PieceType prev_moved_piece,
-    Move skip_tt_move
+    Move skip_tt_move,
+    Move skip_priority1,
+    Move skip_priority2,
+    Move skip_priority3
 ) {
     ScoredMoveList ordered;
 
     if constexpr (Stage == MoveGenerationStage::QuietNonPromotion) {
         auto score_quiet_move = [&](Move move, PieceType moved_piece) {
-            if (matches_any(move, skip_tt_move)) {
+            if (matches_any(move, skip_tt_move, skip_priority1, skip_priority2, skip_priority3)) {
                 return;
             }
             ScoredMove scored_move = make_scored_legal_move<ScoringMode::MainSearch, false, false>(
@@ -576,14 +642,17 @@ HeuristicSearcherV30::ScoredMoveList HeuristicSearcherV30::ordered_moves_for_sta
     return ordered;
 }
 
-template HeuristicSearcherV30::ScoredMoveList
-HeuristicSearcherV30::ordered_moves_for_stage<HeuristicSearcherV30::MoveGenerationStage::QuietNonPromotion>(
+template HeuristicSearcherFastV35::ScoredMoveList
+HeuristicSearcherFastV35::ordered_moves_for_stage<HeuristicSearcherFastV35::MoveGenerationStage::QuietNonPromotion>(
     const Position&,
     const KingSafetyContext&,
     int,
     MoveRange,
     Move,
     PieceType,
+    Move,
+    Move,
+    Move,
     Move
 );
 

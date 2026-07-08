@@ -87,4 +87,37 @@ private:
     MoveUndoState undo_{};
 };
 
+class SnapshotMoveUndoGuardWithoutKingSafety {
+public:
+    SnapshotMoveUndoGuardWithoutKingSafety(
+        Position& pos,
+        const PositionStateSnapshot& snapshot,
+        Move move,
+        PieceType moved_piece,
+        PieceType captured_piece
+    ) noexcept
+        : pos_(pos),
+          snapshot_(snapshot),
+          move_(move) {
+        pos_.make_move_without_king_safety(move_, moved_piece, captured_piece, undo_);
+    }
+
+    ~SnapshotMoveUndoGuardWithoutKingSafety() noexcept {
+        pos_.unmake_move(move_, snapshot_, undo_);
+    }
+
+    const MoveUndoState& undo_state() const noexcept {
+        return undo_;
+    }
+
+    SnapshotMoveUndoGuardWithoutKingSafety(const SnapshotMoveUndoGuardWithoutKingSafety&) = delete;
+    SnapshotMoveUndoGuardWithoutKingSafety& operator=(const SnapshotMoveUndoGuardWithoutKingSafety&) = delete;
+
+private:
+    Position& pos_;
+    const PositionStateSnapshot& snapshot_;
+    Move move_{};
+    MoveUndoState undo_{};
+};
+
 } // namespace chess

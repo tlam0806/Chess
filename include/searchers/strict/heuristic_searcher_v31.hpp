@@ -2,6 +2,7 @@
 
 #include "searcher.hpp"
 #include "range_bucket_transposition_table.hpp"
+#include "counter_move_table.hpp"
 #include "killer_move_table.hpp"
 #include "history_table_v16.hpp"
 #include "counter_history_table.hpp"
@@ -15,7 +16,7 @@
 
 namespace chess {
 
-class HeuristicSearcherV30 final : public Searcher {
+class HeuristicSearcherV31 final : public Searcher {
 public:
     struct MoveOrderingWeights {
         int tt_lower_bonus = 1'200'000'000;
@@ -36,14 +37,14 @@ public:
         int qsearch_captured_value_weight = 486;
         int qsearch_capture_metric_weight = 160;
     };
-    explicit HeuristicSearcherV30(
+    explicit HeuristicSearcherV31(
         std::size_t tt_mb = 64,
         std::size_t bucket_size = 4,
         int history_penalty_divisor_numerator = 10,
         int history_penalty_divisor_denominator = 14,
         int counter_history_bonus = 14'000
     );
-    HeuristicSearcherV30(
+    HeuristicSearcherV31(
         std::size_t tt_mb,
         std::size_t bucket_size,
         int history_penalty_divisor_numerator,
@@ -75,6 +76,7 @@ private:
     enum class MoveGenerationStage {
         Promotion,
         GoodCapture,
+        Killer,
         QuietNonPromotion,
         BadCapture
     };
@@ -105,6 +107,13 @@ private:
     };
     struct SearchValue {
         ScoreRange range{};
+    };
+    struct PendingKingSafetyUpdate {
+        Move move{};
+        Color moved_color = Color::White;
+        PieceType moved_piece = PieceType::None;
+        PieceType captured_piece = PieceType::None;
+        Square captured_square = NoSquare;
     };
     struct RootSearchResult {
         SearchResult result{};
@@ -148,7 +157,8 @@ private:
         int beta,
         int ply,
         int q_depth,
-        SearchState& state
+        SearchState& state,
+        const PendingKingSafetyUpdate* pending_king_safety = nullptr
     );
 
     SearchResult make_fallback_result(const Position& pos) const;
@@ -169,8 +179,19 @@ private:
         MoveRange tt_moves,
         Move prev_move,
         PieceType prev_moved_piece,
-        Move skip_tt_move
+        Move skip_tt_move,
+        Move skip_priority1 = Move{},
+        Move skip_priority2 = Move{},
+        Move skip_priority3 = Move{}
     );
+    ScoredMoveList ordered_priority_quiet_moves_for_stage(
+        const Position& pos,
+        int ply,
+        MoveRange tt_moves,
+        Move prev_move,
+        PieceType prev_moved_piece,
+        Move skip_tt_move
+    ) const;
 
     ScoredMove make_scored_move(
         const Position& pos,
@@ -288,6 +309,7 @@ private:
     );
     RangeBucketTranspositionTable tt_;
     KillerMoveTable killer_table_;
+    CounterMoveTable counter_move_table_;
     HistoryTableV16 history_table_;
     CounterHistoryTable counter_history_table_;
     MoveOrderingWeights move_ordering_weights_{};

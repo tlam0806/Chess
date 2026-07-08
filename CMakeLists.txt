@@ -13,6 +13,7 @@ add_library(chess_core
     src/bitboard.cpp
     src/board_encoder.cpp
     src/counter_history_table.cpp
+    src/counter_move_table.cpp
     src/evaluate.cpp
     src/game_state.cpp
     src/history_table.cpp
@@ -25,6 +26,9 @@ add_library(chess_core
     src/nnue_value.cpp
     src/perft.cpp
     src/position.cpp
+    src/lower_bucket_transposition_table.cpp
+    src/lower_move_range_bucket_transposition_table.cpp
+    src/single_bound_bucket_transposition_table.cpp
     src/range_transposition_table.cpp
     src/range_bucket_transposition_table.cpp
     src/searchers/fast/heuristic_searcher.cpp
@@ -42,6 +46,14 @@ add_library(chess_core
     src/searchers/fast/heuristic_searcher_v13.cpp
     src/searchers/fast/heuristic_searcher_v14.cpp
     src/searchers/fast/heuristic_searcher_v14_experimental.cpp
+    src/searchers/fast/heuristic_searcher_fast_v32.cpp
+    src/searchers/fast/heuristic_searcher_fast_v32_api.cpp
+    src/searchers/fast/heuristic_searcher_fast_v32_ordering.cpp
+    src/searchers/fast/heuristic_searcher_fast_v32_tt.cpp
+    src/searchers/fast/heuristic_searcher_fast_v35.cpp
+    src/searchers/fast/heuristic_searcher_fast_v35_api.cpp
+    src/searchers/fast/heuristic_searcher_fast_v35_ordering.cpp
+    src/searchers/fast/heuristic_searcher_fast_v35_tt.cpp
     src/searchers/strict/heuristic_searcher_v15.cpp
     src/searchers/strict/heuristic_searcher_v16.cpp
     src/searchers/strict/heuristic_searcher_v17.cpp
@@ -72,6 +84,26 @@ add_library(chess_core
     src/searchers/strict/heuristic_searcher_v30_api.cpp
     src/searchers/strict/heuristic_searcher_v30_ordering.cpp
     src/searchers/strict/heuristic_searcher_v30_tt.cpp
+    src/searchers/strict/heuristic_searcher_v31.cpp
+    src/searchers/strict/heuristic_searcher_v31_api.cpp
+    src/searchers/strict/heuristic_searcher_v31_ordering.cpp
+    src/searchers/strict/heuristic_searcher_v31_tt.cpp
+    src/searchers/strict/heuristic_searcher_v32.cpp
+    src/searchers/strict/heuristic_searcher_v32_api.cpp
+    src/searchers/strict/heuristic_searcher_v32_ordering.cpp
+    src/searchers/strict/heuristic_searcher_v32_tt.cpp
+    src/searchers/strict/heuristic_searcher_v33.cpp
+    src/searchers/strict/heuristic_searcher_v33_api.cpp
+    src/searchers/strict/heuristic_searcher_v33_ordering.cpp
+    src/searchers/strict/heuristic_searcher_v33_tt.cpp
+    src/searchers/strict/heuristic_searcher_v34.cpp
+    src/searchers/strict/heuristic_searcher_v34_api.cpp
+    src/searchers/strict/heuristic_searcher_v34_ordering.cpp
+    src/searchers/strict/heuristic_searcher_v34_tt.cpp
+    src/searchers/strict/heuristic_searcher_v35.cpp
+    src/searchers/strict/heuristic_searcher_v35_api.cpp
+    src/searchers/strict/heuristic_searcher_v35_ordering.cpp
+    src/searchers/strict/heuristic_searcher_v35_tt.cpp
     src/searchers/fast/heuristic_searcher_v15_pvs.cpp
     src/searchers/fast/nn_searcher.cpp
     src/searchers/fast/nn_searcher_v6.cpp
@@ -162,6 +194,21 @@ target_link_libraries(benchmark_v14_pvs PRIVATE chess_core)
 add_executable(benchmark_v15_pvs_compare tools/benchmark_v15_pvs_compare.cpp)
 target_link_libraries(benchmark_v15_pvs_compare PRIVATE chess_core)
 
+add_executable(benchmark_fast_v15_v35 tools/profile/benchmark_fast_v15_v35.cpp)
+target_link_libraries(benchmark_fast_v15_v35 PRIVATE chess_core)
+
+add_executable(benchmark_fast_v10_v35 tools/profile/benchmark_fast_v10_v35.cpp)
+target_link_libraries(benchmark_fast_v10_v35 PRIVATE chess_core)
+
+add_executable(benchmark_strict_v32_fast_v32 tools/profile/benchmark_strict_v32_fast_v32.cpp)
+target_link_libraries(benchmark_strict_v32_fast_v32 PRIVATE chess_core)
+
+add_executable(tune_fast_v32_lmr_match tools/profile/tune_fast_v32_lmr_match.cpp)
+target_link_libraries(tune_fast_v32_lmr_match PRIVATE chess_core)
+
+add_executable(render_fast_v32_lmr_win tools/profile/render_fast_v32_lmr_win.cpp)
+target_link_libraries(render_fast_v32_lmr_win PRIVATE chess_core)
+
 add_executable(benchmark_v15_aspiration tools/benchmark_v15_aspiration.cpp)
 target_link_libraries(benchmark_v15_aspiration PRIVATE chess_core)
 
@@ -218,6 +265,72 @@ target_link_libraries(benchmark_v27_v28 PRIVATE chess_core)
 
 add_executable(benchmark_v29_v30 tools/benchmark_v29_v30.cpp)
 target_link_libraries(benchmark_v29_v30 PRIVATE chess_core)
+
+add_executable(benchmark_v30_v31 tools/benchmark_v30_v31.cpp)
+target_link_libraries(benchmark_v30_v31 PRIVATE chess_core)
+
+add_executable(benchmark_v31_v32 tools/benchmark_v31_v32.cpp)
+target_link_libraries(benchmark_v31_v32 PRIVATE chess_core)
+
+add_executable(benchmark_v32_v33 tools/benchmark_v32_v33.cpp)
+target_link_libraries(benchmark_v32_v33 PRIVATE chess_core)
+
+add_executable(benchmark_v32_v34 tools/benchmark_v32_v34.cpp)
+target_link_libraries(benchmark_v32_v34 PRIVATE chess_core)
+
+add_executable(benchmark_v32_v35 tools/benchmark_v32_v35.cpp)
+target_link_libraries(benchmark_v32_v35 PRIVATE chess_core)
+
+add_executable(check_v31_ordering_score tools/check_v31_ordering_score.cpp)
+target_link_libraries(check_v31_ordering_score PRIVATE chess_core)
+
+add_executable(profile_v31_iterative_once tools/profile/profile_v31_iterative_once.cpp)
+target_link_libraries(profile_v31_iterative_once PRIVATE chess_core)
+
+add_executable(profile_v32_iterative_once tools/profile/profile_v32_iterative_once.cpp)
+target_link_libraries(profile_v32_iterative_once PRIVATE chess_core)
+
+add_executable(profile_v34_iterative_once tools/profile/profile_v34_iterative_once.cpp)
+target_link_libraries(profile_v34_iterative_once PRIVATE chess_core)
+
+add_executable(profile_v32_tt_stats tools/profile/profile_v32_tt_stats.cpp)
+target_link_libraries(profile_v32_tt_stats PRIVATE chess_core)
+
+add_executable(profile_v32_v34_tt_stats tools/profile/profile_v32_v34_tt_stats.cpp)
+target_link_libraries(profile_v32_v34_tt_stats PRIVATE chess_core)
+
+add_executable(profile_v32_v34_tt_timing tools/profile/profile_v32_v34_tt_timing.cpp)
+target_compile_definitions(profile_v32_v34_tt_timing PRIVATE CHESS_PROFILE_TT_TIMING)
+target_link_libraries(profile_v32_v34_tt_timing PRIVATE chess_core)
+
+add_executable(profile_v32_v34_tt_probe_paths tools/profile/profile_v32_v34_tt_probe_paths.cpp)
+target_compile_definitions(profile_v32_v34_tt_probe_paths PRIVATE CHESS_PROFILE_TT_PATH_TIMING)
+target_link_libraries(profile_v32_v34_tt_probe_paths PRIVATE chess_core)
+
+add_executable(profile_v34_tt_cache_lines tools/profile/profile_v34_tt_cache_lines.cpp)
+target_compile_definitions(profile_v34_tt_cache_lines PRIVATE CHESS_PROFILE_TT_CACHE_LINES)
+target_link_libraries(profile_v34_tt_cache_lines PRIVATE chess_core)
+
+add_executable(benchmark_tt_probe_cases tools/profile/benchmark_tt_probe_cases.cpp)
+target_link_libraries(benchmark_tt_probe_cases PRIVATE chess_core)
+
+add_executable(benchmark_v32_v34_tt_functions tools/profile/benchmark_v32_v34_tt_functions.cpp)
+target_link_libraries(benchmark_v32_v34_tt_functions PRIVATE chess_core)
+
+add_executable(benchmark_v32_v33_single_fen tools/profile/benchmark_v32_v33_single_fen.cpp)
+target_link_libraries(benchmark_v32_v33_single_fen PRIVATE chess_core)
+
+add_executable(benchmark_v32_v34_single_fen tools/profile/benchmark_v32_v34_single_fen.cpp)
+target_link_libraries(benchmark_v32_v34_single_fen PRIVATE chess_core)
+
+add_executable(benchmark_v34_bucket_sizes tools/profile/benchmark_v34_bucket_sizes.cpp)
+target_link_libraries(benchmark_v34_bucket_sizes PRIVATE chess_core)
+
+add_executable(benchmark_v35_tt_mb tools/profile/benchmark_v35_tt_mb.cpp)
+target_link_libraries(benchmark_v35_tt_mb PRIVATE chess_core)
+
+add_executable(benchmark_v32_v34_tt_mb tools/profile/benchmark_v32_v34_tt_mb.cpp)
+target_link_libraries(benchmark_v32_v34_tt_mb PRIVATE chess_core)
 
 add_executable(analyze_nn_buckets tools/analyze_nn_buckets.cpp)
 target_link_libraries(analyze_nn_buckets PRIVATE chess_core)

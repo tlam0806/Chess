@@ -127,15 +127,15 @@ inline void generate_legal_pawn_noisy_moves_with_info(
     };
     auto emit_promotion_capture = [&](Square from, Square to) {
         emit(from, to, MoveFlag::QueenPromotionCapture);
-        emit(from, to, MoveFlag::KnightPromotionCapture);
-        emit(from, to, MoveFlag::BishopPromotionCapture);
         emit(from, to, MoveFlag::RookPromotionCapture);
+        emit(from, to, MoveFlag::BishopPromotionCapture);
+        emit(from, to, MoveFlag::KnightPromotionCapture);
     };
     auto emit_quiet_promotion = [&](Square from, Square to) {
         emit(from, to, MoveFlag::QueenPromotion);
-        emit(from, to, MoveFlag::KnightPromotion);
-        emit(from, to, MoveFlag::BishopPromotion);
         emit(from, to, MoveFlag::RookPromotion);
+        emit(from, to, MoveFlag::BishopPromotion);
+        emit(from, to, MoveFlag::KnightPromotion);
     };
 
     if (context.us == Color::White) {
@@ -210,6 +210,71 @@ inline void generate_legal_pawn_noisy_moves_with_info(
         if (pos.en_passant_square != NoSquare) {
             const Bitboard ep_target = bit(pos.en_passant_square);
             Bitboard ep_from = normal_pawns & (((ep_target & ~FileMask[7]) << 9) | ((ep_target & ~FileMask[0]) << 7));
+            while (ep_from != EmptyBB) {
+                emit(pop_lsb(ep_from), pos.en_passant_square, MoveFlag::EnPassant);
+            }
+        }
+    }
+}
+
+template <typename Callback>
+inline void generate_legal_pawn_non_promotion_capture_moves_with_info(
+    const Position& pos,
+    const KingSafetyContext& king_safety,
+    const LegalNoisyMoveGenerationContext& context,
+    Bitboard allowed_capture_targets,
+    Callback&& callback
+) {
+    Bitboard pawns =
+        pos.pieces[context.us_idx][static_cast<int>(PieceType::Pawn)]
+        & ~noisy_promotion_from_rank_mask(context.us);
+
+    auto emit = [&](Square from, Square to, MoveFlag flag) {
+        try_emit_legal_noisy_move(
+            pos,
+            king_safety,
+            context,
+            make_move(from, to, flag),
+            PieceType::Pawn,
+            callback);
+    };
+
+    if (context.us == Color::White) {
+        Bitboard left_targets = ((pawns & ~FileMask[0]) << 7) & allowed_capture_targets;
+        while (left_targets != EmptyBB) {
+            const Square to = pop_lsb(left_targets);
+            emit(to - 7, to, MoveFlag::Capture);
+        }
+
+        Bitboard right_targets = ((pawns & ~FileMask[7]) << 9) & allowed_capture_targets;
+        while (right_targets != EmptyBB) {
+            const Square to = pop_lsb(right_targets);
+            emit(to - 9, to, MoveFlag::Capture);
+        }
+
+        if (pos.en_passant_square != NoSquare) {
+            const Bitboard ep_target = bit(pos.en_passant_square);
+            Bitboard ep_from = pawns & (((ep_target & ~FileMask[7]) >> 7) | ((ep_target & ~FileMask[0]) >> 9));
+            while (ep_from != EmptyBB) {
+                emit(pop_lsb(ep_from), pos.en_passant_square, MoveFlag::EnPassant);
+            }
+        }
+    } else {
+        Bitboard left_targets = ((pawns & ~FileMask[0]) >> 9) & allowed_capture_targets;
+        while (left_targets != EmptyBB) {
+            const Square to = pop_lsb(left_targets);
+            emit(to + 9, to, MoveFlag::Capture);
+        }
+
+        Bitboard right_targets = ((pawns & ~FileMask[7]) >> 7) & allowed_capture_targets;
+        while (right_targets != EmptyBB) {
+            const Square to = pop_lsb(right_targets);
+            emit(to + 7, to, MoveFlag::Capture);
+        }
+
+        if (pos.en_passant_square != NoSquare) {
+            const Bitboard ep_target = bit(pos.en_passant_square);
+            Bitboard ep_from = pawns & (((ep_target & ~FileMask[7]) << 9) | ((ep_target & ~FileMask[0]) << 7));
             while (ep_from != EmptyBB) {
                 emit(pop_lsb(ep_from), pos.en_passant_square, MoveFlag::EnPassant);
             }
@@ -338,9 +403,9 @@ inline void generate_legal_pawn_captures_to_square_with_info(
         assert(rank != promotion_rank);
         if (rank + offset == promotion_rank) {
             try_emit_legal_noisy_move(pos, king_safety, context, make_move(from, target, MoveFlag::QueenPromotionCapture), PieceType::Pawn, callback);
-            try_emit_legal_noisy_move(pos, king_safety, context, make_move(from, target, MoveFlag::KnightPromotionCapture), PieceType::Pawn, callback);
-            try_emit_legal_noisy_move(pos, king_safety, context, make_move(from, target, MoveFlag::BishopPromotionCapture), PieceType::Pawn, callback);
             try_emit_legal_noisy_move(pos, king_safety, context, make_move(from, target, MoveFlag::RookPromotionCapture), PieceType::Pawn, callback);
+            try_emit_legal_noisy_move(pos, king_safety, context, make_move(from, target, MoveFlag::BishopPromotionCapture), PieceType::Pawn, callback);
+            try_emit_legal_noisy_move(pos, king_safety, context, make_move(from, target, MoveFlag::KnightPromotionCapture), PieceType::Pawn, callback);
         } else {
             try_emit_legal_noisy_move(pos, king_safety, context, make_move(from, target, MoveFlag::Capture), PieceType::Pawn, callback);
         }
@@ -428,9 +493,9 @@ inline void generate_legal_quiet_promotion_blocks_with_info(
         }
 
         try_emit_legal_noisy_move(pos, king_safety, context, make_move(from, to, MoveFlag::QueenPromotion), PieceType::Pawn, callback);
-        try_emit_legal_noisy_move(pos, king_safety, context, make_move(from, to, MoveFlag::KnightPromotion), PieceType::Pawn, callback);
-        try_emit_legal_noisy_move(pos, king_safety, context, make_move(from, to, MoveFlag::BishopPromotion), PieceType::Pawn, callback);
         try_emit_legal_noisy_move(pos, king_safety, context, make_move(from, to, MoveFlag::RookPromotion), PieceType::Pawn, callback);
+        try_emit_legal_noisy_move(pos, king_safety, context, make_move(from, to, MoveFlag::BishopPromotion), PieceType::Pawn, callback);
+        try_emit_legal_noisy_move(pos, king_safety, context, make_move(from, to, MoveFlag::KnightPromotion), PieceType::Pawn, callback);
     }
 }
 
@@ -546,12 +611,11 @@ inline void generate_legal_non_promotion_capture_moves_with_info(
         return;
     }
 
-    detail::generate_legal_pawn_noisy_moves_with_info(
+    detail::generate_legal_pawn_non_promotion_capture_moves_with_info(
         pos,
         king_safety,
         context,
         context.capturable,
-        EmptyBB,
         emit_non_promotion_capture);
     detail::generate_legal_knight_capture_moves_with_info(
         pos,

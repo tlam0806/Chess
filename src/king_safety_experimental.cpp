@@ -1,4 +1,4 @@
-#include "king_safety.hpp"
+#include "king_safety_experimental.hpp"
 
 #include "attacks.hpp"
 
@@ -6,7 +6,7 @@
 #include <bit>
 #include <cassert>
 #include <cstdlib>
-namespace chess {
+namespace chess::experimental {
 
 namespace {
 
@@ -83,6 +83,19 @@ constexpr Bitboard make_ray_to_edge_mask(Square from, Square through) {
     return mask;
 }
 
+consteval std::array<Bitboard, BoardSize * BoardSize> make_ray_to_edge_masks() {
+    std::array<Bitboard, BoardSize * BoardSize> masks{};
+    for (Square from = 0; from < BoardSize; ++from) {
+        for (Square through = 0; through < BoardSize; ++through) {
+            masks[static_cast<std::size_t>(from) * BoardSize + static_cast<std::size_t>(through)] =
+                make_ray_to_edge_mask(from, through);
+        }
+    }
+    return masks;
+}
+
+constexpr auto RayToEdgeMasks = make_ray_to_edge_masks();
+
 constexpr Bitboard make_rook_ray_to_edge_mask_or_empty(Square from, Square through) {
     if (from == through) {
         return EmptyBB;
@@ -136,6 +149,13 @@ Bitboard ray_to_mask(Square from, Square to) {
     return RayToMasks[static_cast<std::size_t>(from) * BoardSize + static_cast<std::size_t>(to)];
 }
 
+Bitboard ray_to_edge_mask(Square from, Square through) {
+    assert(is_valid_square(from));
+    assert(is_valid_square(through));
+    return RayToEdgeMasks[
+        static_cast<std::size_t>(from) * BoardSize + static_cast<std::size_t>(through)];
+}
+
 Bitboard rook_ray_to_edge_mask_or_empty(Square from, Square through) {
     assert(is_valid_square(from));
     assert(is_valid_square(through));
@@ -148,6 +168,11 @@ Bitboard bishop_ray_to_edge_mask_or_empty(Square from, Square through) {
     assert(is_valid_square(through));
     return BishopRayToEdgeMasks[
         static_cast<std::size_t>(from) * BoardSize + static_cast<std::size_t>(through)];
+}
+
+bool ray_increases_square_index(Square king, Bitboard ray) {
+    assert(ray != EmptyBB);
+    return std::countr_zero(ray) > king;
 }
 
 struct Direction {
@@ -293,7 +318,7 @@ KingSafetyContext make_king_safety_context(const Position& pos, Color color) {
         const Square checker = std::countr_zero(context.checkers);
         const Bitboard checker_mask = bit(checker);
         if ((slider_checkers & checker_mask) != EmptyBB) {
-            context.block_mask = ray_to_mask(context.king_square, checker) | checker_mask;
+            context.block_mask = ray_to_mask(context.king_square, checker);
         } else {
             context.block_mask = checker_mask;
         }
@@ -360,6 +385,14 @@ void refresh_king_safety(Position& pos) {
 
 namespace {
 
+constexpr bool same_rook_line(Square a, Square b) {
+    return file_of(a) == file_of(b) || rank_of(a) == rank_of(b);
+}
+
+constexpr bool same_bishop_line(Square a, Square b) {
+    return abs_int(file_of(a) - file_of(b)) == abs_int(rank_of(a) - rank_of(b));
+}
+
 Square nearest_square_on_ray(Bitboard squares, bool increasing_square_index) {
     assert(squares != EmptyBB);
     return increasing_square_index
@@ -380,212 +413,138 @@ bool direct_piece_attacks_king(PieceType piece, Color attacker_color, Square fro
     }
 }
 
-template <bool UpdateCheckers>
-void update_rook_ray(
-    Square king,
-    Bitboard ray,
-    bool increasing_square_index,
-    Bitboard occupancy,
-    Bitboard our_pieces,
-    Bitboard enemy_sliders,
-    Bitboard& checkers,
-    Bitboard& block_mask,
-    Bitboard& pinned
-) {
-    assert(ray != EmptyBB);
-    pinned &= ~ray;
-    const Bitboard sliders = ray & enemy_sliders;
-    if (sliders == EmptyBB) {
-        return;
-    }
-
-    const Square slider = nearest_square_on_ray(sliders, increasing_square_index);
-    const Bitboard king_to_slider_mask = ray_to_mask(king, slider);
-    const Bitboard blockers = king_to_slider_mask & occupancy;
-    if constexpr (UpdateCheckers) {
-        if (blockers == EmptyBB) {
-            const Bitboard checker = bit(slider);
-            block_mask = (checkers == EmptyBB) ? (king_to_slider_mask | checker) : EmptyBB;
-            checkers |= checker;
-        } else if ((blockers & (blockers - 1)) == EmptyBB
-            && (blockers & our_pieces) != EmptyBB) {
-            pinned |= blockers;
-        }
-    } else {
-        if ((blockers & (blockers - 1)) == EmptyBB
-            && (blockers & our_pieces) != EmptyBB) {
-            pinned |= blockers;
-        }
-    }
-
-    if constexpr (!UpdateCheckers) {
-        (void)checkers;
-        (void)block_mask;
-    }
+constexpr bool is_direct_checker_piece(PieceType piece) {
+    return piece == PieceType::Pawn
+        || piece == PieceType::Knight
+        || piece == PieceType::King;
 }
 
-template <bool UpdateCheckers>
-void update_bishop_ray(
-    Square king,
-    Bitboard ray,
-    bool increasing_square_index,
-    Bitboard occupancy,
-    Bitboard our_pieces,
-    Bitboard enemy_sliders,
-    Bitboard& checkers,
-    Bitboard& block_mask,
-    Bitboard& pinned
-) {
-    assert(ray != EmptyBB);
-    pinned &= ~ray;
-    const Bitboard sliders = ray & enemy_sliders;
-    if (sliders == EmptyBB) {
-        return;
+Bitboard block_mask_from_checkers(const Position& pos, Color color, Square king, Bitboard checkers) {
+    if (checkers == EmptyBB) {
+        return FullBB;
+    }
+    if (popcount(checkers) != 1) {
+        return EmptyBB;
     }
 
-    const Square slider = nearest_square_on_ray(sliders, increasing_square_index);
-    const Bitboard king_to_slider_mask = ray_to_mask(king, slider);
-    const Bitboard blockers = king_to_slider_mask & occupancy;
-    if constexpr (UpdateCheckers) {
-        if (blockers == EmptyBB) {
-            const Bitboard checker = bit(slider);
-            if (checkers == EmptyBB) {
-                checkers = checker;
-                block_mask = king_to_slider_mask | checker;
-            } else {
-                checkers |= checker;
-                block_mask = EmptyBB;
-            }
-        } else if ((blockers & (blockers - 1)) == EmptyBB
-            && (blockers & our_pieces) != EmptyBB) {
-            pinned |= blockers;
-        }
-    } else {
-        if ((blockers & (blockers - 1)) == EmptyBB
-            && (blockers & our_pieces) != EmptyBB) {
-            pinned |= blockers;
-        }
-    }
-
-    if constexpr (!UpdateCheckers) {
-        (void)checkers;
-        (void)block_mask;
-    }
-}
-
-template <bool UpdateCheckers>
-void update_color_king_safety_after_move(
-    Position& pos,
-    int color_idx,
-    int enemy_idx,
-    Square from,
-    Square to,
-    Bitboard occupancy,
-    Bitboard our_pieces,
-    Bitboard direct_checker
-) {
-    assert(popcount(pos.pieces[color_idx][static_cast<int>(PieceType::King)]) == 1);
-
-    const Square king = pos.king_squares[color_idx];
-    assert(king != NoSquare);
-
-    const Bitboard from_rook_ray = rook_ray_to_edge_mask_or_empty(king, from);
-    const Bitboard to_rook_ray = rook_ray_to_edge_mask_or_empty(king, to);
-    const Bitboard from_bishop_ray = bishop_ray_to_edge_mask_or_empty(king, from);
-    const Bitboard to_bishop_ray = bishop_ray_to_edge_mask_or_empty(king, to);
-    const bool rook_affected = from_rook_ray != EmptyBB || to_rook_ray != EmptyBB;
-    const bool bishop_affected = from_bishop_ray != EmptyBB || to_bishop_ray != EmptyBB;
-    if (!rook_affected && !bishop_affected) {
-        if constexpr (UpdateCheckers) {
-            if (direct_checker == EmptyBB) {
-                return;
-            }
-            pos.king_checkers[color_idx] = direct_checker;
-            pos.king_block_masks[color_idx] = direct_checker;
-        } else {
-            pos.king_checkers[color_idx] = EmptyBB;
-            pos.king_block_masks[color_idx] = FullBB;
-        }
-        return;
-    }
-
-    Bitboard checkers = EmptyBB;
-    Bitboard block_mask = FullBB;
-    Bitboard pinned = pos.king_pinned[color_idx];
-    const Bitboard enemy_rook_sliders =
+    const Color enemy = opposite(color);
+    const int enemy_idx = static_cast<int>(enemy);
+    const Square checker = std::countr_zero(checkers);
+    const Bitboard checker_mask = bit(checker);
+    const Bitboard enemy_rooks_or_queens =
         pos.pieces[enemy_idx][static_cast<int>(PieceType::Rook)]
         | pos.pieces[enemy_idx][static_cast<int>(PieceType::Queen)];
-    const Bitboard enemy_bishop_sliders =
+    const Bitboard enemy_bishops_or_queens =
         pos.pieces[enemy_idx][static_cast<int>(PieceType::Bishop)]
         | pos.pieces[enemy_idx][static_cast<int>(PieceType::Queen)];
+    if ((enemy_rooks_or_queens & checker_mask) != EmptyBB
+        && same_rook_line(king, checker)) {
+        return ray_to_mask(king, checker);
+    }
+    if ((enemy_bishops_or_queens & checker_mask) != EmptyBB
+        && same_bishop_line(king, checker)) {
+        return ray_to_mask(king, checker);
+    }
+    return checker_mask;
+}
 
-    if (from_rook_ray != EmptyBB) {
-        update_rook_ray<UpdateCheckers>(
-            king,
-            from_rook_ray,
-            from > king,
-            occupancy,
-            our_pieces,
-            enemy_rook_sliders,
-            checkers,
-            block_mask,
-            pinned);
-    }
-    if (to_rook_ray != EmptyBB && to_rook_ray != from_rook_ray) {
-        update_rook_ray<UpdateCheckers>(
-            king,
-            to_rook_ray,
-            to > king,
-            occupancy,
-            our_pieces,
-            enemy_rook_sliders,
-            checkers,
-            block_mask,
-            pinned);
-    }
-
-    if (from_bishop_ray != EmptyBB) {
-        update_bishop_ray<UpdateCheckers>(
-            king,
-            from_bishop_ray,
-            from > king,
-            occupancy,
-            our_pieces,
-            enemy_bishop_sliders,
-            checkers,
-            block_mask,
-            pinned);
-    }
-    if (to_bishop_ray != EmptyBB && to_bishop_ray != from_bishop_ray) {
-        update_bishop_ray<UpdateCheckers>(
-            king,
-            to_bishop_ray,
-            to > king,
-            occupancy,
-            our_pieces,
-            enemy_bishop_sliders,
-            checkers,
-            block_mask,
-            pinned);
-    }
-
-    if constexpr (UpdateCheckers) {
-        if (direct_checker != EmptyBB) {
-            if (checkers == EmptyBB) {
-                checkers = direct_checker;
-                block_mask = direct_checker;
-            } else {
-                checkers |= direct_checker;
-                block_mask = EmptyBB;
-            }
+void update_rook_ray(
+    const Position& pos,
+    Color color,
+    Square king,
+    Bitboard ray,
+    Bitboard& checkers,
+    Bitboard& pinned
+) {
+    assert(ray != EmptyBB);
+    const Color enemy = opposite(color);
+    const int enemy_idx = static_cast<int>(enemy);
+    const Bitboard enemy_sliders =
+        pos.pieces[enemy_idx][static_cast<int>(PieceType::Rook)]
+        | pos.pieces[enemy_idx][static_cast<int>(PieceType::Queen)];
+    Bitboard checker = EmptyBB;
+    Bitboard pinned_piece = EmptyBB;
+    const Bitboard sliders = ray & enemy_sliders;
+    if (sliders != EmptyBB) {
+        const Square slider = nearest_square_on_ray(sliders, ray_increases_square_index(king, ray));
+        const Bitboard occupancy = pos.occupancy();
+        const Bitboard our_pieces = pos.occupancy(color);
+        const Bitboard blockers = ray_to_mask(king, slider) & occupancy;
+        const int blocker_count = popcount(blockers);
+        if (blocker_count == 0) {
+            checker = bit(slider);
+        } else if (blocker_count == 1 && (blockers & our_pieces) != EmptyBB) {
+            pinned_piece = blockers;
         }
-    } else {
-        (void)direct_checker;
     }
 
-    pos.king_checkers[color_idx] = checkers;
-    pos.king_pinned[color_idx] = pinned;
-    pos.king_block_masks[color_idx] = block_mask;
+    checkers &= ~(ray & enemy_sliders);
+    checkers |= checker;
+    pinned &= ~ray;
+    pinned |= pinned_piece;
+}
+
+void update_bishop_ray(
+    const Position& pos,
+    Color color,
+    Square king,
+    Bitboard ray,
+    Bitboard& checkers,
+    Bitboard& pinned
+) {
+    assert(ray != EmptyBB);
+    const Color enemy = opposite(color);
+    const int enemy_idx = static_cast<int>(enemy);
+    const Bitboard enemy_sliders =
+        pos.pieces[enemy_idx][static_cast<int>(PieceType::Bishop)]
+        | pos.pieces[enemy_idx][static_cast<int>(PieceType::Queen)];
+    Bitboard checker = EmptyBB;
+    Bitboard pinned_piece = EmptyBB;
+    const Bitboard sliders = ray & enemy_sliders;
+    if (sliders != EmptyBB) {
+        const Square slider = nearest_square_on_ray(sliders, ray_increases_square_index(king, ray));
+        const Bitboard occupancy = pos.occupancy();
+        const Bitboard our_pieces = pos.occupancy(color);
+        const Bitboard blockers = ray_to_mask(king, slider) & occupancy;
+        const int blocker_count = popcount(blockers);
+        if (blocker_count == 0) {
+            checker = bit(slider);
+        } else if (blocker_count == 1 && (blockers & our_pieces) != EmptyBB) {
+            pinned_piece = blockers;
+        }
+    }
+
+    checkers &= ~(ray & enemy_sliders);
+    checkers |= checker;
+    pinned &= ~ray;
+    pinned |= pinned_piece;
+}
+
+void update_slider_ray(
+    const Position& pos,
+    Color color,
+    Square king,
+    Square affected_square,
+    Bitboard& checkers,
+    Bitboard& pinned
+) {
+    if (same_rook_line(king, affected_square)) {
+        update_rook_ray(
+            pos,
+            color,
+            king,
+            ray_to_edge_mask(king, affected_square),
+            checkers,
+            pinned);
+    } else if (same_bishop_line(king, affected_square)) {
+        update_bishop_ray(
+            pos,
+            color,
+            king,
+            ray_to_edge_mask(king, affected_square),
+            checkers,
+            pinned);
+    }
 }
 
 void store_king_safety(Position& pos, Color color, const KingSafetyContext& context) {
@@ -611,9 +570,10 @@ void update_king_safety_after_move(
     PieceType captured_piece,
     Square captured_square
 ) {
+    const Square from = from_square(move);
+    const Square to = to_square(move);
     const MoveFlag flag = move_flag(move);
     (void)captured_piece;
-    (void)captured_square;
 
     const bool special_move =
         moved_piece == PieceType::King
@@ -626,38 +586,50 @@ void update_king_safety_after_move(
         return;
     }
 
-    const Square from = from_square(move);
-    const Square to = to_square(move);
-    const int moved_idx = static_cast<int>(moved_color);
-    const int enemy_idx = moved_idx ^ 1;
-    const Square enemy_king = pos.king_squares[enemy_idx];
+    const Color enemy_color = opposite(moved_color);
+    const Square enemy_king = pos.king_squares[static_cast<int>(enemy_color)];
     assert(enemy_king != NoSquare);
     const Bitboard enemy_direct_checker =
-        direct_piece_attacks_king(moved_piece, moved_color, to, enemy_king)
+        is_direct_checker_piece(moved_piece)
+            && direct_piece_attacks_king(moved_piece, moved_color, to, enemy_king)
         ? bit(to)
         : EmptyBB;
 
-    const Bitboard moved_occupancy = pos.occupancies[moved_idx];
-    const Bitboard enemy_occupancy = pos.occupancies[enemy_idx];
-    const Bitboard occupancy = moved_occupancy | enemy_occupancy;
-    update_color_king_safety_after_move<false>(
-        pos,
-        moved_idx,
-        enemy_idx,
-        from,
-        to,
-        occupancy,
-        moved_occupancy,
-        EmptyBB);
-    update_color_king_safety_after_move<true>(
-        pos,
-        enemy_idx,
-        moved_idx,
-        from,
-        to,
-        occupancy,
-        enemy_occupancy,
-        enemy_direct_checker);
+    for (Color color : {Color::White, Color::Black}) {
+        const int color_idx = static_cast<int>(color);
+        assert(popcount(pos.pieces[color_idx][static_cast<int>(PieceType::King)]) == 1);
+
+        const Square king = pos.king_squares[color_idx];
+        assert(king != NoSquare);
+        Bitboard checkers = EmptyBB;
+        Bitboard pinned = pos.king_pinned[color_idx];
+        const Bitboard from_rook_ray = rook_ray_to_edge_mask_or_empty(king, from);
+        const Bitboard to_rook_ray = rook_ray_to_edge_mask_or_empty(king, to);
+        if (from_rook_ray != EmptyBB) {
+            update_rook_ray(pos, color, king, from_rook_ray, checkers, pinned);
+        }
+        if (to_rook_ray != EmptyBB && to_rook_ray != from_rook_ray) {
+            update_rook_ray(pos, color, king, to_rook_ray, checkers, pinned);
+        }
+
+        const Bitboard from_bishop_ray = bishop_ray_to_edge_mask_or_empty(king, from);
+        const Bitboard to_bishop_ray = bishop_ray_to_edge_mask_or_empty(king, to);
+        if (from_bishop_ray != EmptyBB) {
+            update_bishop_ray(pos, color, king, from_bishop_ray, checkers, pinned);
+        }
+        if (to_bishop_ray != EmptyBB && to_bishop_ray != from_bishop_ray) {
+            update_bishop_ray(pos, color, king, to_bishop_ray, checkers, pinned);
+        }
+
+        if (color == enemy_color) {
+            checkers |= enemy_direct_checker;
+        }
+
+        pos.king_checkers[color_idx] = checkers;
+        pos.king_pinned[color_idx] = pinned;
+        pos.king_block_masks[color_idx] =
+            block_mask_from_checkers(pos, color, king, checkers);
+    }
 }
 
 KingSafetyContext make_old_king_safety_context(const Position& pos) {
@@ -837,4 +809,4 @@ bool gives_check_fast(
         || (rook_attacks(enemy_king, occupancy) & rooks_or_queens) != EmptyBB;
 }
 
-} // namespace chess
+} // namespace chess::experimental

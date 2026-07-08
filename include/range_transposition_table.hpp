@@ -51,6 +51,26 @@ struct RangeTranspositionTableStats {
     std::uint64_t skipped_shallow_replacements = 0;
 };
 
+struct TTFunctionTimingStats {
+    std::uint64_t probe_ns = 0;
+    std::uint64_t probe_calls = 0;
+    std::uint64_t store_ns = 0;
+    std::uint64_t store_calls = 0;
+    std::uint64_t clear_ns = 0;
+    std::uint64_t clear_calls = 0;
+};
+
+struct TTProbePathTimingStats {
+    std::uint64_t empty_miss_ns = 0;
+    std::uint64_t empty_miss_calls = 0;
+    std::uint64_t index_collision_ns = 0;
+    std::uint64_t index_collision_calls = 0;
+    std::uint64_t key_hit_total_ns = 0;
+    std::uint64_t key_hit_calls = 0;
+    std::uint64_t probe_hit_body_ns = 0;
+    std::uint64_t probe_hit_body_calls = 0;
+};
+
 class RangeTranspositionTable {
 public:
     explicit RangeTranspositionTable(std::size_t megabytes);

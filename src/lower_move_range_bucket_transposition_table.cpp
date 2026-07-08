@@ -1,10 +1,7 @@
-#include "range_bucket_transposition_table.hpp"
+#include "lower_move_range_bucket_transposition_table.hpp"
 
 #include <algorithm>
 #include <cassert>
-#if defined(CHESS_PROFILE_TT_TIMING) || defined(CHESS_PROFILE_TT_PATH_TIMING)
-#include <chrono>
-#endif
 #include <cstdlib>
 #include <limits>
 
@@ -22,52 +19,11 @@ constexpr std::uint8_t MissingDepth = std::numeric_limits<std::uint8_t>::max();
 #define CHESS_TT_STAT(counter) ((void)0)
 #endif // CHESS_ENABLE_TT_STATS
 
-#ifdef CHESS_PROFILE_TT_TIMING
-struct ScopedTiming {
-    std::uint64_t& total_ns;
-    std::uint64_t& calls;
-    std::chrono::steady_clock::time_point start;
-
-    ScopedTiming(std::uint64_t& total, std::uint64_t& count)
-        : total_ns(total),
-          calls(count),
-          start(std::chrono::steady_clock::now()) {
-        ++calls;
-    }
-
-    ~ScopedTiming() {
-        total_ns += static_cast<std::uint64_t>(
-            std::chrono::duration_cast<std::chrono::nanoseconds>(
-                std::chrono::steady_clock::now() - start)
-                .count());
-    }
-};
-#define CHESS_TT_TIME(total, calls) ScopedTiming scoped_timing_##__LINE__((total), (calls))
-#else
-#define CHESS_TT_TIME(total, calls) ((void)0)
-#endif
-
-#ifdef CHESS_PROFILE_TT_PATH_TIMING
-std::uint64_t elapsed_probe_path_ns(std::chrono::steady_clock::time_point start) {
-    return static_cast<std::uint64_t>(
-        std::chrono::duration_cast<std::chrono::nanoseconds>(
-            std::chrono::steady_clock::now() - start)
-            .count());
-}
-
-void add_probe_path_timing(
-    std::uint64_t& ns,
-    std::uint64_t& calls,
-    std::chrono::steady_clock::time_point start
-) {
-    ns += elapsed_probe_path_ns(start);
-    ++calls;
-}
-#endif
-
 std::size_t entry_count_from_megabytes(std::size_t megabytes) {
     const std::size_t bytes = std::max<std::size_t>(megabytes, 1) * BytesPerMegabyte;
-    return std::max<std::size_t>(bytes / sizeof(RangeTTEntry), 1);
+    const std::size_t bytes_per_entry =
+        sizeof(HashKey) + sizeof(LowerMoveRangeBucketTranspositionTable::TTValue);
+    return std::max<std::size_t>(bytes / bytes_per_entry, 1);
 }
 
 std::size_t floor_power_of_two(std::size_t value) {
@@ -109,7 +65,7 @@ bool depth_matches_policy(std::uint8_t entry_depth, int requested_depth, TTDepth
     return false;
 }
 
-int replacement_depth(const RangeBucketTranspositionTable::TTValue& value) {
+int replacement_depth(const LowerMoveRangeBucketTranspositionTable::TTValue& value) {
     const int lower_depth = value.lower_depth == MissingDepth
         ? -1
         : static_cast<int>(value.lower_depth);
@@ -126,7 +82,7 @@ std::uint8_t depth_to_table(int depth) {
 }
 
 void store_lower_bound(
-    RangeBucketTranspositionTable::TTValue& value,
+    LowerMoveRangeBucketTranspositionTable::TTValue& value,
     int depth,
     int score,
     Move move
@@ -137,39 +93,39 @@ void store_lower_bound(
     if (value.lower_depth == MissingDepth || depth >= static_cast<int>(value.lower_depth)) {
         value.lower_depth = depth_to_table(depth);
         value.score.lower = score;
-        value.move.lower = move;
+        value.lower_move = move;
     }
 }
 
 void store_upper_bound(
-    RangeBucketTranspositionTable::TTValue& value,
+    LowerMoveRangeBucketTranspositionTable::TTValue& value,
     int depth,
     int score,
     Move move
 ) {
+    (void)move;
     if (score == Infinity) {
         return;
     }
     if (value.upper_depth == MissingDepth || depth >= static_cast<int>(value.upper_depth)) {
         value.upper_depth = depth_to_table(depth);
         value.score.upper = score;
-        value.move.upper = move;
     }
 }
 
-RangeBucketTranspositionTable::TTValue make_tt_value(
+LowerMoveRangeBucketTranspositionTable::TTValue make_tt_value(
     int depth,
     ScoreRange score,
     MoveRange move
 ) {
-    RangeBucketTranspositionTable::TTValue value{};
+    LowerMoveRangeBucketTranspositionTable::TTValue value{};
     store_lower_bound(value, depth, score.lower, move.lower);
     store_upper_bound(value, depth, score.upper, move.upper);
     return value;
 }
 
 void merge_tt_value(
-    RangeBucketTranspositionTable::TTValue& value,
+    LowerMoveRangeBucketTranspositionTable::TTValue& value,
     int depth,
     ScoreRange score,
     MoveRange move
@@ -180,7 +136,7 @@ void merge_tt_value(
 
 } // namespace
 
-RangeBucketTranspositionTable::RangeBucketTranspositionTable(
+LowerMoveRangeBucketTranspositionTable::LowerMoveRangeBucketTranspositionTable(
     std::size_t megabytes,
     std::size_t bucket_size
 ) : bucket_size_(std::max<std::size_t>(bucket_size, 1)) {
@@ -192,57 +148,36 @@ RangeBucketTranspositionTable::RangeBucketTranspositionTable(
     values_.resize(entry_count);
 }
 
-void RangeBucketTranspositionTable::clear() {
-    CHESS_TT_TIME(timing_stats_.clear_ns, timing_stats_.clear_calls);
+void LowerMoveRangeBucketTranspositionTable::clear() {
     std::fill(keys_.begin(), keys_.end(), HashKey{});
     std::fill(values_.begin(), values_.end(), TTValue{});
 }
 
-void RangeBucketTranspositionTable::clear_stats() {
+void LowerMoveRangeBucketTranspositionTable::clear_stats() {
     stats_ = {};
 }
 
-std::size_t RangeBucketTranspositionTable::entry_count() const {
+std::size_t LowerMoveRangeBucketTranspositionTable::entry_count() const {
     return keys_.size();
 }
 
-std::size_t RangeBucketTranspositionTable::bucket_size() const {
+std::size_t LowerMoveRangeBucketTranspositionTable::bucket_size() const {
     return bucket_size_;
 }
 
-std::size_t RangeBucketTranspositionTable::bucket_count() const {
+std::size_t LowerMoveRangeBucketTranspositionTable::bucket_count() const {
     return bucket_count_;
 }
 
-const RangeTranspositionTableStats& RangeBucketTranspositionTable::stats() const {
+const RangeTranspositionTableStats& LowerMoveRangeBucketTranspositionTable::stats() const {
     return stats_;
 }
 
-#ifdef CHESS_PROFILE_TT_TIMING
-void RangeBucketTranspositionTable::clear_timing_stats() {
-    timing_stats_ = {};
-}
-
-const TTFunctionTimingStats& RangeBucketTranspositionTable::timing_stats() const {
-    return timing_stats_;
-}
-#endif
-
-#ifdef CHESS_PROFILE_TT_PATH_TIMING
-void RangeBucketTranspositionTable::clear_probe_path_timing_stats() {
-    probe_path_timing_stats_ = {};
-}
-
-const TTProbePathTimingStats& RangeBucketTranspositionTable::probe_path_timing_stats() const {
-    return probe_path_timing_stats_;
-}
-#endif
-
-std::size_t RangeBucketTranspositionTable::bucket_offset(HashKey key) const {
+std::size_t LowerMoveRangeBucketTranspositionTable::bucket_offset(HashKey key) const {
     return (key & bucket_mask_) * bucket_size_;
 }
 
-bool RangeBucketTranspositionTable::probe(
+bool LowerMoveRangeBucketTranspositionTable::probe(
     HashKey key,
     int depth,
     ScoreRange& search_window,
@@ -252,10 +187,6 @@ bool RangeBucketTranspositionTable::probe(
     bool& score_available,
     TTDepthPolicy depth_policy
 ) const {
-    CHESS_TT_TIME(timing_stats_.probe_ns, timing_stats_.probe_calls);
-#ifdef CHESS_PROFILE_TT_PATH_TIMING
-    const auto probe_path_start = std::chrono::steady_clock::now();
-#endif
     assert(key != 0);
     score_available = false;
     CHESS_TT_STAT(stats_.probes);
@@ -263,23 +194,14 @@ bool RangeBucketTranspositionTable::probe(
     const std::size_t offset = bucket_offset(key);
     if (keys_[offset] == 0) {
         CHESS_TT_STAT(stats_.empty_misses);
-#ifdef CHESS_PROFILE_TT_PATH_TIMING
-        add_probe_path_timing(
-            probe_path_timing_stats_.empty_miss_ns,
-            probe_path_timing_stats_.empty_miss_calls,
-            probe_path_start);
-#endif
         return false;
     }
 
     auto probe_hit = [&](std::size_t index) {
-#ifdef CHESS_PROFILE_TT_PATH_TIMING
-        const auto probe_hit_body_start = std::chrono::steady_clock::now();
-#endif
         CHESS_TT_STAT(stats_.key_hits);
         const TTValue& value = values_[index];
-        stored_move = value.move;
-        if (stored_move.lower.value != 0 || stored_move.upper.value != 0) {
+        stored_move = MoveRange{value.lower_move, Move{}};
+        if (stored_move.lower.value != 0) {
             CHESS_TT_STAT(stats_.move_hint_hits);
         }
 
@@ -291,16 +213,6 @@ bool RangeBucketTranspositionTable::probe(
             && depth_matches_policy(value.upper_depth, depth, depth_policy);
         if (!lower_depth_matches && !upper_depth_matches) {
             CHESS_TT_STAT(stats_.depth_misses);
-#ifdef CHESS_PROFILE_TT_PATH_TIMING
-            add_probe_path_timing(
-                probe_path_timing_stats_.probe_hit_body_ns,
-                probe_path_timing_stats_.probe_hit_body_calls,
-                probe_hit_body_start);
-            add_probe_path_timing(
-                probe_path_timing_stats_.key_hit_total_ns,
-                probe_path_timing_stats_.key_hit_calls,
-                probe_path_start);
-#endif
             return false;
         }
 
@@ -313,16 +225,6 @@ bool RangeBucketTranspositionTable::probe(
         }
 
         if (is_mate_score(stored_score.lower) || is_mate_score(stored_score.upper)) {
-#ifdef CHESS_PROFILE_TT_PATH_TIMING
-            add_probe_path_timing(
-                probe_path_timing_stats_.probe_hit_body_ns,
-                probe_path_timing_stats_.probe_hit_body_calls,
-                probe_hit_body_start);
-            add_probe_path_timing(
-                probe_path_timing_stats_.key_hit_total_ns,
-                probe_path_timing_stats_.key_hit_calls,
-                probe_path_start);
-#endif
             return false;
         }
         score_available = true;
@@ -358,29 +260,9 @@ bool RangeBucketTranspositionTable::probe(
             if (!exact) {
                 CHESS_TT_STAT(stats_.score_returns);
             }
-#ifdef CHESS_PROFILE_TT_PATH_TIMING
-            add_probe_path_timing(
-                probe_path_timing_stats_.probe_hit_body_ns,
-                probe_path_timing_stats_.probe_hit_body_calls,
-                probe_hit_body_start);
-            add_probe_path_timing(
-                probe_path_timing_stats_.key_hit_total_ns,
-                probe_path_timing_stats_.key_hit_calls,
-                probe_path_start);
-#endif
             return true;
         }
 
-#ifdef CHESS_PROFILE_TT_PATH_TIMING
-        add_probe_path_timing(
-            probe_path_timing_stats_.probe_hit_body_ns,
-            probe_path_timing_stats_.probe_hit_body_calls,
-            probe_hit_body_start);
-        add_probe_path_timing(
-            probe_path_timing_stats_.key_hit_total_ns,
-            probe_path_timing_stats_.key_hit_calls,
-            probe_path_start);
-#endif
         return false;
     };
 
@@ -392,12 +274,6 @@ bool RangeBucketTranspositionTable::probe(
         const HashKey key1 = keys_[offset + 1];
         if (key1 == 0) {
             CHESS_TT_STAT(stats_.index_collisions);
-#ifdef CHESS_PROFILE_TT_PATH_TIMING
-            add_probe_path_timing(
-                probe_path_timing_stats_.index_collision_ns,
-                probe_path_timing_stats_.index_collision_calls,
-                probe_path_start);
-#endif
             return false;
         }
         if (key1 == key) {
@@ -406,12 +282,6 @@ bool RangeBucketTranspositionTable::probe(
         const HashKey key2 = keys_[offset + 2];
         if (key2 == 0) {
             CHESS_TT_STAT(stats_.index_collisions);
-#ifdef CHESS_PROFILE_TT_PATH_TIMING
-            add_probe_path_timing(
-                probe_path_timing_stats_.index_collision_ns,
-                probe_path_timing_stats_.index_collision_calls,
-                probe_path_start);
-#endif
             return false;
         }
         if (key2 == key) {
@@ -422,12 +292,6 @@ bool RangeBucketTranspositionTable::probe(
             return probe_hit(offset + 3);
         }
         CHESS_TT_STAT(stats_.index_collisions);
-#ifdef CHESS_PROFILE_TT_PATH_TIMING
-        add_probe_path_timing(
-            probe_path_timing_stats_.index_collision_ns,
-            probe_path_timing_stats_.index_collision_calls,
-            probe_path_start);
-#endif
         return false;
     }
 
@@ -448,31 +312,18 @@ bool RangeBucketTranspositionTable::probe(
 
     if (saw_valid_entry) {
         CHESS_TT_STAT(stats_.index_collisions);
-#ifdef CHESS_PROFILE_TT_PATH_TIMING
-        add_probe_path_timing(
-            probe_path_timing_stats_.index_collision_ns,
-            probe_path_timing_stats_.index_collision_calls,
-            probe_path_start);
-#endif
     } else {
         CHESS_TT_STAT(stats_.empty_misses);
-#ifdef CHESS_PROFILE_TT_PATH_TIMING
-        add_probe_path_timing(
-            probe_path_timing_stats_.empty_miss_ns,
-            probe_path_timing_stats_.empty_miss_calls,
-            probe_path_start);
-#endif
     }
     return false;
 }
 
-void RangeBucketTranspositionTable::store(
+void LowerMoveRangeBucketTranspositionTable::store(
     HashKey key,
     int depth,
     ScoreRange score,
     MoveRange move
 ) {
-    CHESS_TT_TIME(timing_stats_.store_ns, timing_stats_.store_calls);
     assert(key != 0);
     CHESS_TT_STAT(stats_.stores);
     const std::size_t offset = bucket_offset(key);

@@ -1,0 +1,153 @@
+#include "heuristic_searcher_v32.hpp"
+#include "heuristic_searcher_v34.hpp"
+#include "move.hpp"
+#include "position.hpp"
+
+#include <chrono>
+#include <cstdint>
+#include <iostream>
+#include <random>
+#include <string_view>
+#include <vector>
+
+#ifndef CHESS_PROFILE_TT_TIMING
+#error "Build this tool with CHESS_PROFILE_TT_TIMING"
+#endif
+
+namespace {
+
+bool has_both_kings(const chess::Position& pos) {
+    const int king = static_cast<int>(chess::PieceType::King);
+    return chess::popcount(pos.pieces[static_cast<int>(chess::Color::White)][king]) == 1
+        && chess::popcount(pos.pieces[static_cast<int>(chess::Color::Black)][king]) == 1;
+}
+
+std::vector<chess::Position> make_positions(int random_positions) {
+    std::vector<chess::Position> positions;
+    auto add_fen = [&](std::string_view fen) {
+        chess::Position pos;
+        if (pos.set_fen(fen) && has_both_kings(pos)) {
+            positions.push_back(pos);
+        }
+    };
+
+    chess::Position start;
+    start.set_startpos();
+    positions.push_back(start);
+    add_fen("rnb1kb1r/ppppqppp/5n2/4N3/4P3/8/PPPP1PPP/RNBQKB1R w KQkq - 1 4");
+    add_fen("rnbq1k1r/pp1Pbppp/2p5/8/2B5/8/PPP1NnPP/RNBQK2R w KQ - 1 8");
+    add_fen("r1bq1rk1/pp1n1ppp/2pbpn2/3p4/3P4/2N1PN2/PPQ1BPPP/R1B2RK1 w - - 0 9");
+    add_fen("2r2rk1/pp2qppp/2n1bn2/2bp4/3P4/2N1PN2/PPQ1BPPP/2RR2K1 w - - 4 12");
+    add_fen("4r3/5ppp/5P2/1p1pp3/3nP2P/1p1b4/rP1P1P2/R1BR2K1 w - - 0 23");
+
+    std::mt19937 rng(20260619);
+    chess::Position pos;
+    pos.set_startpos();
+    for (int i = 0; i < random_positions; ++i) {
+        const int plies = 1 + static_cast<int>(rng() % 6u);
+        for (int ply = 0; ply < plies; ++ply) {
+            chess::MoveList moves;
+            chess::generate_legal_moves(pos, moves);
+            if (moves.empty()) {
+                pos.set_startpos();
+                break;
+            }
+            std::uniform_int_distribution<std::size_t> dist(0, moves.size() - 1);
+            pos.make_move(moves[dist(rng)]);
+        }
+        positions.push_back(pos);
+    }
+    return positions;
+}
+
+double pct(std::uint64_t part_ns, std::uint64_t total_us) {
+    const std::uint64_t total_ns = total_us * 1000;
+    return total_ns == 0 ? 0.0 : 100.0 * static_cast<double>(part_ns) / total_ns;
+}
+
+double ns_per_call(std::uint64_t ns, std::uint64_t calls) {
+    return calls == 0 ? 0.0 : static_cast<double>(ns) / static_cast<double>(calls);
+}
+
+template <typename Searcher>
+void run_version(
+    std::string_view version,
+    int depth,
+    const std::vector<chess::Position>& positions
+) {
+    Searcher searcher;
+    searcher.clear_tt_timing_stats();
+
+    std::uint64_t nodes = 0;
+    int score_accumulator = 0;
+    std::uint64_t move_accumulator = 0;
+    const auto start = std::chrono::steady_clock::now();
+    for (const chess::Position& pos : positions) {
+        searcher.clear_tt();
+        const chess::SearchResult result =
+            searcher.search_best_move(pos, chess::SearchLimits{depth, std::chrono::milliseconds{0}});
+        nodes += result.nodes;
+        score_accumulator += result.score;
+        move_accumulator += result.best_move.value;
+    }
+    const auto end = std::chrono::steady_clock::now();
+    const auto elapsed_us = static_cast<std::uint64_t>(
+        std::chrono::duration_cast<std::chrono::microseconds>(end - start).count());
+    const chess::TTFunctionTimingStats& tt = searcher.tt_timing_stats();
+    const std::uint64_t tt_total_ns = tt.probe_ns + tt.store_ns + tt.clear_ns;
+
+    std::cout << "version=" << version
+              << " depth=" << depth
+              << " positions=" << positions.size()
+              << " nodes=" << nodes
+              << " elapsed_us=" << elapsed_us
+              << " nps=" << (elapsed_us == 0 ? 0.0 : static_cast<double>(nodes) * 1'000'000.0 / elapsed_us)
+              << " score_accumulator=" << score_accumulator
+              << " move_accumulator=" << move_accumulator
+              << '\n';
+
+    std::cout << "tt_timing version=" << version
+              << " fn=probe"
+              << " calls=" << tt.probe_calls
+              << " total_ns=" << tt.probe_ns
+              << " pct_wall=" << pct(tt.probe_ns, elapsed_us)
+              << " ns_per_call=" << ns_per_call(tt.probe_ns, tt.probe_calls)
+              << '\n';
+    std::cout << "tt_timing version=" << version
+              << " fn=store"
+              << " calls=" << tt.store_calls
+              << " total_ns=" << tt.store_ns
+              << " pct_wall=" << pct(tt.store_ns, elapsed_us)
+              << " ns_per_call=" << ns_per_call(tt.store_ns, tt.store_calls)
+              << '\n';
+    std::cout << "tt_timing version=" << version
+              << " fn=clear"
+              << " calls=" << tt.clear_calls
+              << " total_ns=" << tt.clear_ns
+              << " pct_wall=" << pct(tt.clear_ns, elapsed_us)
+              << " ns_per_call=" << ns_per_call(tt.clear_ns, tt.clear_calls)
+              << '\n';
+    std::cout << "tt_timing version=" << version
+              << " fn=total"
+              << " calls=" << (tt.probe_calls + tt.store_calls + tt.clear_calls)
+              << " total_ns=" << tt_total_ns
+              << " pct_wall=" << pct(tt_total_ns, elapsed_us)
+              << '\n';
+}
+
+} // namespace
+
+int main(int argc, char** argv) {
+    int depth = 8;
+    int random_positions = 0;
+    if (argc >= 2) {
+        depth = std::stoi(argv[1]);
+    }
+    if (argc >= 3) {
+        random_positions = std::stoi(argv[2]);
+    }
+
+    const std::vector<chess::Position> positions = make_positions(random_positions);
+    run_version<chess::HeuristicSearcherV32>("v32", depth, positions);
+    run_version<chess::HeuristicSearcherV34>("v34", depth, positions);
+}

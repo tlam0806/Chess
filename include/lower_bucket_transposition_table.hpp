@@ -8,9 +8,9 @@
 
 namespace chess {
 
-class RangeBucketTranspositionTable {
+class LowerBucketTranspositionTable {
 public:
-    RangeBucketTranspositionTable(std::size_t megabytes, std::size_t bucket_size);
+    LowerBucketTranspositionTable(std::size_t megabytes, std::size_t bucket_size);
 
     void clear();
     void clear_stats();
@@ -19,14 +19,6 @@ public:
     std::size_t bucket_size() const;
     std::size_t bucket_count() const;
     const RangeTranspositionTableStats& stats() const;
-#ifdef CHESS_PROFILE_TT_TIMING
-    void clear_timing_stats();
-    const TTFunctionTimingStats& timing_stats() const;
-#endif
-#ifdef CHESS_PROFILE_TT_PATH_TIMING
-    void clear_probe_path_timing_stats();
-    const TTProbePathTimingStats& probe_path_timing_stats() const;
-#endif
 
     bool probe(
         HashKey key,
@@ -47,10 +39,9 @@ public:
     );
 
     struct TTValue {
+        int lower_score = -Infinity;
+        Move lower_move{};
         std::uint8_t lower_depth = 255;
-        std::uint8_t upper_depth = 255;
-        ScoreRange score{};
-        MoveRange move{};
     };
 
 private:
@@ -62,12 +53,6 @@ private:
     std::size_t bucket_count_ = 1;
     std::size_t bucket_mask_ = 0;
     mutable RangeTranspositionTableStats stats_{};
-#ifdef CHESS_PROFILE_TT_TIMING
-    mutable TTFunctionTimingStats timing_stats_{};
-#endif
-#ifdef CHESS_PROFILE_TT_PATH_TIMING
-    mutable TTProbePathTimingStats probe_path_timing_stats_{};
-#endif
 };
 
 } // namespace chess

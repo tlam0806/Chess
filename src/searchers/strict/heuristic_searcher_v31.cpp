@@ -1,7 +1,7 @@
-#include "heuristic_searcher_v30.hpp"
+#include "heuristic_searcher_v31.hpp"
 
 #include "attacks.hpp"
-#include "heuristic_searcher_v30_detail.hpp"
+#include "heuristic_searcher_v31_detail.hpp"
 #include "evaluate.hpp"
 #include "legal_noisy_generator.hpp"
 #include "legal_non_capture_generator.hpp"
@@ -16,7 +16,7 @@
 
 namespace chess {
 
-void HeuristicSearcherV30::reward_quiet_cutoff(
+void HeuristicSearcherV31::reward_quiet_cutoff(
     Color side_to_move,
     int depth,
     int ply,
@@ -31,6 +31,7 @@ void HeuristicSearcherV30::reward_quiet_cutoff(
     const PieceType moved_piece = scored_moved_piece(scored_move);
     history_table_.store(side_to_move, moved_piece, scored_move.move, depth);
     if (is_valid_move(prev_move) && prev_moved_piece != PieceType::None) {
+        counter_move_table_.store(side_to_move, prev_moved_piece, prev_move, scored_move.move);
         counter_history_table_.store(
             side_to_move,
             prev_moved_piece,
@@ -42,12 +43,12 @@ void HeuristicSearcherV30::reward_quiet_cutoff(
     }
 }
 
-void HeuristicSearcherV30::penalize_failed_quiets(
+void HeuristicSearcherV31::penalize_failed_quiets(
     Color side_to_move,
     int depth,
     Move prev_move,
     PieceType prev_moved_piece,
-    const HeuristicSearcherV30::ScoredMoveList& failed_quiet_moves
+    const HeuristicSearcherV31::ScoredMoveList& failed_quiet_moves
 ) {
     for (const ScoredMove& failed_quiet : failed_quiet_moves) {
         const PieceType moved_piece = scored_moved_piece(failed_quiet);
@@ -65,7 +66,7 @@ void HeuristicSearcherV30::penalize_failed_quiets(
     }
 }
 
-bool HeuristicSearcherV30::should_stop(SearchState& state) const {
+bool HeuristicSearcherV31::should_stop(SearchState& state) const {
     if (!state.has_deadline) {
         return false;
     }
@@ -79,23 +80,24 @@ bool HeuristicSearcherV30::should_stop(SearchState& state) const {
     return false;
 }
 
-KingSafetyContext HeuristicSearcherV30::current_king_safety_context(const Position& pos) const {
+KingSafetyContext HeuristicSearcherV31::current_king_safety_context(const Position& pos) const {
     return cached_king_safety_context(pos, pos.side_to_move);
 }
 
-int HeuristicSearcherV30::evaluate_current_position(const Position& pos) const {
+int HeuristicSearcherV31::evaluate_current_position(const Position& pos) const {
     return evaluate_for_side_to_move(pos);
 }
 
 
 
-HeuristicSearcherV30::SearchValue HeuristicSearcherV30::quiescence(
+HeuristicSearcherV31::SearchValue HeuristicSearcherV31::quiescence(
     Position& pos,
     int alpha,
     int beta,
     int ply,
     int q_depth,
-    SearchState& state
+    SearchState& state,
+    const PendingKingSafetyUpdate* pending_king_safety
 ) {
     assert(alpha < beta);
     ++state.nodes;
@@ -104,23 +106,57 @@ HeuristicSearcherV30::SearchValue HeuristicSearcherV30::quiescence(
         return SearchValue{exact_range(0)};
     }
 
-    PositionStateSnapshot node_snapshot;
-    bool node_snapshot_ready = false;
+    std::optional<PositionStateSnapshot> node_snapshot;
     auto get_node_snapshot = [&]() -> const PositionStateSnapshot& {
-        if (!node_snapshot_ready) {
+        if (!node_snapshot) {
             node_snapshot = pos.make_state_snapshot();
-            node_snapshot_ready = true;
         }
-        return node_snapshot;
+        return *node_snapshot;
     };
-    const KingSafetyContext king_safety = current_king_safety_context(pos);
-    const bool side_in_check = king_safety.checkers != EmptyBB;
+    bool king_safety_materialized = pending_king_safety == nullptr;
+    auto materialize_king_safety = [&]() {
+        if (king_safety_materialized) {
+            return;
+        }
+        update_king_safety_after_move(
+            pos,
+            pending_king_safety->move,
+            pending_king_safety->moved_color,
+            pending_king_safety->moved_piece,
+            pending_king_safety->captured_piece,
+            pending_king_safety->captured_square);
+        king_safety_materialized = true;
+#ifndef NDEBUG
+        const Color moved_color = pending_king_safety->moved_color;
+        assert(pos.king_checkers[static_cast<int>(moved_color)] == EmptyBB);
+        for (Color color : {Color::White, Color::Black}) {
+            const int color_idx = static_cast<int>(color);
+            const KingSafetyContext rebuilt = make_king_safety_context(pos, color);
+            assert(pos.king_squares[color_idx] == rebuilt.king_square);
+            assert(pos.king_checkers[color_idx] == rebuilt.checkers);
+            assert(pos.king_pinned[color_idx] == rebuilt.pinned);
+            assert(pos.king_block_masks[color_idx] == rebuilt.block_mask);
+        }
+#endif
+    };
+    std::optional<KingSafetyContext> king_safety_cache;
+    auto get_king_safety = [&]() -> const KingSafetyContext& {
+        if (!king_safety_cache) {
+            materialize_king_safety();
+            king_safety_cache = current_king_safety_context(pos);
+        }
+        return *king_safety_cache;
+    };
+    const bool side_in_check = king_safety_materialized
+        ? pos.king_checkers[static_cast<int>(pos.side_to_move)] != EmptyBB
+        : in_check(pos, pos.side_to_move);
     auto generate_qsearch_capture_stage = [&]() {
         ScoredMoveList moves;
         auto score_move = [&](Move move, PieceType moved_piece, PieceType captured_piece) {
             moves.push_back(make_qsearch_scored_move<true, false>(
                 move, moved_piece, captured_piece));
         };
+        const KingSafetyContext& king_safety = get_king_safety();
         generate_legal_non_promotion_capture_moves_with_info(pos, king_safety, score_move);
         sort_scored_moves(moves);
         return moves;
@@ -131,6 +167,7 @@ HeuristicSearcherV30::SearchValue HeuristicSearcherV30::quiescence(
             moves.push_back(make_qsearch_scored_move<false, false>(
                 move, moved_piece, PieceType::None));
         };
+        const KingSafetyContext& king_safety = get_king_safety();
         generate_legal_quiet_non_promotion_moves_with_info(pos, king_safety, score_move);
         sort_scored_moves(moves);
         return moves;
@@ -139,14 +176,31 @@ HeuristicSearcherV30::SearchValue HeuristicSearcherV30::quiescence(
         const PieceType moved_piece = scored_moved_piece(scored_move);
         const PieceType captured_piece = scored_captured_piece(scored_move);
         ScoreRange move_range;
+        assert(king_safety_materialized);
         {
-            SnapshotMoveUndoGuard move_guard(
+            const Color moved_color = pos.side_to_move;
+            SnapshotMoveUndoGuardWithoutKingSafety move_guard(
                 pos,
                 get_node_snapshot(),
                 scored_move.move,
                 moved_piece,
                 captured_piece);
-            SearchValue child = quiescence(pos, -beta, -alpha, ply + 1, q_depth + 1, state);
+            const MoveUndoState& undo = move_guard.undo_state();
+            const PendingKingSafetyUpdate child_king_safety{
+                scored_move.move,
+                moved_color,
+                moved_piece,
+                undo.captured_piece,
+                undo.captured_square
+            };
+            SearchValue child = quiescence(
+                pos,
+                -beta,
+                -alpha,
+                ply + 1,
+                q_depth + 1,
+                state,
+                &child_king_safety);
             move_range = negate_range(child.range);
         }
         if (state.stopped) {
@@ -175,6 +229,7 @@ HeuristicSearcherV30::SearchValue HeuristicSearcherV30::quiescence(
                 : make_qsearch_scored_move<true, true>(move, moved_piece, captured_piece);
             stage_done = search_qsearch_move(scored_move, node_range);
         };
+        const KingSafetyContext& king_safety = get_king_safety();
         generate_legal_promotion_moves_with_info(pos, king_safety, search_move);
         return stage_done;
     };
@@ -186,7 +241,7 @@ HeuristicSearcherV30::SearchValue HeuristicSearcherV30::quiescence(
         }
         return false;
     };
- 
+
     if (side_in_check) {
         ScoreRange node_range;
         node_range.lower = -Infinity;
@@ -263,7 +318,7 @@ HeuristicSearcherV30::SearchValue HeuristicSearcherV30::quiescence(
     return SearchValue{node_range};
 }
 
-HeuristicSearcherV30::SearchValue HeuristicSearcherV30::negamax(
+HeuristicSearcherV31::SearchValue HeuristicSearcherV31::negamax(
     Position& pos,
     int depth,
     int ply,
@@ -451,7 +506,8 @@ HeuristicSearcherV30::SearchValue HeuristicSearcherV30::negamax(
         searched_any_move = true;
         update_best_range(node_range, best_lower_move, best_upper_move, alpha, scored_move.move, move_range);
         if (node_range.lower >= beta) {
-            if constexpr (Stage == MoveGenerationStage::QuietNonPromotion) {
+            if constexpr (Stage == MoveGenerationStage::QuietNonPromotion
+                || Stage == MoveGenerationStage::Killer) {
                 if (!scored_gives_check(scored_move)) {
                     reward_quiet_cutoff(
                         pos.side_to_move,
@@ -467,7 +523,8 @@ HeuristicSearcherV30::SearchValue HeuristicSearcherV30::negamax(
             cutoff = true;
             return;
         }
-        if constexpr (Stage == MoveGenerationStage::QuietNonPromotion) {
+        if constexpr (Stage == MoveGenerationStage::QuietNonPromotion
+            || Stage == MoveGenerationStage::Killer) {
             if (!scored_gives_check(scored_move)) {
                 failed_quiet_moves.push_back(scored_move);
             }
@@ -517,6 +574,28 @@ HeuristicSearcherV30::SearchValue HeuristicSearcherV30::negamax(
             searched_tt_move);
         sort_scored_moves(capture_moves.good);
         search_scored_moves.template operator()<MoveGenerationStage::GoodCapture>(capture_moves.good);
+        Move searched_priority1{};
+        Move searched_priority2{};
+        Move searched_priority3{};
+        if (!cutoff && !stage_stopped) {
+            const ScoredMoveList priority_moves = ordered_priority_quiet_moves_for_stage(
+                pos,
+                ply,
+                tt_probe.moves,
+                prev_move,
+                prev_moved_piece,
+                searched_tt_move);
+            if (priority_moves.size() > 0) {
+                searched_priority1 = priority_moves[0].move;
+            }
+            if (priority_moves.size() > 1) {
+                searched_priority2 = priority_moves[1].move;
+            }
+            if (priority_moves.size() > 2) {
+                searched_priority3 = priority_moves[2].move;
+            }
+            search_scored_moves.template operator()<MoveGenerationStage::Killer>(priority_moves);
+        }
         if (!cutoff && !stage_stopped) {
             const ScoredMoveList quiet_moves = ordered_moves_for_stage<MoveGenerationStage::QuietNonPromotion>(
                 pos,
@@ -525,7 +604,10 @@ HeuristicSearcherV30::SearchValue HeuristicSearcherV30::negamax(
                 tt_probe.moves,
                 prev_move,
                 prev_moved_piece,
-                searched_tt_move);
+                searched_tt_move,
+                searched_priority1,
+                searched_priority2,
+                searched_priority3);
             search_scored_moves.template operator()<MoveGenerationStage::QuietNonPromotion>(quiet_moves);
         }
         if (!cutoff && !stage_stopped) {
@@ -550,7 +632,7 @@ HeuristicSearcherV30::SearchValue HeuristicSearcherV30::negamax(
     return SearchValue{node_range};
 }
 
-SearchResult HeuristicSearcherV30::make_fallback_result(const Position& pos) const {
+SearchResult HeuristicSearcherV31::make_fallback_result(const Position& pos) const {
     SearchResult result;
     const ScoredMoveList moves = ordered_moves(pos, 0);
     if (moves.empty()) {
@@ -564,7 +646,7 @@ SearchResult HeuristicSearcherV30::make_fallback_result(const Position& pos) con
     return result;
 }
 
-HeuristicSearcherV30::RootSearchResult HeuristicSearcherV30::search_fixed_depth(
+HeuristicSearcherV31::RootSearchResult HeuristicSearcherV31::search_fixed_depth(
     Position pos,
     int depth,
     SearchState& state,
@@ -748,6 +830,28 @@ HeuristicSearcherV30::RootSearchResult HeuristicSearcherV30::search_fixed_depth(
             searched_tt_move);
         sort_scored_moves(capture_moves.good);
         search_root_scored_moves.template operator()<MoveGenerationStage::GoodCapture>(capture_moves.good);
+        Move searched_priority1{};
+        Move searched_priority2{};
+        Move searched_priority3{};
+        if (!cutoff && !root_stage_stopped) {
+            const ScoredMoveList priority_moves = ordered_priority_quiet_moves_for_stage(
+                pos,
+                0,
+                tt_probe.moves,
+                Move{},
+                PieceType::None,
+                searched_tt_move);
+            if (priority_moves.size() > 0) {
+                searched_priority1 = priority_moves[0].move;
+            }
+            if (priority_moves.size() > 1) {
+                searched_priority2 = priority_moves[1].move;
+            }
+            if (priority_moves.size() > 2) {
+                searched_priority3 = priority_moves[2].move;
+            }
+            search_root_scored_moves.template operator()<MoveGenerationStage::Killer>(priority_moves);
+        }
         if (!cutoff && !root_stage_stopped) {
             const ScoredMoveList quiet_moves = ordered_moves_for_stage<MoveGenerationStage::QuietNonPromotion>(
                 pos,
@@ -756,7 +860,10 @@ HeuristicSearcherV30::RootSearchResult HeuristicSearcherV30::search_fixed_depth(
                 tt_probe.moves,
                 Move{},
                 PieceType::None,
-                searched_tt_move);
+                searched_tt_move,
+                searched_priority1,
+                searched_priority2,
+                searched_priority3);
             search_root_scored_moves.template operator()<MoveGenerationStage::QuietNonPromotion>(quiet_moves);
         }
         if (!cutoff && !root_stage_stopped) {
@@ -799,7 +906,7 @@ HeuristicSearcherV30::RootSearchResult HeuristicSearcherV30::search_fixed_depth(
     return root_result;
 }
 
-SearchResult HeuristicSearcherV30::search_root_without_tt_probe(
+SearchResult HeuristicSearcherV31::search_root_without_tt_probe(
     const Position& pos,
     int depth,
     SearchState& state
@@ -807,16 +914,22 @@ SearchResult HeuristicSearcherV30::search_root_without_tt_probe(
     return search_fixed_depth(pos, depth, state, -Infinity, Infinity, false).result;
 }
 
-SearchResult HeuristicSearcherV30::search_best_move(const Position& pos, int depth) {
+SearchResult HeuristicSearcherV31::search_best_move(const Position& pos, int depth) {
     killer_table_.clear();
+    counter_move_table_.clear();
     SearchState state;
-    return search_fixed_depth(pos, depth, state).result;
+    RootSearchResult current = search_fixed_depth(pos, depth, state);
+    if (!current.result.stopped && !state.stopped && !is_exact_range(current.range)) {
+        current = search_fixed_depth(pos, depth, state, -Infinity, Infinity, false);
+    }
+    return current.result;
 }
 
-SearchResult HeuristicSearcherV30::search_best_move(const Position& pos, const SearchLimits& limits) {
+SearchResult HeuristicSearcherV31::search_best_move(const Position& pos, const SearchLimits& limits) {
     assert(limits.max_depth >= 0);
 
     killer_table_.clear();
+    counter_move_table_.clear();
     SearchResult best = make_fallback_result(pos);
     best.depth = 0;
 
@@ -827,7 +940,7 @@ SearchResult HeuristicSearcherV30::search_best_move(const Position& pos, const S
     }
 
     const int aspiration_window_cp = 50;
-    
+
     for (int depth = 1; depth <= limits.max_depth; ++depth) {
         if (depth == 1) {
             RootSearchResult current = search_fixed_depth(pos, depth, state);
@@ -841,6 +954,7 @@ SearchResult HeuristicSearcherV30::search_best_move(const Position& pos, const S
             int alpha = best.score - aspiration_window_cp;
             int beta = best.score + aspiration_window_cp;
             RootSearchResult current;
+            bool retried_without_root_tt_probe = false;
             for (;;) {
                 current = search_fixed_depth(pos, depth, state, alpha, beta);
                 if (current.result.stopped || state.stopped) {
@@ -848,9 +962,24 @@ SearchResult HeuristicSearcherV30::search_best_move(const Position& pos, const S
                     best.nodes = state.nodes;
                     return best;
                 }
-                const bool exact = current.range.lower == current.range.upper;
+                const bool exact = is_exact_range(current.range);
                 const bool full_window = alpha == -Infinity && beta == Infinity;
-                if (exact || full_window) {
+                if (exact) {
+                    break;
+                }
+                if (full_window) {
+                    if (!retried_without_root_tt_probe) {
+                        current = search_fixed_depth(pos, depth, state, -Infinity, Infinity, false);
+                        retried_without_root_tt_probe = true;
+                        if (current.result.stopped || state.stopped) {
+                            best.stopped = true;
+                            best.nodes = state.nodes;
+                            return best;
+                        }
+                        if (is_exact_range(current.range)) {
+                            break;
+                        }
+                    }
                     break;
                 }
                 if (current.range.upper <= alpha) {
@@ -860,7 +989,8 @@ SearchResult HeuristicSearcherV30::search_best_move(const Position& pos, const S
                     alpha = beta;
                     beta = Infinity;
                 } else {
-                    break;
+                    alpha = -Infinity;
+                    beta = Infinity;
                 }
             }
             best = current.result;
@@ -870,6 +1000,14 @@ SearchResult HeuristicSearcherV30::search_best_move(const Position& pos, const S
                 best.stopped = true;
                 best.nodes = state.nodes;
                 return best;
+            }
+            if (!is_exact_range(current.range)) {
+                current = search_fixed_depth(pos, depth, state, -Infinity, Infinity, false);
+                if (current.result.stopped || state.stopped) {
+                    best.stopped = true;
+                    best.nodes = state.nodes;
+                    return best;
+                }
             }
             best = current.result;
         }

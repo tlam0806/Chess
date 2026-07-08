@@ -85,6 +85,11 @@ struct Position {
     void make_move(Move move);
     void make_move(Move move, PieceType moved_piece);
     void make_move(Move move, PieceType moved_piece, PieceType captured_piece);
+    void make_move_without_king_safety(
+        Move move,
+        PieceType moved_piece,
+        PieceType captured_piece
+    );
     void make_move(Move move, UndoState& undo);
     void make_move(Move move, PieceType moved_piece, UndoState& undo);
     void make_move(Move move, PieceType moved_piece, PieceType captured_piece, UndoState& undo);
@@ -93,6 +98,12 @@ struct Position {
     void make_move(Move move, MoveUndoState& undo);
     void make_move(Move move, PieceType moved_piece, MoveUndoState& undo);
     void make_move(Move move, PieceType moved_piece, PieceType captured_piece, MoveUndoState& undo);
+    void make_move_without_king_safety(
+        Move move,
+        PieceType moved_piece,
+        PieceType captured_piece,
+        MoveUndoState& undo
+    );
     void unmake_move(Move move, const PositionStateSnapshot& snapshot, const MoveUndoState& undo);
 
 };
