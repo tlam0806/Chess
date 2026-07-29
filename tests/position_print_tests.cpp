@@ -9,14 +9,7 @@ using namespace chess;
 int main() {
     Position pos;
 
-    pos.pieces[static_cast<int>(Color::White)][static_cast<int>(PieceType::King)] =
-        bit(make_square(4, 0));
-    pos.pieces[static_cast<int>(Color::White)][static_cast<int>(PieceType::Pawn)] =
-        bit(make_square(0, 1));
-    pos.pieces[static_cast<int>(Color::Black)][static_cast<int>(PieceType::King)] =
-        bit(make_square(4, 7));
-    pos.pieces[static_cast<int>(Color::Black)][static_cast<int>(PieceType::Rook)] =
-        bit(make_square(7, 7));
+    assert(pos.set_fen("4k2r/8/8/8/8/8/P7/4K3 w - - 0 1"));
 
     std::ostringstream os;
     pos.print(os);

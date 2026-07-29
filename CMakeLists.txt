@@ -24,11 +24,14 @@ add_library(chess_core
     src/nn_search.cpp
     src/nn_value.cpp
     src/nnue_value.cpp
+    src/phase_quantized_nnue.cpp
+    src/phase_quantized_nnue_forward.cpp
     src/perft.cpp
     src/position.cpp
     src/lower_bucket_transposition_table.cpp
     src/lower_move_range_bucket_transposition_table.cpp
     src/single_bound_bucket_transposition_table.cpp
+    src/nnue_v37_transposition_table.cpp
     src/range_transposition_table.cpp
     src/range_bucket_transposition_table.cpp
     src/searchers/fast/heuristic_searcher.cpp
@@ -104,6 +107,19 @@ add_library(chess_core
     src/searchers/strict/heuristic_searcher_v35_api.cpp
     src/searchers/strict/heuristic_searcher_v35_ordering.cpp
     src/searchers/strict/heuristic_searcher_v35_tt.cpp
+    src/searchers/strict/nnue_searcher_v36.cpp
+    src/searchers/strict/nnue_searcher_v36_api.cpp
+    src/searchers/strict/nnue_searcher_v36_ordering.cpp
+    src/searchers/strict/nnue_searcher_v36_tt.cpp
+    src/searchers/strict/nnue_searcher_v37.cpp
+    src/searchers/strict/nnue_searcher_v37_api.cpp
+    src/searchers/strict/nnue_searcher_v37_ordering.cpp
+    src/searchers/strict/nnue_searcher_v37_tt.cpp
+    src/searchers/strict/nnue_searcher_v38.cpp
+    src/searchers/strict/nnue_searcher_v38_api.cpp
+    src/searchers/strict/nnue_searcher_v38_ordering.cpp
+    src/searchers/strict/nnue_searcher_v38_tt.cpp
+    src/searchers/strict/nnue_searcher_v39.cpp
     src/searchers/fast/heuristic_searcher_v15_pvs.cpp
     src/searchers/fast/nn_searcher.cpp
     src/searchers/fast/nn_searcher_v6.cpp
@@ -114,6 +130,18 @@ add_library(chess_core
     src/transposition_table.cpp
     src/zobrist.cpp
 )
+
+if (
+    CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU"
+    AND CMAKE_SYSTEM_PROCESSOR MATCHES "arm64|aarch64"
+)
+    # Match the experimental candidate build so the mixed unsigned/signed
+    # int8 matrix-multiply intrinsics are available to the NNUE forward only.
+    set_source_files_properties(
+        src/phase_quantized_nnue_forward.cpp
+        PROPERTIES COMPILE_OPTIONS "-mcpu=native"
+    )
+endif()
 
 target_include_directories(chess_core PUBLIC
     include
@@ -158,6 +186,21 @@ target_link_libraries(legal_move_dataset_export PRIVATE chess_core)
 add_executable(legal_move_dataset_view tools/legal_move_dataset_view.cpp)
 target_link_libraries(legal_move_dataset_view PRIVATE chess_core)
 
+add_executable(robotmoon_binpack_to_cbin tools/robotmoon_binpack_to_cbin.cpp)
+add_executable(validate_robotmoon_cbin tools/validate_robotmoon_cbin.cpp)
+add_executable(robotmoon_binpack_fixture tests/robotmoon_binpack_fixture.cpp)
+
+add_executable(evaluate_heuristic_on_cbin tools/evaluate_heuristic_on_cbin.cpp)
+target_link_libraries(evaluate_heuristic_on_cbin PRIVATE chess_core)
+
+add_executable(evaluate_nnue_v38_selective tools/evaluate_nnue_v38_selective.cpp)
+target_link_libraries(evaluate_nnue_v38_selective PRIVATE chess_core)
+
+add_executable(evaluate_nnue_v39_selective tools/evaluate_nnue_v38_selective.cpp)
+target_compile_definitions(
+    evaluate_nnue_v39_selective PRIVATE CHESS_EVALUATE_NNUE_V39)
+target_link_libraries(evaluate_nnue_v39_selective PRIVATE chess_core)
+
 add_executable(trace_replay_ply tools/trace_replay_ply.cpp)
 target_link_libraries(trace_replay_ply PRIVATE chess_core)
 
@@ -199,6 +242,27 @@ target_link_libraries(benchmark_fast_v15_v35 PRIVATE chess_core)
 
 add_executable(benchmark_fast_v10_v35 tools/profile/benchmark_fast_v10_v35.cpp)
 target_link_libraries(benchmark_fast_v10_v35 PRIVATE chess_core)
+
+add_executable(benchmark_nnue_v36_vs_heuristic_v35 tools/profile/benchmark_nnue_v36_vs_heuristic_v35.cpp)
+target_link_libraries(benchmark_nnue_v36_vs_heuristic_v35 PRIVATE chess_core)
+
+add_executable(benchmark_nnue_v36_vs_v37 tools/profile/benchmark_nnue_v36_vs_v37.cpp)
+target_link_libraries(benchmark_nnue_v36_vs_v37 PRIVATE chess_core)
+
+add_executable(
+    benchmark_nnue_v36_ordering_weights
+    tools/profile/benchmark_nnue_v36_ordering_weights.cpp
+)
+target_link_libraries(benchmark_nnue_v36_ordering_weights PRIVATE chess_core)
+
+add_executable(benchmark_nnue_rebuild_perspective tools/profile/benchmark_nnue_rebuild_perspective.cpp)
+target_link_libraries(benchmark_nnue_rebuild_perspective PRIVATE chess_core)
+
+add_executable(phase_nnue_strict_paired_match tools/phase_nnue_strict_paired_match.cpp)
+target_link_libraries(phase_nnue_strict_paired_match PRIVATE chess_core)
+
+add_executable(measure_nnue_v36_cutoff_stats tools/measure_nnue_v36_cutoff_stats.cpp)
+target_link_libraries(measure_nnue_v36_cutoff_stats PRIVATE chess_core)
 
 add_executable(benchmark_strict_v32_fast_v32 tools/profile/benchmark_strict_v32_fast_v32.cpp)
 target_link_libraries(benchmark_strict_v32_fast_v32 PRIVATE chess_core)
@@ -332,6 +396,9 @@ target_link_libraries(benchmark_v35_tt_mb PRIVATE chess_core)
 add_executable(benchmark_v32_v34_tt_mb tools/profile/benchmark_v32_v34_tt_mb.cpp)
 target_link_libraries(benchmark_v32_v34_tt_mb PRIVATE chess_core)
 
+add_executable(benchmark_incremental_nnue tools/profile/benchmark_custom_nnue.cpp)
+target_include_directories(benchmark_incremental_nnue PRIVATE include)
+
 add_executable(analyze_nn_buckets tools/analyze_nn_buckets.cpp)
 target_link_libraries(analyze_nn_buckets PRIVATE chess_core)
 
@@ -356,11 +423,25 @@ target_link_libraries(nnue_spectator_gap_export PRIVATE chess_core)
 add_executable(uci_v7 tools/uci_v7.cpp)
 target_link_libraries(uci_v7 PRIVATE chess_core)
 
+add_executable(uci_nnue_v38 tools/uci_nnue_v38.cpp)
+target_link_libraries(uci_nnue_v38 PRIVATE chess_core)
+
+add_executable(nnue_v38_time_gauntlet tools/nnue_v38_time_gauntlet.cpp)
+target_link_libraries(nnue_v38_time_gauntlet PRIVATE chess_core)
+
+add_executable(collect_nnue_wdl_calibration tools/collect_nnue_wdl_calibration.cpp)
+target_link_libraries(collect_nnue_wdl_calibration PRIVATE chess_core)
+
 enable_testing()
 
 function(add_chess_test name)
     add_executable(${name} tests/${name}.cpp)
     target_link_libraries(${name} PRIVATE chess_core)
+    if(MSVC)
+        target_compile_options(${name} PRIVATE /UNDEBUG)
+    else()
+        target_compile_options(${name} PRIVATE -UNDEBUG)
+    endif()
     add_test(NAME ${name} COMMAND ${name})
 endfunction()
 
@@ -425,10 +506,20 @@ add_chess_test(startpos_tests)
 
 add_executable(nn_search_tests tests/nn_search_tests.cpp)
 target_link_libraries(nn_search_tests PRIVATE chess_core)
+if(MSVC)
+    target_compile_options(nn_search_tests PRIVATE /UNDEBUG)
+else()
+    target_compile_options(nn_search_tests PRIVATE -UNDEBUG)
+endif()
 add_test(NAME nn_search_tests COMMAND nn_search_tests ${CMAKE_SOURCE_DIR}/models/value_net_stream_100k.bin)
 
 add_executable(nn_value_tests tests/nn_value_tests.cpp)
 target_link_libraries(nn_value_tests PRIVATE chess_core)
+if(MSVC)
+    target_compile_options(nn_value_tests PRIVATE /UNDEBUG)
+else()
+    target_compile_options(nn_value_tests PRIVATE -UNDEBUG)
+endif()
 add_test(NAME nn_value_tests
     COMMAND nn_value_tests
         ${CMAKE_SOURCE_DIR}/models/value_net_stream_100k.bin
@@ -437,6 +528,78 @@ add_test(NAME nn_value_tests
 
 add_executable(nnue_value_tests tests/nnue_value_tests.cpp)
 target_link_libraries(nnue_value_tests PRIVATE chess_core)
+if(MSVC)
+    target_compile_options(nnue_value_tests PRIVATE /UNDEBUG)
+else()
+    target_compile_options(nnue_value_tests PRIVATE -UNDEBUG)
+endif()
+
+add_executable(incremental_nnue_tests tests/incremental_nnue_tests.cpp)
+target_include_directories(incremental_nnue_tests PRIVATE include)
+if(MSVC)
+    target_compile_options(incremental_nnue_tests PRIVATE /UNDEBUG)
+else()
+    target_compile_options(incremental_nnue_tests PRIVATE -UNDEBUG)
+endif()
+add_test(NAME incremental_nnue_tests COMMAND incremental_nnue_tests)
 
 add_executable(nnue_searcher_v10_tests tests/nnue_searcher_v10_tests.cpp)
 target_link_libraries(nnue_searcher_v10_tests PRIVATE chess_core)
+if(MSVC)
+    target_compile_options(nnue_searcher_v10_tests PRIVATE /UNDEBUG)
+else()
+    target_compile_options(nnue_searcher_v10_tests PRIVATE -UNDEBUG)
+endif()
+
+add_executable(nnue_searcher_v36_strict_tests tests/nnue_searcher_v36_strict_tests.cpp)
+target_link_libraries(nnue_searcher_v36_strict_tests PRIVATE chess_core)
+if(MSVC)
+    target_compile_options(nnue_searcher_v36_strict_tests PRIVATE /UNDEBUG)
+else()
+    target_compile_options(nnue_searcher_v36_strict_tests PRIVATE -UNDEBUG)
+endif()
+add_test(
+    NAME nnue_searcher_v36_strict_tests
+    COMMAND nnue_searcher_v36_strict_tests
+        ${CMAKE_SOURCE_DIR}/models/quantized_scale_grid/old_score_huber200_lr_sweep_then_5ep_20260724_142758/best/phase_quantized_nnue.bin
+)
+
+add_executable(nnue_searcher_v37_strict_tests tests/nnue_searcher_v37_strict_tests.cpp)
+target_link_libraries(nnue_searcher_v37_strict_tests PRIVATE chess_core)
+if(MSVC)
+    target_compile_options(nnue_searcher_v37_strict_tests PRIVATE /UNDEBUG)
+else()
+    target_compile_options(nnue_searcher_v37_strict_tests PRIVATE -UNDEBUG)
+endif()
+add_test(
+    NAME nnue_searcher_v37_strict_tests
+    COMMAND nnue_searcher_v37_strict_tests
+        ${CMAKE_SOURCE_DIR}/models/quantized_scale_grid/old_score_huber200_lr_sweep_then_5ep_20260724_142758/best/phase_quantized_nnue.bin
+)
+
+add_executable(nnue_searcher_v39_selective_tests tests/nnue_searcher_v39_selective_tests.cpp)
+target_link_libraries(nnue_searcher_v39_selective_tests PRIVATE chess_core)
+if(MSVC)
+    target_compile_options(nnue_searcher_v39_selective_tests PRIVATE /UNDEBUG)
+else()
+    target_compile_options(nnue_searcher_v39_selective_tests PRIVATE -UNDEBUG)
+endif()
+add_test(
+    NAME nnue_searcher_v39_selective_tests
+    COMMAND nnue_searcher_v39_selective_tests
+        ${CMAKE_SOURCE_DIR}/models/quantized_scale_grid/old_score_huber200_lr_sweep_then_5ep_20260724_142758/best/phase_quantized_nnue.bin
+)
+
+add_executable(phase_quantized_nnue_tests tests/phase_quantized_nnue_tests.cpp)
+target_link_libraries(phase_quantized_nnue_tests PRIVATE chess_core)
+if(MSVC)
+    target_compile_options(phase_quantized_nnue_tests PRIVATE /UNDEBUG)
+else()
+    target_compile_options(phase_quantized_nnue_tests PRIVATE -UNDEBUG)
+endif()
+add_test(
+    NAME phase_quantized_nnue_tests
+    COMMAND phase_quantized_nnue_tests
+        ${CMAKE_SOURCE_DIR}/models/quantized_scale_grid/old_score_huber200_lr_sweep_then_5ep_20260724_142758/best/phase_quantized_nnue.bin
+        ${CMAKE_SOURCE_DIR}/models/quantized_scale_grid/old_score_huber200_lr_sweep_then_5ep_20260724_142758/best/phase_quantized_nnue_parity.tsv
+)

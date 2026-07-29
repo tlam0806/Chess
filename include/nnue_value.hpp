@@ -80,6 +80,14 @@ public:
     void reset(const NnueValueModel& model, const Position& pos);
     void make_move(const Position& before, Move move, const Position& after);
     NnueAccumulatorUndo make_move_with_undo(const Position& before, Move move, const Position& after);
+    NnueAccumulatorUndo make_move_with_undo(
+        Move move,
+        Color moving_color,
+        PieceType moved_piece,
+        PieceType captured_piece,
+        Square captured_square,
+        const Position& after
+    );
     void undo(const NnueAccumulatorUndo& undo);
 
     float predict_normalized(const Position& pos) const;

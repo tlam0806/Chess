@@ -9,11 +9,12 @@ import torch
 from torch import nn
 from torch.utils.data import DataLoader, Dataset
 
+from .training_targets import is_value_none_target
 from .value_net import AUX_FEATURE_COUNT, ChessValueNet, make_batch
 
 
 DEFAULT_TARGET_SCALE = 1000.0
-DEFAULT_TARGET_CLIP = 1000.0
+DEFAULT_TARGET_CLIP = 0.0
 
 
 class SparseValueDataset(Dataset):
@@ -36,6 +37,8 @@ class SparseValueDataset(Dataset):
                     continue
                 sample = json.loads(line)
                 self._validate_sample(sample, line_number)
+                if is_value_none_target(sample["target"]):
+                    continue
                 self.samples.append(sample)
 
         if not self.samples:
@@ -64,6 +67,8 @@ def collate_sparse_value_batch(
     target_scale: float = DEFAULT_TARGET_SCALE,
     target_clip: float = DEFAULT_TARGET_CLIP,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    if any(is_value_none_target(sample["target"]) for sample in samples):
+        raise ValueError("VALUE_NONE target cannot be used for training or evaluation")
     batch_features = [sample["features"] for sample in samples]
     batch_aux = [sample["aux"] for sample in samples]
     targets = torch.tensor(
@@ -76,8 +81,10 @@ def collate_sparse_value_batch(
 
 
 def normalize_target_cp(target_cp: float, target_scale: float, target_clip: float) -> float:
-    clipped = max(-target_clip, min(target_clip, float(target_cp)))
-    return clipped / target_scale
+    target = float(target_cp)
+    if target_clip > 0.0:
+        target = max(-target_clip, min(target_clip, target))
+    return target / target_scale
 
 
 def denormalize_target_cp(target_normalized: float, target_scale: float) -> float:
@@ -236,7 +243,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--device", default="auto", help="auto, cpu, mps, cuda")
     parser.add_argument("--output", default="models/value_net.pt")
     parser.add_argument("--target-scale", type=float, default=DEFAULT_TARGET_SCALE)
-    parser.add_argument("--target-clip", type=float, default=DEFAULT_TARGET_CLIP)
+    parser.add_argument(
+        "--target-clip",
+        type=float,
+        default=DEFAULT_TARGET_CLIP,
+        help="Clamp CP targets to +/- this value; 0 disables clipping",
+    )
     return parser.parse_args()
 
 

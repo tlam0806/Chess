@@ -19,6 +19,7 @@ from .train_value import (
     mean_absolute_error_cp,
     save_checkpoint,
 )
+from .training_targets import is_value_none_target
 from .value_net import AUX_FEATURE_COUNT, ChessValueNet
 
 
@@ -192,6 +193,8 @@ def main() -> None:
             continue
         sample = json.loads(line)
         validate_sample(sample, line_number)
+        if is_value_none_target(sample["target"]):
+            continue
         batch.append(sample)
 
         if len(batch) == args.batch_size:

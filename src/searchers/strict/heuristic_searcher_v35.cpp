@@ -16,6 +16,24 @@
 
 namespace chess {
 
+namespace {
+
+SearchResult ensure_legal_root_move_v35(
+    const Position& pos,
+    SearchResult result
+) {
+    const std::vector<Move> legal_moves = generate_legal_moves(pos);
+    if (!legal_moves.empty()
+        && std::find(
+               legal_moves.begin(), legal_moves.end(), result.best_move)
+            == legal_moves.end()) {
+        result.best_move = legal_moves.front();
+    }
+    return result;
+}
+
+} // namespace
+
 void HeuristicSearcherV35::reward_quiet_cutoff(
     Color side_to_move,
     int depth,
@@ -872,7 +890,7 @@ SearchResult HeuristicSearcherV35::search_best_move(const Position& pos, int dep
     if (!current.result.stopped && !state.stopped && !is_exact_range(current.range)) {
         current = search_fixed_depth(pos, depth, state, -Infinity, Infinity, false);
     }
-    return current.result;
+    return ensure_legal_root_move_v35(pos, current.result);
 }
 
 SearchResult HeuristicSearcherV35::search_best_move(const Position& pos, const SearchLimits& limits) {
@@ -897,7 +915,7 @@ SearchResult HeuristicSearcherV35::search_best_move(const Position& pos, const S
             if (current.result.stopped || state.stopped) {
                 best.stopped = true;
                 best.nodes = state.nodes;
-                return best;
+                return ensure_legal_root_move_v35(pos, best);
             }
             best = current.result;
         } else if (EnableAspirationWindow) {
@@ -910,7 +928,7 @@ SearchResult HeuristicSearcherV35::search_best_move(const Position& pos, const S
                 if (current.result.stopped || state.stopped) {
                     best.stopped = true;
                     best.nodes = state.nodes;
-                    return best;
+                    return ensure_legal_root_move_v35(pos, best);
                 }
                 const bool exact = is_exact_range(current.range);
                 const bool full_window = alpha == -Infinity && beta == Infinity;
@@ -924,7 +942,7 @@ SearchResult HeuristicSearcherV35::search_best_move(const Position& pos, const S
                         if (current.result.stopped || state.stopped) {
                             best.stopped = true;
                             best.nodes = state.nodes;
-                            return best;
+                            return ensure_legal_root_move_v35(pos, best);
                         }
                         if (is_exact_range(current.range)) {
                             break;
@@ -949,14 +967,14 @@ SearchResult HeuristicSearcherV35::search_best_move(const Position& pos, const S
             if (current.result.stopped || state.stopped) {
                 best.stopped = true;
                 best.nodes = state.nodes;
-                return best;
+                return ensure_legal_root_move_v35(pos, best);
             }
             if (!is_exact_range(current.range)) {
                 current = search_fixed_depth(pos, depth, state, -Infinity, Infinity, false);
                 if (current.result.stopped || state.stopped) {
                     best.stopped = true;
                     best.nodes = state.nodes;
-                    return best;
+                    return ensure_legal_root_move_v35(pos, best);
                 }
             }
             best = current.result;
@@ -964,7 +982,7 @@ SearchResult HeuristicSearcherV35::search_best_move(const Position& pos, const S
     }
 
     best.nodes = state.nodes;
-    return best;
+    return ensure_legal_root_move_v35(pos, best);
 }
 
 } // namespace chess

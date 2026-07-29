@@ -1,8 +1,8 @@
 #include "attacks.hpp"
-#include "evaluate.hpp"
 #include "game_state.hpp"
-#include "heuristic_searcher.hpp"
 #include "move.hpp"
+#include "nnue_searcher_v36.hpp"
+#include "phase_quantized_nnue.hpp"
 #include "position.hpp"
 
 #include <algorithm>
@@ -77,6 +77,7 @@ std::string game_status(const chess::Position& pos, const std::vector<chess::Pos
 }
 
 void write_state(const chess::Position& pos, const std::vector<chess::Position>& history,
+                 const chess::PhaseQuantizedNnueModel& model,
                  bool ok, const std::string& message = "",
                  const std::string& last_move = "") {
     std::cout << "{\"ok\":" << (ok ? "true" : "false");
@@ -84,7 +85,7 @@ void write_state(const chess::Position& pos, const std::vector<chess::Position>&
     std::cout << ",\"lastMove\":\"" << json_escape(last_move) << "\"";
     std::cout << ",\"side\":\"" << (pos.side_to_move == chess::Color::White ? "w" : "b") << "\"";
     std::cout << ",\"status\":\"" << game_status(pos, history) << "\"";
-    std::cout << ",\"eval\":" << chess::evaluate(pos);
+    std::cout << ",\"eval\":" << model.evaluate_cp_rounded(pos);
     std::cout << ",\"check\":" << (chess::in_check(pos, pos.side_to_move) ? "true" : "false");
     std::cout << ",\"gameOver\":" << (is_game_over(pos, history) ? "true" : "false");
     std::cout << ",\"repetitionCount\":" << chess::repetition_count(pos, history);
@@ -131,7 +132,13 @@ bool make_uci_move(chess::Position& pos, std::vector<chess::Position>& history,
 int main() {
     chess::Position pos;
     pos.set_startpos();
-    chess::HeuristicSearcher bot;
+    chess::PhaseQuantizedNnueModel model;
+    if (!model.load(chess::DefaultPhaseQuantizedNnueModelPath)) {
+        std::cerr << "Failed to load default NNUE model: "
+                  << chess::DefaultPhaseQuantizedNnueModelPath << '\n';
+        return 1;
+    }
+    chess::NnueSearcherV36 bot(model);
     std::vector<chess::Position> history;
 
     std::string line;
@@ -141,39 +148,39 @@ int main() {
         in >> command;
 
         if (command == "state") {
-            write_state(pos, history, true);
+            write_state(pos, history, model, true);
         } else if (command == "reset") {
             pos.set_startpos();
             history.clear();
-            write_state(pos, history, true, "reset");
+            write_state(pos, history, model, true, "reset");
         } else if (command == "move") {
             std::string uci;
             in >> uci;
             if (make_uci_move(pos, history, uci)) {
-                write_state(pos, history, true, "", uci);
+                write_state(pos, history, model, true, "", uci);
             } else {
-                write_state(pos, history, false, "illegal move");
+                write_state(pos, history, model, false, "illegal move");
             }
         } else if (command == "bot") {
             int depth = DefaultBotDepth;
             in >> depth;
             if (is_game_over(pos, history)) {
-                write_state(pos, history, false, "game is over");
+                write_state(pos, history, model, false, "game is over");
                 continue;
             }
             const chess::SearchResult result = bot.search_best_move(pos, depth);
             history.push_back(pos);
             pos.make_move(result.best_move);
-            write_state(pos, history, true, "score " + std::to_string(result.score)
+            write_state(pos, history, model, true, "score " + std::to_string(result.score)
                                    + ", nodes " + std::to_string(result.nodes),
                         chess::move_to_string(result.best_move));
         } else if (command == "undo") {
             if (!history.empty()) {
                 pos = history.back();
                 history.pop_back();
-                write_state(pos, history, true, "undo");
+                write_state(pos, history, model, true, "undo");
             } else {
-                write_state(pos, history, false, "nothing to undo");
+                write_state(pos, history, model, false, "nothing to undo");
             }
         } else if (command == "undo_turn") {
             int undone = 0;
@@ -182,11 +189,16 @@ int main() {
                 history.pop_back();
                 ++undone;
             }
-            write_state(pos, history, undone > 0, undone > 0 ? "undo turn" : "nothing to undo");
+            write_state(
+                pos,
+                history,
+                model,
+                undone > 0,
+                undone > 0 ? "undo turn" : "nothing to undo");
         } else if (command == "quit") {
             break;
         } else {
-            write_state(pos, history, false, "unknown command");
+            write_state(pos, history, model, false, "unknown command");
         }
     }
 }

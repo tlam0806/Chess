@@ -197,7 +197,7 @@ int main() {
         4);
 
     assert_v24_search_is_stable_from_fen(
-        "4r3/5ppp/5P2/1p1pp3/3nP2P/1p1b4/rP1P1P2/R1BR2K1 w - - 0 23",
+        "4r2k/5ppp/5P2/1p1pp3/3nP2P/1p1b4/rP1P1P2/R1BR2K1 w - - 0 23",
         4);
 
     {

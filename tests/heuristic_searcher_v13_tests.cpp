@@ -1,3 +1,4 @@
+#include "attacks.hpp"
 #include "heuristic_searcher_v13.hpp"
 
 #include <cassert>

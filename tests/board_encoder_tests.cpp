@@ -81,6 +81,32 @@ int main() {
     }
 
     {
+        // A color-swapped, rank-mirrored board from the opposite side-to-move
+        // must produce exactly the same feature rows. PSQT shares these rows,
+        // so this is the perspective invariant required by its int32 table.
+        Position white_view;
+        white_view.set_piece(Color::White, PieceType::King, make_square(4, 0));
+        white_view.set_piece(Color::Black, PieceType::King, make_square(3, 7));
+        white_view.set_piece(Color::White, PieceType::Pawn, make_square(2, 1));
+        white_view.set_piece(Color::Black, PieceType::Knight, make_square(5, 5));
+        white_view.set_piece(Color::White, PieceType::Queen, make_square(7, 4));
+        white_view.side_to_move = Color::White;
+
+        Position black_view;
+        black_view.set_piece(Color::Black, PieceType::King, make_square(4, 7));
+        black_view.set_piece(Color::White, PieceType::King, make_square(3, 0));
+        black_view.set_piece(Color::Black, PieceType::Pawn, make_square(2, 6));
+        black_view.set_piece(Color::White, PieceType::Knight, make_square(5, 2));
+        black_view.set_piece(Color::Black, PieceType::Queen, make_square(7, 3));
+        black_view.side_to_move = Color::Black;
+
+        const EncodedPosition from_white = encode_position(white_view);
+        const EncodedPosition from_black = encode_position(black_view);
+        assert(from_white.features == from_black.features);
+        assert(from_white.aux == from_black.aux);
+    }
+
+    {
         Position pos;
         pos.set_piece(Color::White, PieceType::King, make_square(4, 0));
         pos.set_piece(Color::Black, PieceType::King, make_square(4, 7));

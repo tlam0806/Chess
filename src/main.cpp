@@ -1,7 +1,8 @@
 #include "attacks.hpp"
 #include "game_state.hpp"
-#include "heuristic_searcher.hpp"
 #include "move.hpp"
+#include "nnue_searcher_v36.hpp"
+#include "phase_quantized_nnue.hpp"
 #include "position.hpp"
 
 #include <algorithm>
@@ -84,7 +85,13 @@ void print_legal_moves(const chess::Position& pos) {
 int main() {
     chess::Position pos;
     pos.set_startpos();
-    chess::HeuristicSearcher bot;
+    chess::PhaseQuantizedNnueModel model;
+    if (!model.load(chess::DefaultPhaseQuantizedNnueModelPath)) {
+        std::cerr << "Failed to load default NNUE model: "
+                  << chess::DefaultPhaseQuantizedNnueModelPath << '\n';
+        return 1;
+    }
+    chess::NnueSearcherV36 bot(model);
     std::vector<chess::Position> history;
 
     std::cout << "Mini chess engine CLI\n";

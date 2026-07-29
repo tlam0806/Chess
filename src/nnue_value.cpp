@@ -251,6 +251,55 @@ NnueAccumulatorUndo NnueAccumulator::make_move_with_undo(
     return undo;
 }
 
+NnueAccumulatorUndo NnueAccumulator::make_move_with_undo(
+    Move move,
+    Color moving_color,
+    PieceType moved_piece,
+    PieceType captured_piece,
+    Square captured_square,
+    const Position& after
+) {
+    assert(initialized());
+    assert(moved_piece != PieceType::None);
+
+    NnueAccumulatorUndo undo;
+    undo.move = move;
+    undo.moving_color = moving_color;
+    undo.moved_piece_before = moved_piece;
+
+    const PieceType promoted_piece = promotion_piece(move);
+    const PieceType moved_piece_after =
+        promoted_piece == PieceType::None ? moved_piece : promoted_piece;
+    undo.moved_piece_after = moved_piece_after;
+
+    if (moved_piece == PieceType::King) {
+        undo.used_snapshot = true;
+        undo.accumulator_snapshot = accumulators_;
+        undo.friendly_king_snapshot = friendly_king_squares_;
+        undo.enemy_king_snapshot = enemy_king_squares_;
+        rebuild_perspective(after, Color::White);
+        rebuild_perspective(after, Color::Black);
+        return undo;
+    }
+
+    const bool has_capture = captured_piece != PieceType::None;
+    undo.captured_piece = captured_piece;
+    undo.captured_square = has_capture ? captured_square : NoSquare;
+
+    const Square from = move.from();
+    const Square to = move.to();
+    const Color captured_color = opposite(moving_color);
+    for (Color perspective : {Color::White, Color::Black}) {
+        add_piece_features(perspective, moving_color, moved_piece, from, -1.0F);
+        add_piece_features(perspective, moving_color, moved_piece_after, to, 1.0F);
+        if (has_capture) {
+            add_piece_features(perspective, captured_color, captured_piece, captured_square, -1.0F);
+        }
+    }
+
+    return undo;
+}
+
 void NnueAccumulator::undo(const NnueAccumulatorUndo& undo) {
     assert(initialized());
     if (undo.used_snapshot) {
