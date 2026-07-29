@@ -14,10 +14,13 @@ SPEC.loader.exec_module(MODULE)
 
 
 def test_probabilities_are_normalized_and_symmetric():
-    model = MODULE.Calibrator(1)
-    x = torch.ones((3, 1), dtype=torch.float64)
-    cp = torch.tensor([-300.0, 0.0, 300.0], dtype=torch.float64)
-    probabilities = model.probabilities(x, cp)
+    model = MODULE.SymmetricCalibrator(1, 1)
+    with torch.no_grad():
+        model.signed_weights[0] = 1.0
+        model.draw_weights[0] = 0.5
+    signed = torch.tensor([[-1.0], [0.0], [1.0]], dtype=torch.float64)
+    draw = torch.ones((3, 1), dtype=torch.float64)
+    probabilities = model.probabilities(signed, draw)
     assert torch.allclose(
         probabilities.sum(dim=1), torch.ones(3, dtype=torch.float64)
     )
@@ -47,3 +50,22 @@ def test_group_split_has_no_opening_leakage():
     assert not (groups[0] & groups[2])
     assert not (groups[1] & groups[2])
     assert set.union(*groups) == set(range(30))
+
+
+def test_lbfgs_fit_beats_uniform_on_separable_samples():
+    samples = [
+        MODULE.Sample(
+            game_id=index,
+            opening_line=index,
+            cp=cp,
+            phase=0.5,
+            ply=0.5,
+            outcome=outcome,
+        )
+        for index, (cp, outcome) in enumerate(
+            [(-800.0, -1), (0.0, 0), (800.0, 1)] * 20
+        )
+    ]
+    model = MODULE.fit(samples, "symmetric_score", 1e-3, 100)
+    result = MODULE.metrics(model, samples, "symmetric_score")
+    assert result["nll"] < 0.2

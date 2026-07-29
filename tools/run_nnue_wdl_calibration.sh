@@ -29,6 +29,6 @@ mkdir -p "$run_dir"
   --input "$run_dir/calibration_positions.jsonl" \
   --output-dir "$run_dir/fit" \
   --seed 20260803 \
-  --steps 900
+  --steps 300
 
 touch "$run_dir/DONE"
