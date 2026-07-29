@@ -79,6 +79,26 @@ V9: nodes=100725973 time=173799 ms
 
 On this sample, V9 is the current preferred classical searcher for data labeling and bot play.
 
+## Quantized NNUE Milestone
+
+The repository now also contains a phase-aware quantized NNUE runtime and the
+V36-V39 NNUE search line. A controlled paired match established that the trained
+`hs2x8_os128` network can outperform the hand-written
+`HeuristicSearcherV35` under the tested fixed-depth protocol:
+
+| Engine | Depth | W-D-L | Score | Paired-bootstrap 95% CI |
+|---|---:|---:|---:|---:|
+| NNUE `hs2x8_os128` | 3 | 46-132-22 | **56.0%** | **52.75%-59.25%** |
+| `HeuristicSearcherV35` | 4 | 22-132-46 | 44.0% | 40.75%-47.25% |
+
+The 200 games used 100 Stockfish-balanced openings, with colors reversed for
+each opening. The NNUE searched 29.0M nodes versus 79.2M for the heuristic
+searcher. This is evidence for this match protocol, rather than a claim that the
+NNUE wins at every depth or time control.
+
+See [the full NNUE-vs-heuristic result](docs/nnue_vs_heuristic_result.md) for
+the training lineage, raw summary, interpretation, and reproduction command.
+
 ## Phase 2: Neural Value Evaluation
 
 Phase 2 experiments with replacing or augmenting the hand-written heuristic evaluation using a small neural network.
