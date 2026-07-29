@@ -1,5 +1,6 @@
 #include "attacks.hpp"
 #include "move.hpp"
+#include "nnue_wdl_calibration.hpp"
 #include "nnue_searcher_v36.hpp"
 #ifdef CHESS_EVALUATE_NNUE_V39
 #include "nnue_searcher_v39.hpp"
@@ -38,6 +39,7 @@ struct Options {
     int count = 0;
     int detail_threshold = 0;
     int ranking_target_abs_cp = 1500;
+    std::string objective = "cp";
     CandidateSearcher::SelectiveConfig config{};
 };
 
@@ -136,6 +138,7 @@ Options parse(int argc, char** argv) {
             options.detail_threshold = integer(next(), arg);
         else if (arg == "--ranking-target-abs-cp")
             options.ranking_target_abs_cp = integer(next(), arg);
+        else if (arg == "--objective") options.objective = next();
         else if (arg == "--disable-lmr") options.config.enable_lmr = false;
         else if (arg == "--disable-null-move")
             options.config.enable_null_move = false;
@@ -175,6 +178,9 @@ Options parse(int argc, char** argv) {
     }
     if (options.dataset.empty()) throw std::runtime_error("--dataset is required");
     if (options.depth < 2) throw std::runtime_error("depth must be >= 2");
+    if (options.objective != "cp" && options.objective != "wdl") {
+        throw std::runtime_error("--objective must be cp or wdl");
+    }
     return options;
 }
 
@@ -204,11 +210,25 @@ int strict_score_of_move(
     return -run_control(control, child, depth - 1).score;
 }
 
-double percentile95(std::vector<int> values) {
+template<typename Value>
+double percentile95(std::vector<Value> values) {
     if (values.empty()) return 0.0;
     std::sort(values.begin(), values.end());
     return values[static_cast<std::size_t>(
         std::ceil(0.95 * static_cast<double>(values.size()))) - 1];
+}
+
+std::size_t phase_index(const chess::Position& position) {
+    const std::size_t pieces =
+        static_cast<std::size_t>(chess::popcount(position.occupancy()));
+    return std::min<std::size_t>(
+        (pieces - 1) / 4,
+        chess::PhaseQuantizedNnueModel::PhaseCount - 1);
+}
+
+int absolute_ply(const chess::Position& position) {
+    return 2 * (position.fullmove_number - 1)
+        + (position.side_to_move == chess::Color::Black ? 1 : 0);
 }
 
 } // namespace
@@ -241,8 +261,11 @@ int main(int argc, char** argv) {
         int win_to_draw = 0, win_to_loss = 0, self_mated = 0;
         int safety_critical_mistakes = 0;
         std::int64_t regret_sum = 0;
+        double wdl_loss_sum = 0.0;
         std::vector<int> regrets;
+        std::vector<double> wdl_losses;
         regrets.reserve(samples.size());
+        wdl_losses.reserve(samples.size());
 
         for (std::size_t index = 0; index < samples.size(); ++index) {
             const int static_target_cp =
@@ -287,9 +310,16 @@ int main(int argc, char** argv) {
                     control, samples[index].position, mutant.best_move, options.depth);
             }
             const int regret = std::max(0, base.score - strict_candidate_score);
+            const double wdl_loss = chess::wdl_calibration::expected_score_loss(
+                base.score,
+                strict_candidate_score,
+                static_cast<int>(phase_index(samples[index].position)),
+                absolute_ply(samples[index].position));
             if (ranking_sample) {
                 regrets.push_back(regret);
                 regret_sum += regret;
+                wdl_losses.push_back(wdl_loss);
+                wdl_loss_sum += wdl_loss;
                 above100 += regret > 100;
                 ranking_agreements += base.best_move == mutant.best_move;
             }
@@ -332,6 +362,7 @@ int main(int argc, char** argv) {
                     << "\tcontrol_score=" << base.score
                     << "\tcandidate_strict_score=" << strict_candidate_score
                     << "\tregret=" << regret
+                    << "\twdl_loss=" << wdl_loss
                     << "\tcontrol_mate=" << base_mate
                     << "\tcandidate_mate=" << candidate_mate
                     << '\n';
@@ -345,6 +376,11 @@ int main(int argc, char** argv) {
             << ",\"ranking_count\":" << ranking_count
             << ",\"safety_count\":" << safety_count
             << ",\"ranking_target_abs_cp\":" << options.ranking_target_abs_cp
+            << ",\"objective\":\"" << options.objective << '"'
+            << ",\"wdl_formula\":\""
+            << chess::wdl_calibration::formula << '"'
+            << ",\"wdl_calibration_run\":\""
+            << chess::wdl_calibration::calibration_run << '"'
             << ",\"depth\":" << options.depth
             << ",\"control_nodes\":" << control_nodes
             << ",\"candidate_nodes\":" << candidate_nodes
@@ -355,6 +391,19 @@ int main(int argc, char** argv) {
                 ? static_cast<double>(regret_sum) / ranking_count_double
                 : 0.0)
             << ",\"p95_root_regret\":" << percentile95(regrets)
+            << ",\"mean_wdl_loss\":"
+            << (ranking_count > 0
+                ? wdl_loss_sum / ranking_count_double
+                : 0.0)
+            << ",\"p95_wdl_loss\":" << percentile95(wdl_losses)
+            << ",\"objective_loss\":"
+            << (options.objective == "wdl"
+                ? (ranking_count > 0
+                    ? wdl_loss_sum / ranking_count_double
+                    : 0.0)
+                : (ranking_count > 0
+                    ? static_cast<double>(regret_sum) / ranking_count_double
+                    : 0.0))
             << ",\"above_100_cp_pct\":"
             << (ranking_count > 0
                 ? 100.0 * above100 / ranking_count_double

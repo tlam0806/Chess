@@ -33,14 +33,20 @@ class Config:
         ]
 
 
+def objective_loss(result: dict) -> float:
+    if "objective_loss" in result:
+        return result["objective_loss"]
+    return result["mean_root_regret"]
+
+
 def dominated(a: dict, b: dict) -> bool:
     """True when result a is dominated by result b."""
     return (
         b["node_ratio"] <= a["node_ratio"]
-        and b["mean_root_regret"] <= a["mean_root_regret"]
+        and objective_loss(b) <= objective_loss(a)
         and (
             b["node_ratio"] < a["node_ratio"]
-            or b["mean_root_regret"] < a["mean_root_regret"]
+            or objective_loss(b) < objective_loss(a)
         )
     )
 
@@ -152,12 +158,13 @@ def thin_frontier(entries: list[dict], limit: int) -> list[dict]:
 
 def evaluate(
     binary: Path, dataset: Path, model: Path, depth: int, config: Config,
-    ranking_target_abs_cp: int,
+    ranking_target_abs_cp: int, objective: str,
 ) -> dict:
     command = [
         str(binary), "--dataset", str(dataset), "--model", str(model),
         "--depth", str(depth),
         "--ranking-target-abs-cp", str(ranking_target_abs_cp),
+        "--objective", objective,
         *config.args(),
     ]
     completed = subprocess.run(command, text=True, capture_output=True)
@@ -191,6 +198,7 @@ def main() -> None:
     parser.add_argument("--wide-mutations", action="store_true")
     parser.add_argument("--frontier-cap", type=int, default=0)
     parser.add_argument("--ranking-target-abs-cp", type=int, default=1500)
+    parser.add_argument("--objective", choices=("cp", "wdl"), default="cp")
     args = parser.parse_args()
     args.run_dir.mkdir(parents=True, exist_ok=True)
     subset_path = args.run_dir / "current_subset.tsv"
@@ -284,7 +292,7 @@ def main() -> None:
                 rotating_subset(groups, iteration, args.seed)) + "\n")
         result = evaluate(
             args.binary, subset_path, args.model, args.tune_depth, config,
-            args.ranking_target_abs_cp)
+            args.ranking_target_abs_cp, args.objective)
         entry = {
             "kind": "tune", "iteration": iteration,
             "elapsed_sec": time.monotonic() - start,
@@ -305,7 +313,8 @@ def main() -> None:
         config = tune_entry["config_obj"]
         result = evaluate(
             args.binary, args.dataset_dir / "selection.tsv", args.model,
-            args.selection_depth, config, args.ranking_target_abs_cp)
+            args.selection_depth, config, args.ranking_target_abs_cp,
+            args.objective)
         entry = {
             "kind": "selection", "rank": rank,
             "elapsed_sec": time.monotonic() - start,
@@ -322,7 +331,8 @@ def main() -> None:
         config = selection_entry["config_obj"]
         result = evaluate(
             args.binary, args.dataset_dir / "holdout.tsv", args.model,
-            args.holdout_depth, config, args.ranking_target_abs_cp)
+            args.holdout_depth, config, args.ranking_target_abs_cp,
+            args.objective)
         entry = {
             "kind": "holdout", "rank": rank,
             "elapsed_sec": time.monotonic() - start,
@@ -334,6 +344,7 @@ def main() -> None:
         "kind": "complete",
         "seed": args.seed,
         "duration_requested_sec": args.duration_sec,
+        "objective": args.objective,
         "elapsed_sec": time.monotonic() - start,
         "mutations": iteration,
         "tune_frontier_size": len(current_frontier),

@@ -49,6 +49,7 @@ struct Options {
     bool round_robin = false;
     bool fast_balanced_ci = false;
     bool balanced_rematch = false;
+    std::string balanced_new_config;
     int ci_min_pairs = 40;
     std::string trace_key;
     std::string stop_after_key;
@@ -107,6 +108,8 @@ Options parse_args(int argc, char** argv) {
         } else if (arg == "--balanced-rematch") {
             options.balanced_rematch = true;
             options.round_robin = true;
+        } else if (arg == "--balanced-new-config") {
+            options.balanced_new_config = next();
         } else if (arg == "--ci-min-pairs") {
             options.ci_min_pairs = parse_int(next(), arg);
         } else if (arg == "--trace-key") {
@@ -129,6 +132,10 @@ Options parse_args(int argc, char** argv) {
     if (options.fast_balanced_ci && options.balanced_rematch) {
         throw std::runtime_error(
             "--fast-balanced-ci and --balanced-rematch are mutually exclusive");
+    }
+    if (!options.balanced_new_config.empty() && !options.balanced_rematch) {
+        throw std::runtime_error(
+            "--balanced-new-config requires --balanced-rematch");
     }
     return options;
 }
@@ -453,6 +460,30 @@ chess::NnueSearcherV38::SelectiveConfig config(
     return result;
 }
 
+chess::NnueSearcherV38::SelectiveConfig parse_config(std::string text) {
+    std::replace(text.begin(), text.end(), ',', ' ');
+    const std::vector<std::string> fields = words(text);
+    if (fields.size() != 6) {
+        throw std::runtime_error(
+            "--balanced-new-config needs base,divisor,min_depth,"
+            "move_index,null_depth,null_reduction");
+    }
+    try {
+        return config(
+            std::stod(fields[0]),
+            std::stod(fields[1]),
+            parse_int(fields[2], "lmr_min_depth"),
+            static_cast<std::size_t>(
+                parse_int(fields[3], "lmr_min_move_index")),
+            parse_int(fields[4], "null_min_depth"),
+            parse_int(fields[5], "null_reduction"));
+    } catch (const std::invalid_argument&) {
+        throw std::runtime_error("invalid --balanced-new-config");
+    } catch (const std::out_of_range&) {
+        throw std::runtime_error("out-of-range --balanced-new-config");
+    }
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -464,9 +495,13 @@ int main(int argc, char** argv) {
             throw std::runtime_error("failed to load model");
         }
         model.set_neon_dotprod_enabled(true);
+        const chess::NnueSearcherV38::SelectiveConfig balanced_new =
+            options.balanced_new_config.empty()
+            ? config(0.55, 2.8, 5, 8, 6, 2)
+            : parse_config(options.balanced_new_config);
         const std::vector<Profile> profiles = options.balanced_rematch
             ? std::vector<Profile>{
-                {"balanced_new", config(0.55, 2.8, 5, 8, 6, 2)},
+                {"balanced_new", balanced_new},
                 {"balanced_old", config(0.45, 2.45, 5, 5, 3, 2)},
             }
             : std::vector<Profile>{

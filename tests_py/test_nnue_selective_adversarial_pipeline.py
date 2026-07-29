@@ -2,6 +2,7 @@ import random
 
 from tools import build_nnue_selective_safety_bank as safety_bank
 from tools import tune_nnue_lmr_nmp_adversarial as tuner
+from tools import tune_nnue_v38_selective as v38_tuner
 
 
 def test_safety_detail_classification() -> None:
@@ -53,6 +54,18 @@ def test_hash_partition_is_stable() -> None:
         safety_bank.stable_fraction(123, "abc")
         == safety_bank.stable_fraction(123, "abc")
     )
+
+
+def test_v38_frontier_uses_declared_objective_loss() -> None:
+    faster_worse = {"node_ratio": 0.2, "mean_root_regret": 1.0,
+                    "objective_loss": 0.03}
+    slower_better = {"node_ratio": 0.3, "mean_root_regret": 100.0,
+                     "objective_loss": 0.01}
+    dominated = {"node_ratio": 0.4, "mean_root_regret": 0.0,
+                 "objective_loss": 0.04}
+    assert not v38_tuner.dominated(faster_worse, slower_better)
+    assert not v38_tuner.dominated(slower_better, faster_worse)
+    assert v38_tuner.dominated(dominated, faster_worse)
     assert (
         safety_bank.stable_fraction(123, "abc")
         != safety_bank.stable_fraction(124, "abc")
