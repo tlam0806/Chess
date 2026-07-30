@@ -66,6 +66,26 @@ def test_v38_frontier_uses_declared_objective_loss() -> None:
     assert not v38_tuner.dominated(faster_worse, slower_better)
     assert not v38_tuner.dominated(slower_better, faster_worse)
     assert v38_tuner.dominated(dominated, faster_worse)
+
+
+def test_v38_frontier_deduplicates_equal_objectives() -> None:
+    first = {
+        "config": v38_tuner.Config().__dict__,
+        "result": {
+            "node_ratio": 0.3,
+            "objective_loss": 0.01,
+            "mean_root_regret": 5.0,
+        },
+    }
+    second = {
+        "config": v38_tuner.Config(lmr_base=0.6).__dict__,
+        "result": {
+            "node_ratio": 0.3,
+            "objective_loss": 0.01,
+            "mean_root_regret": 5.0,
+        },
+    }
+    assert len(v38_tuner.deduplicate_objectives([first, second])) == 1
     assert (
         safety_bank.stable_fraction(123, "abc")
         != safety_bank.stable_fraction(124, "abc")

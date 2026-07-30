@@ -10,37 +10,18 @@ import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from tune_nnue_v38_selective import Config, append_json, evaluate, frontier
+from tune_nnue_v38_selective import (
+    Config,
+    append_json,
+    deduplicate_objectives,
+    evaluate,
+    frontier,
+    objective_group_key,
+)
 
 
 def config_of(record: dict) -> Config:
     return Config(**record["config"])
-
-
-def representative_key(entry: dict) -> tuple:
-    """Prefer safer tails, then the less aggressive config among exact ties."""
-    result = entry["result"]
-    config = config_of(entry)
-    return (
-        result.get("p95_root_regret", 0),
-        result.get("above_100_cp_pct", 0),
-        -result.get("ranking_move_agreement_pct", 0),
-        -config.lmr_min_depth,
-        -config.lmr_min_move_index,
-        config.lmr_base,
-        -config.lmr_divisor,
-        -config.null_min_depth,
-        config.null_reduction,
-    )
-
-
-def deduplicate_objectives(entries: list[dict]) -> list[dict]:
-    groups: dict[tuple[float, float], list[dict]] = {}
-    for entry in entries:
-        result = entry["result"]
-        key = (result["node_ratio"], result["mean_root_regret"])
-        groups.setdefault(key, []).append(entry)
-    return [min(group, key=representative_key) for group in groups.values()]
 
 
 def main() -> None:
@@ -53,6 +34,7 @@ def main() -> None:
     parser.add_argument("--ranking-target-abs-cp", type=int, default=1500)
     parser.add_argument("--selection-depth", type=int, default=6)
     parser.add_argument("--holdout-depth", type=int, default=7)
+    parser.add_argument("--objective", choices=("cp", "wdl"), default="cp")
     args = parser.parse_args()
 
     log_path = args.run_dir / "results.jsonl"
@@ -85,6 +67,7 @@ def main() -> None:
             args.selection_depth,
             config,
             args.ranking_target_abs_cp,
+            args.objective,
         )
         entry = {
             "kind": "selection",
@@ -108,10 +91,20 @@ def main() -> None:
         record for record in existing if record.get("kind") == "holdout"
     ]
     held_out = {config_of(record) for record in holdout_entries}
+    group_by_config = {
+        config_of(entry): objective_group_key(entry)
+        for entry in raw_frontier
+    }
+    held_out_groups = {
+        group_by_config[config]
+        for config in held_out
+        if config in group_by_config
+    }
 
     for rank, selection_entry in enumerate(deduplicated):
         config = config_of(selection_entry)
-        if config in held_out:
+        group = objective_group_key(selection_entry)
+        if group in held_out_groups:
             continue
         result = evaluate(
             args.binary,
@@ -120,6 +113,7 @@ def main() -> None:
             args.holdout_depth,
             config,
             args.ranking_target_abs_cp,
+            args.objective,
         )
         entry = {
             "kind": "holdout",
@@ -132,9 +126,11 @@ def main() -> None:
         append_json(log_path, entry)
         holdout_entries.append(entry)
         held_out.add(config)
+        held_out_groups.add(group)
 
     summary = {
         "kind": "complete",
+        "objective": args.objective,
         "elapsed_sec": time.monotonic() - start,
         "tune_frontier_size": len(candidates),
         "selection_completed": len(selection_entries),

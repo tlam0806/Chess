@@ -66,6 +66,36 @@ def frontier(entries: list[dict]) -> list[dict]:
     ]
 
 
+def objective_group_key(entry: dict) -> tuple[float, float]:
+    result = entry["result"]
+    return result["node_ratio"], objective_loss(result)
+
+
+def representative_key(entry: dict) -> tuple:
+    """Prefer safer tails, then the less aggressive config among exact ties."""
+    result = entry["result"]
+    config = entry.get("config_obj") or Config(**entry["config"])
+    return (
+        result.get("p95_root_regret", 0),
+        result.get("p95_wdl_loss", 0),
+        result.get("above_100_cp_pct", 0),
+        -result.get("ranking_move_agreement_pct", 0),
+        -config.lmr_min_depth,
+        -config.lmr_min_move_index,
+        config.lmr_base,
+        -config.lmr_divisor,
+        -config.null_min_depth,
+        config.null_reduction,
+    )
+
+
+def deduplicate_objectives(entries: list[dict]) -> list[dict]:
+    groups: dict[tuple[float, float], list[dict]] = {}
+    for entry in entries:
+        groups.setdefault(objective_group_key(entry), []).append(entry)
+    return [min(group, key=representative_key) for group in groups.values()]
+
+
 def mutate(config: Config, rng: random.Random, changed_parameters: int = 1) -> Config:
     values = config.__dict__.copy()
     for name in rng.sample(list(values), changed_parameters):
@@ -325,7 +355,9 @@ def main() -> None:
             key: value for key, value in entry.items() if key != "config_obj"
         })
 
-    final_frontier = frontier(selection_entries)
+    raw_final_frontier = frontier(selection_entries)
+    final_frontier = deduplicate_objectives(raw_final_frontier)
+    final_frontier.sort(key=lambda entry: entry["result"]["node_ratio"])
     holdout_entries: list[dict] = []
     for rank, selection_entry in enumerate(final_frontier):
         config = selection_entry["config_obj"]
@@ -349,6 +381,7 @@ def main() -> None:
         "mutations": iteration,
         "tune_frontier_size": len(current_frontier),
         "selection_candidates": len(selection_candidates),
+        "selection_frontier_size_raw": len(raw_final_frontier),
         "selection_frontier_size": len(final_frontier),
         "holdout": holdout_entries,
         "log": str(log_path),
