@@ -35,6 +35,8 @@ def main() -> None:
     parser.add_argument("--selection-depth", type=int, default=6)
     parser.add_argument("--holdout-depth", type=int, default=7)
     parser.add_argument("--objective", choices=("cp", "wdl"), default="cp")
+    parser.add_argument("--include-all-in-objective", action="store_true")
+    parser.add_argument("--allow-critical", action="store_true")
     args = parser.parse_args()
 
     log_path = args.run_dir / "results.jsonl"
@@ -49,7 +51,7 @@ def main() -> None:
         {**record, "config_obj": config_of(record)}
         for record in tune_records
     ]
-    candidates = frontier(tune_entries)
+    candidates = frontier(tune_entries, args.allow_critical)
     selection_entries = [
         record for record in existing if record.get("kind") == "selection"
     ]
@@ -68,6 +70,7 @@ def main() -> None:
             config,
             args.ranking_target_abs_cp,
             args.objective,
+            args.include_all_in_objective,
         )
         entry = {
             "kind": "selection",
@@ -84,7 +87,7 @@ def main() -> None:
     raw_frontier = frontier([
         {**entry, "config_obj": config_of(entry)}
         for entry in selection_entries
-    ])
+    ], args.allow_critical)
     deduplicated = deduplicate_objectives(raw_frontier)
     deduplicated.sort(key=lambda entry: entry["result"]["node_ratio"])
     holdout_entries = [
@@ -114,6 +117,7 @@ def main() -> None:
             config,
             args.ranking_target_abs_cp,
             args.objective,
+            args.include_all_in_objective,
         )
         entry = {
             "kind": "holdout",
@@ -131,6 +135,8 @@ def main() -> None:
     summary = {
         "kind": "complete",
         "objective": args.objective,
+        "include_all_in_objective": args.include_all_in_objective,
+        "hard_safety": not args.allow_critical,
         "elapsed_sec": time.monotonic() - start,
         "tune_frontier_size": len(candidates),
         "selection_completed": len(selection_entries),

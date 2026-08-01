@@ -86,6 +86,20 @@ def test_v38_frontier_deduplicates_equal_objectives() -> None:
         },
     }
     assert len(v38_tuner.deduplicate_objectives([first, second])) == 1
+
+
+def test_v38_frontier_can_keep_critical_candidates_as_diagnostics() -> None:
+    entry = {
+        "config": v38_tuner.Config().__dict__,
+        "result": {
+            "node_ratio": 0.3,
+            "objective_loss": 0.01,
+            "mean_root_regret": 5.0,
+            "critical_mistakes": 1,
+        },
+    }
+    assert v38_tuner.frontier([entry]) == []
+    assert v38_tuner.frontier([entry], allow_critical=True) == [entry]
     assert (
         safety_bank.stable_fraction(123, "abc")
         != safety_bank.stable_fraction(124, "abc")

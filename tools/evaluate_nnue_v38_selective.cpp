@@ -39,6 +39,7 @@ struct Options {
     int count = 0;
     int detail_threshold = 0;
     int ranking_target_abs_cp = 1500;
+    bool include_all_in_objective = false;
     std::string objective = "cp";
     CandidateSearcher::SelectiveConfig config{};
 };
@@ -138,6 +139,8 @@ Options parse(int argc, char** argv) {
             options.detail_threshold = integer(next(), arg);
         else if (arg == "--ranking-target-abs-cp")
             options.ranking_target_abs_cp = integer(next(), arg);
+        else if (arg == "--include-all-in-objective")
+            options.include_all_in_objective = true;
         else if (arg == "--objective") options.objective = next();
         else if (arg == "--disable-lmr") options.config.enable_lmr = false;
         else if (arg == "--disable-null-move")
@@ -271,7 +274,8 @@ int main(int argc, char** argv) {
             const int static_target_cp =
                 model.evaluate_cp_rounded(samples[index].position);
             const bool ranking_sample =
-                std::abs(static_target_cp) < options.ranking_target_abs_cp;
+                options.include_all_in_objective
+                || std::abs(static_target_cp) < options.ranking_target_abs_cp;
             ranking_count += ranking_sample;
             safety_count += !ranking_sample;
             chess::SearchResult base, mutant;
@@ -376,6 +380,8 @@ int main(int argc, char** argv) {
             << ",\"ranking_count\":" << ranking_count
             << ",\"safety_count\":" << safety_count
             << ",\"ranking_target_abs_cp\":" << options.ranking_target_abs_cp
+            << ",\"include_all_in_objective\":"
+            << (options.include_all_in_objective ? "true" : "false")
             << ",\"objective\":\"" << options.objective << '"'
             << ",\"wdl_formula\":\""
             << chess::wdl_calibration::formula << '"'

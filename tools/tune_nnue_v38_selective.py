@@ -51,12 +51,12 @@ def dominated(a: dict, b: dict) -> bool:
     )
 
 
-def frontier(entries: list[dict]) -> list[dict]:
-    valid = [
-        e for e in entries
-        if e["result"].get(
+def frontier(entries: list[dict], allow_critical: bool = False) -> list[dict]:
+    valid = entries if allow_critical else [
+        entry for entry in entries
+        if entry["result"].get(
             "critical_mistakes",
-            e["result"].get("mate_mistakes", 0),
+            entry["result"].get("mate_mistakes", 0),
         ) == 0
     ]
     return [
@@ -189,6 +189,7 @@ def thin_frontier(entries: list[dict], limit: int) -> list[dict]:
 def evaluate(
     binary: Path, dataset: Path, model: Path, depth: int, config: Config,
     ranking_target_abs_cp: int, objective: str,
+    include_all_in_objective: bool = False,
 ) -> dict:
     command = [
         str(binary), "--dataset", str(dataset), "--model", str(model),
@@ -197,6 +198,8 @@ def evaluate(
         "--objective", objective,
         *config.args(),
     ]
+    if include_all_in_objective:
+        command.append("--include-all-in-objective")
     completed = subprocess.run(command, text=True, capture_output=True)
     if completed.returncode:
         raise RuntimeError(f"evaluation failed: {completed.stderr.strip()}")
@@ -229,6 +232,8 @@ def main() -> None:
     parser.add_argument("--frontier-cap", type=int, default=0)
     parser.add_argument("--ranking-target-abs-cp", type=int, default=1500)
     parser.add_argument("--objective", choices=("cp", "wdl"), default="cp")
+    parser.add_argument("--include-all-in-objective", action="store_true")
+    parser.add_argument("--allow-critical", action="store_true")
     args = parser.parse_args()
     args.run_dir.mkdir(parents=True, exist_ok=True)
     subset_path = args.run_dir / "current_subset.tsv"
@@ -271,7 +276,7 @@ def main() -> None:
                 **record,
                 "config_obj": config,
             })
-        current_frontier = frontier(entries)
+        current_frontier = frontier(entries, args.allow_critical)
         iteration = len(entries)
     # Reserve roughly 20% for full selection and the one-shot holdout.
     mutation_duration_sec = (
@@ -322,14 +327,15 @@ def main() -> None:
                 rotating_subset(groups, iteration, args.seed)) + "\n")
         result = evaluate(
             args.binary, subset_path, args.model, args.tune_depth, config,
-            args.ranking_target_abs_cp, args.objective)
+            args.ranking_target_abs_cp, args.objective,
+            args.include_all_in_objective)
         entry = {
             "kind": "tune", "iteration": iteration,
             "elapsed_sec": time.monotonic() - start,
             "config": config.__dict__, "config_obj": config, "result": result,
         }
         entries.append(entry)
-        current_frontier = frontier(entries)
+        current_frontier = frontier(entries, args.allow_critical)
         append_json(log_path, {
             key: value for key, value in entry.items() if key != "config_obj"
         })
@@ -344,7 +350,7 @@ def main() -> None:
         result = evaluate(
             args.binary, args.dataset_dir / "selection.tsv", args.model,
             args.selection_depth, config, args.ranking_target_abs_cp,
-            args.objective)
+            args.objective, args.include_all_in_objective)
         entry = {
             "kind": "selection", "rank": rank,
             "elapsed_sec": time.monotonic() - start,
@@ -355,7 +361,7 @@ def main() -> None:
             key: value for key, value in entry.items() if key != "config_obj"
         })
 
-    raw_final_frontier = frontier(selection_entries)
+    raw_final_frontier = frontier(selection_entries, args.allow_critical)
     final_frontier = deduplicate_objectives(raw_final_frontier)
     final_frontier.sort(key=lambda entry: entry["result"]["node_ratio"])
     holdout_entries: list[dict] = []
@@ -364,7 +370,7 @@ def main() -> None:
         result = evaluate(
             args.binary, args.dataset_dir / "holdout.tsv", args.model,
             args.holdout_depth, config, args.ranking_target_abs_cp,
-            args.objective)
+            args.objective, args.include_all_in_objective)
         entry = {
             "kind": "holdout", "rank": rank,
             "elapsed_sec": time.monotonic() - start,
@@ -377,6 +383,8 @@ def main() -> None:
         "seed": args.seed,
         "duration_requested_sec": args.duration_sec,
         "objective": args.objective,
+        "include_all_in_objective": args.include_all_in_objective,
+        "hard_safety": not args.allow_critical,
         "elapsed_sec": time.monotonic() - start,
         "mutations": iteration,
         "tune_frontier_size": len(current_frontier),
