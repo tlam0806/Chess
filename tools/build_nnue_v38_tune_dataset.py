@@ -182,18 +182,19 @@ def sample_corpus(
 
 
 def balanced_prefixes(
-    path: Path, seed: int, excluded: set[str],
+    paths: list[Path], seed: int, excluded: set[str],
     counts: dict[str, dict[str, int]],
 ) -> list[tuple[str, str]]:
     prefixes: dict[str, tuple[str, str]] = {}
-    for raw in path.read_text().splitlines():
-        line = raw.split("#", 1)[0].strip()
-        moves = line.split()
-        for length in range(4, len(moves) + 1):
-            payload = "book:" + " ".join(moves[:length])
-            key = hashlib.sha256(payload.encode()).hexdigest()[:24]
-            if key not in excluded:
-                prefixes[key] = (key, payload)
+    for path in paths:
+        for raw in path.read_text().splitlines():
+            line = raw.split("#", 1)[0].strip()
+            moves = line.split()
+            for length in range(4, len(moves) + 1):
+                payload = "book:" + " ".join(moves[:length])
+                key = hashlib.sha256(payload.encode()).hexdigest()[:24]
+                if key not in excluded:
+                    prefixes[key] = (key, payload)
     out = list(prefixes.values())
     random.Random(seed ^ 0xB41A).shuffle(out)
     required = sum(v["balanced"] for v in counts.values())
@@ -205,7 +206,10 @@ def balanced_prefixes(
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--corpus", type=Path, required=True)
-    parser.add_argument("--balanced", type=Path, required=True)
+    parser.add_argument(
+        "--balanced", type=Path, action="append", required=True,
+        help="Stockfish-balanced opening source; may be repeated",
+    )
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--seed", type=int, default=20260726)
     parser.add_argument("--scale", type=int, default=1)

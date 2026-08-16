@@ -39,6 +39,8 @@ struct Options {
     int count = 0;
     int detail_threshold = 0;
     int ranking_target_abs_cp = 1500;
+    int candidate_time_ms = 0;
+    int candidate_max_depth = 64;
     bool include_all_in_objective = false;
     std::string objective = "cp";
     CandidateSearcher::SelectiveConfig config{};
@@ -139,6 +141,10 @@ Options parse(int argc, char** argv) {
             options.detail_threshold = integer(next(), arg);
         else if (arg == "--ranking-target-abs-cp")
             options.ranking_target_abs_cp = integer(next(), arg);
+        else if (arg == "--candidate-time-ms")
+            options.candidate_time_ms = integer(next(), arg);
+        else if (arg == "--candidate-max-depth")
+            options.candidate_max_depth = integer(next(), arg);
         else if (arg == "--include-all-in-objective")
             options.include_all_in_objective = true;
         else if (arg == "--objective") options.objective = next();
@@ -181,6 +187,12 @@ Options parse(int argc, char** argv) {
     }
     if (options.dataset.empty()) throw std::runtime_error("--dataset is required");
     if (options.depth < 2) throw std::runtime_error("depth must be >= 2");
+    if (options.candidate_time_ms < 0) {
+        throw std::runtime_error("candidate time must be >= 0");
+    }
+    if (options.candidate_max_depth < 2) {
+        throw std::runtime_error("candidate max depth must be >= 2");
+    }
     if (options.objective != "cp" && options.objective != "wdl") {
         throw std::runtime_error("--objective must be cp or wdl");
     }
@@ -195,11 +207,22 @@ chess::SearchResult run_control(
 }
 
 chess::SearchResult run_candidate(
-    CandidateSearcher& searcher, const chess::Position& position, int depth
+    CandidateSearcher& searcher,
+    const chess::Position& position,
+    const Options& options
 ) {
     searcher.clear_tt();
     searcher.clear_selective_stats();
-    return searcher.search_best_move(position, depth);
+    if (options.candidate_time_ms > 0) {
+        return searcher.search_best_move(
+            position,
+            chess::SearchLimits{
+                .max_depth = options.candidate_max_depth,
+                .move_time = std::chrono::milliseconds{
+                    options.candidate_time_ms},
+            });
+    }
+    return searcher.search_best_move(position, options.depth);
 }
 
 int strict_score_of_move(
@@ -258,6 +281,8 @@ int main(int argc, char** argv) {
         std::uint64_t reverse_futility_cutoffs = 0;
         std::uint64_t late_move_pruned_nodes = 0;
         std::uint64_t late_move_pruned_moves = 0;
+        std::uint64_t candidate_depth_sum = 0;
+        int candidate_stopped = 0;
         int agreements = 0, ranking_agreements = 0, above100 = 0;
         int ranking_count = 0, safety_count = 0;
         int critical_mistakes = 0;
@@ -287,7 +312,7 @@ int main(int argc, char** argv) {
             };
             auto timed_mutant = [&] {
                 const auto start = std::chrono::steady_clock::now();
-                mutant = run_candidate(candidate, samples[index].position, options.depth);
+                mutant = run_candidate(candidate, samples[index].position, options);
                 candidate_us += std::chrono::duration_cast<std::chrono::microseconds>(
                     std::chrono::steady_clock::now() - start).count();
             };
@@ -295,6 +320,8 @@ int main(int argc, char** argv) {
             else { timed_mutant(); timed_base(); }
             control_nodes += base.nodes;
             candidate_nodes += mutant.nodes;
+            candidate_depth_sum += static_cast<std::uint64_t>(mutant.depth);
+            candidate_stopped += mutant.stopped;
             const auto stats = candidate.selective_stats();
             lmr_searches += stats.lmr_searches;
             lmr_researches += stats.lmr_researches;
@@ -388,6 +415,12 @@ int main(int argc, char** argv) {
             << ",\"wdl_calibration_run\":\""
             << chess::wdl_calibration::calibration_run << '"'
             << ",\"depth\":" << options.depth
+            << ",\"candidate_time_ms\":" << options.candidate_time_ms
+            << ",\"candidate_max_depth\":" << options.candidate_max_depth
+            << ",\"candidate_mean_depth\":"
+            << static_cast<double>(candidate_depth_sum) / count
+            << ",\"candidate_stopped_pct\":"
+            << 100.0 * candidate_stopped / count
             << ",\"control_nodes\":" << control_nodes
             << ",\"candidate_nodes\":" << candidate_nodes
             << ",\"node_ratio\":" << static_cast<double>(candidate_nodes) / control_nodes

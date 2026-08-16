@@ -429,6 +429,11 @@ target_link_libraries(uci_nnue_v38 PRIVATE chess_core)
 add_executable(nnue_v38_time_gauntlet tools/nnue_v38_time_gauntlet.cpp)
 target_link_libraries(nnue_v38_time_gauntlet PRIVATE chess_core)
 
+add_executable(nnue_v39_time_gauntlet tools/nnue_v38_time_gauntlet.cpp)
+target_compile_definitions(
+    nnue_v39_time_gauntlet PRIVATE CHESS_NNUE_V39_TIME_GAUNTLET)
+target_link_libraries(nnue_v39_time_gauntlet PRIVATE chess_core)
+
 add_executable(collect_nnue_wdl_calibration tools/collect_nnue_wdl_calibration.cpp)
 target_link_libraries(collect_nnue_wdl_calibration PRIVATE chess_core)
 

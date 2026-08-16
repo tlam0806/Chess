@@ -2,6 +2,7 @@ import random
 
 from tools import build_nnue_selective_safety_bank as safety_bank
 from tools import tune_nnue_lmr_nmp_adversarial as tuner
+from tools import tune_nnue_v39_config7_wdl as v39_wdl_tuner
 from tools import tune_nnue_v38_selective as v38_tuner
 
 
@@ -104,3 +105,64 @@ def test_v38_frontier_can_keep_critical_candidates_as_diagnostics() -> None:
         safety_bank.stable_fraction(123, "abc")
         != safety_bank.stable_fraction(124, "abc")
     )
+
+
+def test_v39_config7_wdl_anchors_cover_ablation_lineages() -> None:
+    anchors = v39_wdl_tuner.initial_configs()
+    assert {config.lineage for config in anchors} == {
+        "off", "rfp", "lmp", "joint",
+    }
+    baseline = next(config for config in anchors if config.lineage == "off")
+    args = baseline.args()
+    assert args[:12] == list(v39_wdl_tuner.BASELINE_ARGS)
+    assert "--disable-reverse-futility" in args
+    assert "--disable-late-move-pruning" in args
+
+
+def test_v39_config7_wdl_mutations_stay_in_conservative_space() -> None:
+    anchors = v39_wdl_tuner.initial_configs()
+    for lineage in v39_wdl_tuner.LINEAGES:
+        base = next(config for config in anchors if config.lineage == lineage)
+        for seed in range(200):
+            config = v39_wdl_tuner.mutate(base, random.Random(seed))
+            assert config.lineage == lineage
+            assert 1 <= config.reverse_futility_max_depth <= 3
+            assert 150 <= config.reverse_futility_base_margin <= 500
+            assert 150 <= config.reverse_futility_margin_per_depth <= 400
+            assert 2 <= config.late_move_pruning_max_depth <= 4
+            assert 4 <= config.late_move_pruning_base <= 16
+            assert 2 <= config.late_move_pruning_depth_multiplier <= 8
+            if config.reverse_futility_max_depth == 3:
+                assert config.reverse_futility_base_margin >= 300
+                assert config.reverse_futility_margin_per_depth >= 250
+            if config.late_move_pruning_max_depth == 4:
+                assert config.late_move_pruning_base >= 8
+                assert config.late_move_pruning_depth_multiplier >= 4
+
+
+def test_v39_config7_wdl_frontier_uses_wdl_and_keeps_critical() -> None:
+    fast = {
+        "config_obj": v39_wdl_tuner.Config("joint"),
+        "result": {
+            "node_ratio": 0.10,
+            "objective_loss": 0.004,
+            "critical_mistakes": 2,
+        },
+    }
+    safe = {
+        "config_obj": v39_wdl_tuner.Config("off"),
+        "result": {
+            "node_ratio": 0.15,
+            "objective_loss": 0.003,
+            "critical_mistakes": 0,
+        },
+    }
+    dominated = {
+        "config_obj": v39_wdl_tuner.Config("rfp"),
+        "result": {
+            "node_ratio": 0.16,
+            "objective_loss": 0.005,
+            "critical_mistakes": 0,
+        },
+    }
+    assert v39_wdl_tuner.frontier([fast, safe, dominated]) == [fast, safe]

@@ -16,18 +16,18 @@ public:
 
     struct SelectiveConfig {
         bool enable_lmr = true;
-        double lmr_base = 0.5;
-        double lmr_divisor = 2.6;
-        int lmr_min_depth = 4;
-        std::size_t lmr_min_move_index = 4;
+        double lmr_base = 0.45;
+        double lmr_divisor = 2.9;
+        int lmr_min_depth = 3;
+        std::size_t lmr_min_move_index = 6;
         bool enable_null_move = true;
-        int null_move_min_depth = 3;
-        int null_move_reduction = 2;
+        int null_move_min_depth = 2;
+        int null_move_reduction = 3;
 
         bool enable_reverse_futility = true;
-        int reverse_futility_max_depth = 3;
-        int reverse_futility_base_margin = 100;
-        int reverse_futility_margin_per_depth = 100;
+        int reverse_futility_max_depth = 2;
+        int reverse_futility_base_margin = 175;
+        int reverse_futility_margin_per_depth = 275;
 
         bool enable_late_move_pruning = true;
         int late_move_pruning_max_depth = 3;

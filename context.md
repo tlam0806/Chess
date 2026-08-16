@@ -810,3 +810,46 @@ core at depths 5/6/7/8
 Do not merge the safety-bank rows into the mean-regret dataset. They are a hard
 gate only. The end-to-end runner generates a new 16k `8k/4k/4k` dataset while
 excluding every previous V38/V39 tune, selection, and holdout split.
+
+## Current strongest V39 baseline: Fast
+
+As of 2026-08-16, **Fast is the strongest validated V39 selective-search
+baseline** and is the default `NnueSearcherV39::SelectiveConfig`. Use this
+profile as the parent/control for future pruning experiments:
+
+```text
+LMR: enabled, base=0.45, divisor=2.9, min_depth=3, min_move_index=6
+NMP: enabled, min_depth=2, reduction=3
+RFP: enabled, max_depth=2, base_margin=175, margin_per_depth=275
+LMP: enabled, max_depth=3, base=4, depth_multiplier=2
+
+time-gauntlet profile:
+fast_joint,0.45,2.9,3,6,2,3,1,2,175,275,1,3,4,2
+```
+
+Direct color-reversed self-play under the current paired-opening and early-stop
+CI rule produced:
+
+```text
+Fast vs Balanced:         21W 59D 10L, 56.11%, CI95 [50.05%, 62.17%]
+Fast vs baseline 7:       20W 55D  9L, 56.55%, CI95 [50.29%, 62.81%]
+Fast vs all-four winner:  21W 59D 10L, 56.11%, CI95 [50.05%, 62.17%]
+```
+
+The last row is the reciprocal of the recorded `all4_winner` score (43.89%).
+These are sequential early-stop confidence intervals, so treat them as the
+project's promotion rule rather than as a fixed-sample Elo proof. Nevertheless,
+all completed head-to-head promotion tests favor Fast. The newer offline
+four-prune winner must not replace Fast: it lost their direct match.
+
+Relevant result files:
+
+```text
+logs/nnue_v39_audit3_round_robin_ci_20260802_120129/summary.stopped.json
+logs/nnue_v39_all4_winner_vs_fast_ci_20260816_153741/summary.json
+```
+
+The historical adversarial LMR/NMP pipeline above remains useful as provenance,
+but its strict-V36 seed and hard-gate policy are not the current runtime
+baseline. New V39 tuning should start from Fast, keep it as an explicit control,
+and require a direct paired-opening self-play win before changing the default.

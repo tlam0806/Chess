@@ -2,7 +2,11 @@
 #include "game_state.hpp"
 #include "move.hpp"
 #include "nnue_searcher_v36.hpp"
+#ifdef CHESS_NNUE_V39_TIME_GAUNTLET
+#include "nnue_searcher_v39.hpp"
+#else
 #include "nnue_searcher_v38.hpp"
+#endif
 #include "phase_quantized_nnue.hpp"
 #include "position.hpp"
 
@@ -24,9 +28,15 @@
 
 namespace {
 
+#ifdef CHESS_NNUE_V39_TIME_GAUNTLET
+using MatchSearcher = chess::NnueSearcherV39;
+#else
+using MatchSearcher = chess::NnueSearcherV38;
+#endif
+
 struct Profile {
     std::string name;
-    chess::NnueSearcherV38::SelectiveConfig config;
+    MatchSearcher::SelectiveConfig config;
 };
 
 struct Opening {
@@ -48,8 +58,10 @@ struct Options {
     std::uint32_t seed = 20260727;
     bool round_robin = false;
     bool fast_balanced_ci = false;
+    bool stop_on_ci = false;
     bool balanced_rematch = false;
     std::string balanced_new_config;
+    std::vector<std::string> profile_specs;
     int ci_min_pairs = 40;
     std::string trace_key;
     std::string stop_after_key;
@@ -105,11 +117,17 @@ Options parse_args(int argc, char** argv) {
         } else if (arg == "--fast-balanced-ci") {
             options.fast_balanced_ci = true;
             options.round_robin = true;
+        } else if (arg == "--stop-on-ci") {
+            options.stop_on_ci = true;
+            options.round_robin = true;
         } else if (arg == "--balanced-rematch") {
             options.balanced_rematch = true;
             options.round_robin = true;
         } else if (arg == "--balanced-new-config") {
             options.balanced_new_config = next();
+        } else if (arg == "--profile") {
+            options.profile_specs.push_back(next());
+            options.round_robin = true;
         } else if (arg == "--ci-min-pairs") {
             options.ci_min_pairs = parse_int(next(), arg);
         } else if (arg == "--trace-key") {
@@ -136,6 +154,15 @@ Options parse_args(int argc, char** argv) {
     if (!options.balanced_new_config.empty() && !options.balanced_rematch) {
         throw std::runtime_error(
             "--balanced-new-config requires --balanced-rematch");
+    }
+    if (!options.profile_specs.empty() && options.profile_specs.size() < 2) {
+        throw std::runtime_error("at least two --profile values are required");
+    }
+    if (!options.profile_specs.empty()
+        && (options.fast_balanced_ci || options.balanced_rematch
+            || !options.balanced_new_config.empty())) {
+        throw std::runtime_error(
+            "--profile cannot be combined with legacy profile modes");
     }
     return options;
 }
@@ -446,11 +473,11 @@ void append_game(
     output.flush();
 }
 
-chess::NnueSearcherV38::SelectiveConfig config(
+MatchSearcher::SelectiveConfig config(
     double base, double divisor, int min_depth, std::size_t move_index,
     int null_depth, int null_reduction
 ) {
-    chess::NnueSearcherV38::SelectiveConfig result;
+    MatchSearcher::SelectiveConfig result;
     result.lmr_base = base;
     result.lmr_divisor = divisor;
     result.lmr_min_depth = min_depth;
@@ -460,7 +487,7 @@ chess::NnueSearcherV38::SelectiveConfig config(
     return result;
 }
 
-chess::NnueSearcherV38::SelectiveConfig parse_config(std::string text) {
+MatchSearcher::SelectiveConfig parse_config(std::string text) {
     std::replace(text.begin(), text.end(), ',', ' ');
     const std::vector<std::string> fields = words(text);
     if (fields.size() != 6) {
@@ -484,6 +511,64 @@ chess::NnueSearcherV38::SelectiveConfig parse_config(std::string text) {
     }
 }
 
+bool parse_bool01(std::string_view value, std::string_view name) {
+    const int parsed = parse_int(value, name);
+    if (parsed != 0 && parsed != 1) {
+        throw std::runtime_error(
+            std::string(name) + " must be either 0 or 1");
+    }
+    return parsed != 0;
+}
+
+Profile parse_profile(std::string text) {
+    std::replace(text.begin(), text.end(), ',', ' ');
+    const std::vector<std::string> fields = words(text);
+    if (fields.size() != 15) {
+        throw std::runtime_error(
+            "--profile needs name,lmr_base,lmr_divisor,lmr_min_depth,"
+            "lmr_min_move,null_min_depth,null_reduction,rfp_enabled,"
+            "rfp_max_depth,rfp_base_margin,rfp_margin_per_depth,"
+            "lmp_enabled,lmp_max_depth,lmp_base,lmp_depth_multiplier");
+    }
+    if (fields[0].empty()
+        || fields[0].find_first_not_of(
+            "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-")
+            != std::string::npos) {
+        throw std::runtime_error(
+            "profile name may contain only letters, digits, '_' and '-'");
+    }
+    try {
+        MatchSearcher::SelectiveConfig result = config(
+            std::stod(fields[1]),
+            std::stod(fields[2]),
+            parse_int(fields[3], "lmr_min_depth"),
+            static_cast<std::size_t>(parse_int(fields[4], "lmr_min_move")),
+            parse_int(fields[5], "null_min_depth"),
+            parse_int(fields[6], "null_reduction"));
+        result.enable_reverse_futility =
+            parse_bool01(fields[7], "rfp_enabled");
+        result.reverse_futility_max_depth =
+            parse_int(fields[8], "rfp_max_depth");
+        result.reverse_futility_base_margin =
+            parse_int(fields[9], "rfp_base_margin");
+        result.reverse_futility_margin_per_depth =
+            parse_int(fields[10], "rfp_margin_per_depth");
+        result.enable_late_move_pruning =
+            parse_bool01(fields[11], "lmp_enabled");
+        result.late_move_pruning_max_depth =
+            parse_int(fields[12], "lmp_max_depth");
+        result.late_move_pruning_base = static_cast<std::size_t>(
+            parse_int(fields[13], "lmp_base"));
+        result.late_move_pruning_depth_multiplier = static_cast<std::size_t>(
+            parse_int(fields[14], "lmp_depth_multiplier"));
+        return {fields[0], result};
+    } catch (const std::invalid_argument&) {
+        throw std::runtime_error("invalid --profile");
+    } catch (const std::out_of_range&) {
+        throw std::runtime_error("out-of-range --profile");
+    }
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -495,11 +580,11 @@ int main(int argc, char** argv) {
             throw std::runtime_error("failed to load model");
         }
         model.set_neon_dotprod_enabled(true);
-        const chess::NnueSearcherV38::SelectiveConfig balanced_new =
+        const MatchSearcher::SelectiveConfig balanced_new =
             options.balanced_new_config.empty()
             ? config(0.55, 2.8, 5, 8, 6, 2)
             : parse_config(options.balanced_new_config);
-        const std::vector<Profile> profiles = options.balanced_rematch
+        std::vector<Profile> profiles = options.balanced_rematch
             ? std::vector<Profile>{
                 {"balanced_new", balanced_new},
                 {"balanced_old", config(0.45, 2.45, 5, 5, 3, 2)},
@@ -509,10 +594,22 @@ int main(int argc, char** argv) {
                 {"balanced", config(0.45, 2.45, 5, 5, 3, 2)},
                 {"safe", config(0.65, 2.9, 7, 3, 3, 2)},
             };
+        if (!options.profile_specs.empty()) {
+            profiles.clear();
+            std::set<std::string> names;
+            for (const std::string& spec : options.profile_specs) {
+                Profile profile = parse_profile(spec);
+                if (!names.insert(profile.name).second) {
+                    throw std::runtime_error(
+                        "duplicate profile name: " + profile.name);
+                }
+                profiles.push_back(std::move(profile));
+            }
+        }
         const std::set<std::string> done = completed_keys(options.output);
-        if (options.fast_balanced_ci && !done.empty()) {
+        if ((options.fast_balanced_ci || options.stop_on_ci) && !done.empty()) {
             throw std::runtime_error(
-                "--fast-balanced-ci requires a fresh output file");
+                "CI stopping requires a fresh output file");
         }
         std::ofstream output(options.output, std::ios::app);
         if (!output) throw std::runtime_error("failed to open output");
@@ -529,13 +626,14 @@ int main(int argc, char** argv) {
                     const Profile& opponent = profiles[second];
                     std::vector<double> pair_scores;
                     double current_pair_points = 0.0;
-                    chess::NnueSearcherV38 first_engine(
+                    bool matchup_ci_stopped = false;
+                    MatchSearcher first_engine(
                         model, options.tt_mb, 4, 10, 14, 14'000,
-                        chess::NnueSearcherV38::MoveOrderingWeights{},
+                        MatchSearcher::MoveOrderingWeights{},
                         profile.config);
-                    chess::NnueSearcherV38 second_engine(
+                    MatchSearcher second_engine(
                         model, options.tt_mb, 4, 10, 14, 14'000,
-                        chess::NnueSearcherV38::MoveOrderingWeights{},
+                        MatchSearcher::MoveOrderingWeights{},
                         opponent.config);
                     for (std::size_t index = 0; index < openings.size(); ++index) {
                         for (int color = 0; color < 2; ++color) {
@@ -562,7 +660,8 @@ int main(int argc, char** argv) {
                                 output, key, profile, opponent.name,
                                 openings[index], candidate_white, game);
                             ++newly_completed;
-                            if (options.fast_balanced_ci && color == 1) {
+                            if ((options.fast_balanced_ci || options.stop_on_ci)
+                                && color == 1) {
                                 pair_scores.push_back(current_pair_points / 2.0);
                                 current_pair_points = 0.0;
                                 const ConfidenceInterval ci =
@@ -572,9 +671,11 @@ int main(int argc, char** argv) {
                                     || static_cast<int>(pairs)
                                         == options.ci_min_pairs) {
                                     std::cerr << "ci_progress"
+                                              << " matchup=" << profile.name
+                                              << "_vs_" << opponent.name
                                               << " pairs=" << pairs
                                               << " games=" << pairs * 2
-                                              << " fast_score=" << ci.mean
+                                              << " first_score=" << ci.mean
                                               << " ci95_lower=" << ci.lower
                                               << " ci95_upper=" << ci.upper
                                               << '\n';
@@ -584,13 +685,16 @@ int main(int argc, char** argv) {
                                     && (ci.lower > 0.5
                                         || ci.upper < 0.5)) {
                                     std::cerr << "ci_stop"
+                                              << " matchup=" << profile.name
+                                              << "_vs_" << opponent.name
                                               << " pairs=" << pairs
                                               << " games=" << pairs * 2
-                                              << " fast_score=" << ci.mean
+                                              << " first_score=" << ci.mean
                                               << " ci95_lower=" << ci.lower
                                               << " ci95_upper=" << ci.upper
                                               << '\n';
-                                    return 0;
+                                    if (options.fast_balanced_ci) return 0;
+                                    matchup_ci_stopped = true;
                                 }
                             }
                             if (!options.stop_after_key.empty()
@@ -606,23 +710,32 @@ int main(int argc, char** argv) {
                                           << " last=" << key << '\n';
                             }
                         }
+                        if (matchup_ci_stopped) break;
+                    }
+                    if ((options.fast_balanced_ci || options.stop_on_ci)
+                        && !matchup_ci_stopped) {
+                        const ConfidenceInterval ci =
+                            paired_score_ci95(pair_scores);
+                        std::cerr << "ci_inconclusive"
+                                  << " matchup=" << profile.name
+                                  << "_vs_" << opponent.name
+                                  << " pairs=" << pair_scores.size()
+                                  << " games=" << pair_scores.size() * 2
+                                  << " first_score=" << ci.mean
+                                  << " ci95_lower=" << ci.lower
+                                  << " ci95_upper=" << ci.upper
+                                  << '\n';
                     }
                 }
-            }
-            if (options.fast_balanced_ci) {
-                std::cerr << "ci_inconclusive"
-                          << " pairs=" << options.openings
-                          << " games=" << options.openings * 2
-                          << '\n';
             }
             std::cerr << "complete new_games=" << newly_completed << '\n';
             return 0;
         }
         for (const Profile& profile : profiles) {
             chess::NnueSearcherV36 control(model, options.tt_mb);
-            chess::NnueSearcherV38 candidate(
+            MatchSearcher candidate(
                 model, options.tt_mb, 4, 10, 14, 14'000,
-                chess::NnueSearcherV38::MoveOrderingWeights{},
+                MatchSearcher::MoveOrderingWeights{},
                 profile.config);
             for (std::size_t index = 0; index < openings.size(); ++index) {
                 for (int color = 0; color < 2; ++color) {

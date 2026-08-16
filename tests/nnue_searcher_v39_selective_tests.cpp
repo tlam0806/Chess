@@ -52,10 +52,18 @@ int main(int argc, char** argv) {
     chess::NnueSearcherV39 searcher(model);
     const chess::NnueSearcherV39::SelectiveConfig& defaults =
         searcher.selective_config();
+    assert(defaults.enable_lmr);
+    assert(defaults.lmr_base == 0.45);
+    assert(defaults.lmr_divisor == 2.9);
+    assert(defaults.lmr_min_depth == 3);
+    assert(defaults.lmr_min_move_index == 6);
+    assert(defaults.enable_null_move);
+    assert(defaults.null_move_min_depth == 2);
+    assert(defaults.null_move_reduction == 3);
     assert(defaults.enable_reverse_futility);
-    assert(defaults.reverse_futility_max_depth == 3);
-    assert(defaults.reverse_futility_base_margin == 100);
-    assert(defaults.reverse_futility_margin_per_depth == 100);
+    assert(defaults.reverse_futility_max_depth == 2);
+    assert(defaults.reverse_futility_base_margin == 175);
+    assert(defaults.reverse_futility_margin_per_depth == 275);
     assert(defaults.enable_late_move_pruning);
     assert(defaults.late_move_pruning_max_depth == 3);
     assert(defaults.late_move_pruning_base == 4);
