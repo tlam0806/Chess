@@ -2,7 +2,7 @@
 
 ## Outcome
 
-Status: **validated staging candidate; not deployed to production**.
+Status: **validated and deployed to production as Heroku release v11**.
 
 V41 now has x86 SIMD implementations for its quantized NNUE forward pass. A
 single engine binary chooses the fastest supported backend when the model is
@@ -16,6 +16,10 @@ The intended x86 runtime order is VNNI, then exact AVX2, then scalar.
 The full three-dyno validation completed 3,240 measured searches with no
 warning or search-signature mismatch. VNNI improved fixed-depth full-search
 throughput by about 6.1–6.4 times over the scalar x86 path.
+
+The exact committed release was deployed after the benchmark gates passed.
+Production auto-selected the same VNNI backend, reproduced the canonical
+start-position depth-7 signature, and resumed as one healthy Basic worker.
 
 | Mode | Limit | Scalar NPS | AVX2 NPS | VNNI NPS | AVX2/scalar | VNNI/scalar | VNNI/AVX2 |
 |---|---:|---:|---:|---:|---:|---:|---:|
@@ -163,8 +167,41 @@ was destroyed. Production remained on release `v10` throughout the work.
 
 The source came from a staged working-tree snapshot, not a clean main-repo
 commit. The engine and model hashes are authoritative for this measurement,
-but source-level reproducibility remains partial until the SIMD implementation,
-tests, benchmark pipeline and deployment manifest are committed together.
+and the implementation, tests and deployment pipeline were subsequently
+committed together as `803aeb5a3de0031cff7916a6c143aa33869cd84a`.
+The production GCC binary rebuilt from that commit has the same SHA-256 as the
+measured staging binary.
+
+## Production deployment
+
+Deployment occurred only after the live game `jX9cIo0O` ended by checkmate.
+The worker was scaled to zero before the new image was released, stayed at zero
+during the one-off smoke checks, and was restored to one only after every gate
+below passed.
+
+- App: `stormy-garden-92984`
+- Release: `v11` at 2026-08-24 17:29:57 UTC / 2026-08-25 01:29:57 SGT
+- Previous rollback release: `v10`
+- Source commit: `803aeb5a3de0031cff7916a6c143aa33869cd84a`
+- Source tree: `c8851447e1641e44b557bd82e536bf41426a5dcb`
+- `lichess-bot` commit: `ad4b56621bb0e6c52925212639fb73e8ce5ae451`
+- Production image digest:
+  `sha256:eb28b13219472e42fbb17cc8ff83ac2bf18c072c833fe0f7d7fb03f6ecb5788b`
+- Production engine SHA-256:
+  `29579ec5bceafc00fa77a4caef50d4ca9ad5a181123369047a00af6456a08527`
+- Production model SHA-256:
+  `a1a52891f95db9a1bacc48557325b0c5904da4b3c9f8a333eb2ec090b1bb9c02`
+- Runtime handshake: `ChessNNUEV41`,
+  `nnue_kernel=x86_avx512vnni_256`, `readyok`
+- Fixed-depth smoke: start position, depth 7, score `25cp`, 33,514 nodes,
+  best move `e2e4`
+- Operational postflight: `worker.1`, Basic, release v11, state `up`; engine
+  configuration passed, authenticated as `TrumCoVuaa`, awaiting challenges
+
+The deploy tool now archives an explicit source commit and the tracked
+`lichess-bot` commit instead of copying either dirty working tree. It embeds a
+release manifest in the image and does not rewrite the existing production
+token or restart the app before the code release.
 
 ## Raw artifacts
 
@@ -178,7 +215,7 @@ fixed-depth signatures and hashes of the larger raw artifacts. The manifest
 does not replace the full per-observation files, which should also be moved to
 durable external storage before the local `logs/` directory is cleaned.
 Its SHA-256 is
-`4055d814b6a11dd6c6502f97f376fa58b90ae8ec89ebc74f794839f2a3002709`.
+`ca6f85a4da63429eda787295821ed19a2298b3b676bc17421ae50cfd18689e01`.
 
 | Artifact | SHA-256 |
 |---|---|
@@ -208,9 +245,6 @@ validated Heroku VNNI range is about 1.47–1.83M NPS depending on benchmark
 mode. Local and Heroku numbers should be compared only with the same V41 suite,
 model, options and fixed-depth signatures.
 
-The staging candidate has passed correctness and performance promotion gates.
-Production deployment is a separate operational action and was deliberately
-not performed by this benchmark. Before deployment, preserve a clean source
-commit and release manifest; after deployment, verify the UCI handshake reports
-`x86_avx512vnni_256` and run a short fixed-depth post-release check before
-resuming normal bot operation.
+The candidate passed correctness and performance promotion gates, then passed
+the independent production provenance, VNNI handshake and fixed-depth smoke
+gates documented above. Release v11 is now the active production release.

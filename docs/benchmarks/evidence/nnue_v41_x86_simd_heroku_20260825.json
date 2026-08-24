@@ -30,6 +30,43 @@
     "same_dyno_backend_matrix": true,
     "timings_pooled_across_backends": false
   },
+  "deployment": {
+    "app": "stormy-garden-92984",
+    "config_sha256": "08926c7d4635a75870512aa931af09c9bfa99e4807fcd46bd6300a5734c1249f",
+    "container_image_digest": "sha256:eb28b13219472e42fbb17cc8ff83ac2bf18c072c833fe0f7d7fb03f6ecb5788b",
+    "deployed_at_utc": "2026-08-24T17:29:57Z",
+    "engine_sha256": "29579ec5bceafc00fa77a4caef50d4ca9ad5a181123369047a00af6456a08527",
+    "lichess_bot_commit": "ad4b56621bb0e6c52925212639fb73e8ce5ae451",
+    "model_sha256": "a1a52891f95db9a1bacc48557325b0c5904da4b3c9f8a333eb2ec090b1bb9c02",
+    "release": "v11",
+    "release_git_description": "fd3feaa4",
+    "rollback_release": "v10",
+    "smoke": {
+      "bestmove": "e2e4",
+      "engine_id": "ChessNNUEV41",
+      "kernel": "x86_avx512vnni_256",
+      "limit_depth": 7,
+      "manifest_match": true,
+      "nodes": 33514,
+      "reported_depth": 7,
+      "score_type": "cp",
+      "score_value": 25,
+      "status": "pass"
+    },
+    "source_commit": "803aeb5a3de0031cff7916a6c143aa33869cd84a",
+    "source_tree": "c8851447e1641e44b557bd82e536bf41426a5dcb",
+    "status": "pass",
+    "suite_sha256": "b297dfe39c869e2f3eca07175f57e7302c4c29257f04d75493a70701648ed67e",
+    "worker_postflight": {
+      "authenticated_user": "TrumCoVuaa",
+      "dyno": "worker.1",
+      "engine_configuration": "pass",
+      "release": "v11",
+      "size": "Basic",
+      "state": "up",
+      "verified_at_utc": "2026-08-24T17:30:56Z"
+    }
+  },
   "fixed_depth_signatures": [
     {
       "bestmove": "f1d1",
@@ -646,5 +683,5 @@
     "release": "v3",
     "source_tree": "700ffab0eed6c471f1c778e5841d76a3e8ecb203"
   },
-  "status": "validated_staging_candidate_not_deployed"
+  "status": "validated_production_release_v11"
 }

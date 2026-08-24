@@ -917,6 +917,9 @@ depth 8: node ratio 94.50%, median paired NPS ratio 99.20%, time ratio 95.27%
 ```
 
 The production Lichess deployment uses `uci_nnue_v41`, the strongest existing
-200M Huber model, and no external `AvoidDraw` options. Heroku release v10 was
-deployed to `stormy-garden-92984` on 2026-08-23; its worker passed engine
-configuration and connected as `TrumCoVuaa` awaiting challenges.
+200M Huber model, and no external `AvoidDraw` options. Heroku release v11 was
+deployed to `stormy-garden-92984` on 2026-08-25 from commit `803aeb5`. Its
+post-release gate reported `x86_avx512vnni_256` and reproduced the canonical
+start-position depth-7 signature (`25cp`, 33,514 nodes, `e2e4`). The Basic
+worker then passed engine configuration and connected as `TrumCoVuaa` awaiting
+challenges. Release v10 remains the explicit rollback target.
