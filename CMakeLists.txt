@@ -7,6 +7,16 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 option(CHESS_ENABLE_TT_STATS "Enable transposition-table counters in hot paths" OFF)
+option(CHESS_ENABLE_LTO "Enable link-time optimization for release builds" OFF)
+
+if(CHESS_ENABLE_LTO)
+    include(CheckIPOSupported)
+    check_ipo_supported(RESULT CHESS_IPO_SUPPORTED OUTPUT CHESS_IPO_ERROR)
+    if(NOT CHESS_IPO_SUPPORTED)
+        message(FATAL_ERROR "CHESS_ENABLE_LTO requested but unsupported: ${CHESS_IPO_ERROR}")
+    endif()
+    set(CMAKE_INTERPROCEDURAL_OPTIMIZATION TRUE)
+endif()
 
 add_library(chess_core
     src/attacks.cpp

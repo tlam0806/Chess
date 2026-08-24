@@ -12,6 +12,7 @@ COPY src ./src
 COPY tools ./tools
 COPY tests ./tests
 RUN cmake -S . -B build-release -DCMAKE_BUILD_TYPE=Release \
+       -DCHESS_ENABLE_LTO=ON \
     && cmake --build build-release --target uci_nnue_v41 -j 2
 
 FROM python:3.12-slim
