@@ -1,0 +1,94 @@
+{
+  "schema_version": 1,
+  "suite_id": "nnue-v41-platform-12-v1",
+  "description": "Deterministic cross-platform UCI throughput suite for the production NNUE V41 engine.",
+  "source": "tools/profile/benchmark_nnue_v40_repetition.cpp",
+  "expected_engine_name": "ChessNNUEV41",
+  "positions": [
+    {
+      "id": "startpos",
+      "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+    },
+    {
+      "id": "opening_knights",
+      "fen": "rnb1kb1r/ppppqppp/5n2/4N3/4P3/8/PPPP1PPP/RNBQKB1R w KQkq - 1 4"
+    },
+    {
+      "id": "tactical_castling",
+      "fen": "rnbq1k1r/pp1Pbppp/2p5/8/2B5/8/PPP1NnPP/RNBQK2R w KQ - 1 8"
+    },
+    {
+      "id": "closed_center",
+      "fen": "r1bq1rk1/pp1n1ppp/2pbpn2/3p4/3P4/2N1PN2/PPQ1BPPP/R1B2RK1 w - - 0 9"
+    },
+    {
+      "id": "middlegame_rooks",
+      "fen": "2r2rk1/pp2qppp/2n1bn2/2bp4/3P4/2N1PN2/PPQ1BPPP/2RR2K1 w - - 4 12"
+    },
+    {
+      "id": "tactical_advanced_pawns",
+      "fen": "4r2k/5ppp/5P2/1p1pp3/3nP2P/1p1b4/rP1P1P2/R1BR2K1 w - - 0 23"
+    },
+    {
+      "id": "kiwipete",
+      "fen": "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1"
+    },
+    {
+      "id": "promotion_race",
+      "fen": "8/P6k/8/8/8/8/6Kp/8 w - - 0 1"
+    },
+    {
+      "id": "pawn_structure",
+      "fen": "8/8/2p5/3p4/3P4/2P5/8/4K1k1 w - - 0 1"
+    },
+    {
+      "id": "development",
+      "fen": "r2q1rk1/pp2bppp/2n1pn2/2bp4/3P4/2NBPN2/PPQ2PPP/R1B2RK1 w - - 0 10"
+    },
+    {
+      "id": "queenside_pressure",
+      "fen": "2r3k1/1p1bqppp/p3pn2/3p4/3P4/P1NBPN2/1PQ2PPP/2R2RK1 b - - 0 16"
+    },
+    {
+      "id": "simple_king_pawns",
+      "fen": "6k1/5ppp/8/8/8/8/5PPP/6K1 w - - 0 1"
+    }
+  ],
+  "uci_options": {
+    "MoveOverhead": 200,
+    "LmrBase": "0.45",
+    "LmrDivisor": "2.9",
+    "LmrMinDepth": 3,
+    "LmrMinMoveIndex": 6,
+    "NullMoveMinDepth": 2,
+    "NullMoveReduction": 3,
+    "RfpEnabled": true,
+    "RfpMaxDepth": 2,
+    "RfpBaseMargin": 175,
+    "RfpMarginPerDepth": 275,
+    "LmpEnabled": true,
+    "LmpMaxDepth": 3,
+    "LmpBase": 4,
+    "LmpDepthMultiplier": 2,
+    "QseeEnabled": true,
+    "QseeThreshold": -75
+  },
+  "protocol": {
+    "isolation": "process_per_case",
+    "position_schedule": "rotate_then_reverse",
+    "mode_schedule": "interleaved_balanced",
+    "require_config_match": true,
+    "kernel_reporting": "preferred",
+    "warmup_depth": 5,
+    "warmup_positions": 12,
+    "fixed_depths": [7, 8],
+    "fixed_rounds": 10,
+    "movetimes_ms": [1000, 3000],
+    "movetime_rounds": 5,
+    "case_timeout_seconds": 120,
+    "bootstrap_replicates": 10000,
+    "bootstrap_confidence": 0.95,
+    "bootstrap_interpretation": "conditional_descriptive",
+    "bootstrap_seed": 20260823
+  }
+}

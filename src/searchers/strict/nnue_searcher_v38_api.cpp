@@ -70,6 +70,13 @@ void NnueSearcherV38::clear_tt() {
     tt_.clear();
 }
 
+void NnueSearcherV38::clear_search_heuristics() {
+    killer_table_.clear();
+    counter_move_table_.clear();
+    history_table_.reset();
+    counter_history_table_.reset();
+}
+
 std::size_t NnueSearcherV38::tt_entry_count() const {
     return tt_.entry_count();
 }
@@ -102,6 +109,10 @@ void NnueSearcherV38::clear_selective_stats() {
 const NnueSearcherV38::SelectiveStats&
 NnueSearcherV38::selective_stats() const {
     return selective_stats_;
+}
+
+const RepetitionStack::Stats& NnueSearcherV38::repetition_stats() const {
+    return repetition_stats_;
 }
 
 void NnueSearcherV38::set_selective_config(SelectiveConfig config) {

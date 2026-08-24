@@ -10,8 +10,9 @@ COPY CMakeLists.txt ./
 COPY include ./include
 COPY src ./src
 COPY tools ./tools
+COPY tests ./tests
 RUN cmake -S . -B build-release -DCMAKE_BUILD_TYPE=Release \
-    && cmake --build build-release --target uci_nnue_v38 -j 2
+    && cmake --build build-release --target uci_nnue_v41 -j 2
 
 FROM python:3.12-slim
 
@@ -22,15 +23,22 @@ WORKDIR /app
 COPY lichess-bot ./lichess-bot
 RUN python -m pip install --no-cache-dir -r /app/lichess-bot/requirements.txt
 
-COPY --from=engine-build /src/build-release/uci_nnue_v38 \
-    /app/chess-engine/build-release/uci_nnue_v38
+COPY --from=engine-build /src/build-release/uci_nnue_v41 \
+    /app/chess-engine/build-release/uci_nnue_v41
 COPY models /app/chess-engine/models
-COPY deploy/lichess/config-nnue-v38.yml /tmp/config-nnue-v38.yml
+COPY tools/benchmark_uci_platform.py \
+    /app/chess-engine/tools/benchmark_uci_platform.py
+COPY benchmarks/uci_platform_v1.json \
+    /app/chess-engine/benchmarks/uci_platform_v1.json
+COPY release-manifest.json /app/chess-engine/release-manifest.json
+COPY deploy/lichess/config-nnue-v41.yml /tmp/config-nnue-v41.yml
 RUN sed 's#__ENGINE_ROOT__#/app/chess-engine#g' \
-      /tmp/config-nnue-v38.yml \
-      > /app/lichess-bot/config-nnue-v38.yml \
-    && rm /tmp/config-nnue-v38.yml \
-    && chmod +x /app/chess-engine/build-release/uci_nnue_v38
+      /tmp/config-nnue-v41.yml \
+      > /app/lichess-bot/config-nnue-v41.yml \
+    && rm /tmp/config-nnue-v41.yml \
+    && chmod +x \
+      /app/chess-engine/build-release/uci_nnue_v41 \
+      /app/chess-engine/tools/benchmark_uci_platform.py
 
 WORKDIR /app/lichess-bot
-CMD ["python", "lichess-bot.py", "--config", "config-nnue-v38.yml"]
+CMD ["python", "lichess-bot.py", "--config", "config-nnue-v41.yml"]

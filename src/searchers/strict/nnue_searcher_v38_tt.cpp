@@ -20,7 +20,8 @@ NnueSearcherV38::TTProbeResult NnueSearcherV38::probe_tt(
     int& alpha,
     int& beta,
     int ply,
-    bool allow_probe
+    bool allow_probe,
+    bool allow_score
 ) const {
     TTProbeResult result;
     if (!allow_probe || !EnableTt) {
@@ -38,6 +39,12 @@ NnueSearcherV38::TTProbeResult NnueSearcherV38::probe_tt(
         result.has_score,
         TTDepthPolicy::Exact
     );
+    if (!allow_score) {
+        result.hit = false;
+        result.has_score = false;
+        result.range = {};
+        return result;
+    }
     alpha = search_range.lower;
     beta = search_range.upper;
     return result;
@@ -82,9 +89,10 @@ void NnueSearcherV38::store_tt_if_needed(
     ScoreRange range,
     Move best_lower_move,
     Move best_upper_move,
-    Move fallback_best_move
+    Move fallback_best_move,
+    bool allow_store
 ) {
-    if (!should_store_tt(range)) {
+    if (!allow_store || !should_store_tt(range)) {
         return;
     }
     if (!is_valid_move(best_lower_move)) {

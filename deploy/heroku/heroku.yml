@@ -1,5 +1,5 @@
 build:
   docker:
-    worker: deploy/heroku/Dockerfile
+    worker: Dockerfile
 run:
-  worker: python /app/lichess-bot/lichess-bot.py --config /app/lichess-bot/config-nnue-v38.yml
+  worker: python /app/lichess-bot/lichess-bot.py --config /app/lichess-bot/config-nnue-v41.yml

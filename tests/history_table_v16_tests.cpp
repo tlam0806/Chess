@@ -1,3 +1,4 @@
+#include "counter_history_table.hpp"
 #include "history_table_v16.hpp"
 #include "move.hpp"
 #include "position.hpp"
@@ -107,6 +108,35 @@ void test_reset_clears_scores() {
     assert(table.get_score(pos, move) == 0);
 }
 
+void test_counter_history_reset_clears_scores() {
+    const chess::Move previous = chess::make_move(
+        chess::make_square(1, 0), chess::make_square(2, 2));
+    const chess::Move counter = chess::make_move(
+        chess::make_square(6, 7), chess::make_square(5, 5));
+    chess::CounterHistoryTable table;
+    table.store(
+        chess::Color::White,
+        chess::PieceType::Knight,
+        previous,
+        chess::PieceType::Knight,
+        counter,
+        4);
+    assert(table.get_score(
+        chess::Color::White,
+        chess::PieceType::Knight,
+        previous,
+        chess::PieceType::Knight,
+        counter) > 0);
+
+    table.reset();
+    assert(table.get_score(
+        chess::Color::White,
+        chess::PieceType::Knight,
+        previous,
+        chess::PieceType::Knight,
+        counter) == 0);
+}
+
 } // namespace
 
 int main() {
@@ -116,4 +146,5 @@ int main() {
     test_penalty_divisor_reduces_malus();
     test_bonus_can_recover_penalty();
     test_reset_clears_scores();
+    test_counter_history_reset_clears_scores();
 }

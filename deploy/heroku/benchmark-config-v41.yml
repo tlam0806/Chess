@@ -1,0 +1,21 @@
+# Minimal deployment-independent option snapshot consumed by
+# tools/benchmark_uci_platform.py.  It intentionally contains no Lichess token
+# or bot configuration.
+uci_options:
+  MoveOverhead: 200
+  LmrBase: "0.45"
+  LmrDivisor: "2.9"
+  LmrMinDepth: 3
+  LmrMinMoveIndex: 6
+  NullMoveMinDepth: 2
+  NullMoveReduction: 3
+  RfpEnabled: true
+  RfpMaxDepth: 2
+  RfpBaseMargin: 175
+  RfpMarginPerDepth: 275
+  LmpEnabled: true
+  LmpMaxDepth: 3
+  LmpBase: 4
+  LmpDepthMultiplier: 2
+  QseeEnabled: true
+  QseeThreshold: -75

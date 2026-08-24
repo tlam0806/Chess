@@ -143,6 +143,28 @@ int main() {
         pos.set_piece(Color::Black, PieceType::King, make_square(4, 7));
         pos.set_piece(Color::White, PieceType::Pawn, make_square(4, 1));
         pos.side_to_move = Color::White;
+        pos.halfmove_clock = 99;
+
+        const Position before = pos;
+        const Move move = make_move(make_square(4, 1), make_square(4, 2));
+        UndoState undo;
+        pos.make_move(move, undo);
+
+        assert_incremental_eval_matches(pos);
+        assert(pos.piece_type_on_occupied(make_square(4, 2)) == PieceType::Pawn);
+        assert(pos.halfmove_clock == 0);
+
+        pos.unmake_move(move, undo);
+        assert_same_position(pos, before);
+        assert(pos.halfmove_clock == 99);
+    }
+
+    {
+        Position pos;
+        pos.set_piece(Color::White, PieceType::King, make_square(4, 0));
+        pos.set_piece(Color::Black, PieceType::King, make_square(4, 7));
+        pos.set_piece(Color::White, PieceType::Pawn, make_square(4, 1));
+        pos.side_to_move = Color::White;
         pos.halfmove_clock = 8;
 
         pos.make_move(make_move(make_square(4, 1), make_square(4, 3), MoveFlag::DoublePawnPush));

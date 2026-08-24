@@ -1,4 +1,5 @@
 #include "phase_quantized_nnue.hpp"
+#include "phase_quantized_nnue_forward_backend.hpp"
 
 #include <algorithm>
 #include <array>
@@ -6,6 +7,7 @@
 #include <climits>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <limits>
 #include <memory>
 
@@ -26,12 +28,12 @@ constexpr std::int64_t Relu16Max = (1LL << 16) - 1;
 constexpr std::uint32_t CandidateHiddenClip = 181;
 constexpr std::uint32_t CandidateScreluDivisor = 128;
 constexpr std::size_t AuxCastlingFeatureCount = 4;
-constexpr std::size_t AuxHasEnPassantFeature = 4;
+[[maybe_unused]] constexpr std::size_t AuxHasEnPassantFeature = 4;
 constexpr std::size_t AuxEnPassantFileFirstFeature = 5;
 constexpr std::size_t AuxEnPassantStateCount = 9;
 constexpr std::size_t AuxCastlingStateCount =
     1U << AuxCastlingFeatureCount;
-constexpr std::size_t CombinedAuxStateCount =
+[[maybe_unused]] constexpr std::size_t CombinedAuxStateCount =
     AuxCastlingStateCount * AuxEnPassantStateCount;
 
 std::size_t combined_aux_state_index(
@@ -81,6 +83,13 @@ constexpr bool supported_scale_tuple(
         || (hidden2_scale == 8
             && hidden3_scale == 16
             && output_scale == 128);
+}
+
+std::string_view requested_kernel_backend() {
+    const char* value = std::getenv("CHESS_NNUE_BACKEND");
+    return value == nullptr || *value == '\0'
+        ? std::string_view{"auto"}
+        : std::string_view{value};
 }
 
 #if CHESS_PHASE_NNUE_CANDIDATE
@@ -458,17 +467,6 @@ public:
 
 } // namespace
 
-class PhaseCandidateKernelBase {
-public:
-    virtual ~PhaseCandidateKernelBase() = default;
-    [[nodiscard]] virtual std::int64_t evaluate(
-        const std::int32_t* stm_accumulator,
-        const std::int32_t* opponent_accumulator,
-        std::size_t aux_state,
-        std::size_t phase_index
-    ) const = 0;
-};
-
 #if CHESS_PHASE_NNUE_CANDIDATE
 
 template<int Hidden2Scale, int Hidden3Scale, int OutputScale>
@@ -568,6 +566,10 @@ public:
             opponent_accumulator,
             combined_aux_row);
     }
+
+    [[nodiscard]] std::string_view name() const override {
+        return "arm_neon_dotprod_i8mm";
+    }
 };
 
 #endif
@@ -582,7 +584,8 @@ bool PhaseQuantizedNnueModel::supports_candidate_configuration(
     std::uint32_t hidden3_scale,
     std::uint32_t output_scale
 ) {
-#if CHESS_PHASE_NNUE_CANDIDATE
+#if CHESS_PHASE_NNUE_CANDIDATE \
+    || defined(CHESS_PHASE_NNUE_X86_BACKENDS)
     return hidden_clip == CandidateHiddenClip
         && screlu_divisor == CandidateScreluDivisor
         && supported_scale_tuple(
@@ -597,36 +600,110 @@ bool PhaseQuantizedNnueModel::supports_candidate_configuration(
 #endif
 }
 
-void PhaseQuantizedNnueModel::initialize_candidate_kernel() {
+bool PhaseQuantizedNnueModel::initialize_candidate_kernel() {
     candidate_kernel_.reset();
-#if CHESS_PHASE_NNUE_CANDIDATE
-    if (hidden_clip_ != CandidateHiddenClip
-        || screlu_divisor_ != CandidateScreluDivisor) {
-        return;
+    const std::string_view requested = requested_kernel_backend();
+    const bool valid_request = requested == "auto"
+        || requested == "scalar"
+        || requested == "avx2"
+        || requested == "vnni"
+        || requested == "neon";
+    if (!valid_request) {
+        return false;
     }
-    if (hidden2_scale_ == 2
+    if (hidden_clip_ != CandidateHiddenClip
+        || screlu_divisor_ != CandidateScreluDivisor
+        || !supported_scale_tuple(
+            hidden2_scale_, hidden3_scale_, output_scale_)) {
+        return requested == "auto" || requested == "scalar";
+    }
+    if (requested == "scalar") {
+        return true;
+    }
+
+#if defined(CHESS_PHASE_NNUE_X86_BACKENDS)
+    phase_nnue_detail::PhaseKernelSourceView source{};
+    source.hidden2_scale = hidden2_scale_;
+    source.hidden3_scale = hidden3_scale_;
+    source.output_scale = output_scale_;
+    source.aux_weights = aux_weights_.data();
+    for (std::size_t phase = 0; phase < PhaseCount; ++phase) {
+        source.phases[phase] = {
+            phases_[phase].output_bias,
+            phases_[phase].hidden2_bias.data(),
+            phases_[phase].hidden2_weight.data(),
+            phases_[phase].hidden3_bias.data(),
+            phases_[phase].hidden3_weight.data(),
+            phases_[phase].output_weight.data(),
+        };
+    }
+
+    // These builtins include the OSXSAVE/XCR0 checks needed before entering an
+    // AVX/AVX-512 translation unit.  No ISA-specific constructor is called
+    // until the corresponding gate succeeds.
+    __builtin_cpu_init();
+    if ((requested == "auto" || requested == "vnni")
+        && __builtin_cpu_supports("avx2")
+        && __builtin_cpu_supports("avx512f")
+        && __builtin_cpu_supports("avx512bw")
+        && __builtin_cpu_supports("avx512vl")
+        && __builtin_cpu_supports("avx512vnni")) {
+        candidate_kernel_ =
+            phase_nnue_detail::make_phase_nnue_vnni_kernel(source);
+        return true;
+    }
+    if ((requested == "auto" || requested == "avx2")
+        && __builtin_cpu_supports("avx2")) {
+        candidate_kernel_ =
+            phase_nnue_detail::make_phase_nnue_avx2_kernel(source);
+        return true;
+    }
+#endif
+
+#if CHESS_PHASE_NNUE_CANDIDATE
+    if ((requested == "auto" || requested == "neon")
+        && hidden2_scale_ == 2
         && hidden3_scale_ == 8
         && output_scale_ == 128) {
         candidate_kernel_ =
             std::make_unique<PhaseCandidateKernel<2, 8, 128>>(*this);
     } else if (
-        hidden2_scale_ == 4
+        (requested == "auto" || requested == "neon")
+        && hidden2_scale_ == 4
         && hidden3_scale_ == 8
         && output_scale_ == 64) {
         candidate_kernel_ =
             std::make_unique<PhaseCandidateKernel<4, 8, 64>>(*this);
     } else if (
-        hidden2_scale_ == 8
+        (requested == "auto" || requested == "neon")
+        && hidden2_scale_ == 8
         && hidden3_scale_ == 16
         && output_scale_ == 128) {
         candidate_kernel_ =
             std::make_unique<PhaseCandidateKernel<8, 16, 128>>(*this);
     }
 #endif
+    if (candidate_kernel_ != nullptr) {
+        return true;
+    }
+    // "auto" deliberately permits scalar fallback on an older CPU.  An
+    // explicit backend request is a reproducibility control, so never hide an
+    // unavailable/misspelled backend by silently selecting scalar.
+    return requested == "auto";
+}
+
+bool PhaseQuantizedNnueModel::uses_accelerated_kernel() const {
+    return accelerated_kernel_enabled_ && candidate_kernel_ != nullptr;
 }
 
 bool PhaseQuantizedNnueModel::uses_neon_dotprod_kernel() const {
-    return neon_dotprod_enabled_ && candidate_kernel_ != nullptr;
+    return uses_accelerated_kernel();
+}
+
+std::string_view PhaseQuantizedNnueModel::forward_kernel_name() const {
+    return uses_accelerated_kernel()
+        ? candidate_kernel_->name()
+        : std::string_view{"scalar"};
 }
 
 std::int64_t PhaseQuantizedNnueModel::forward_positional_scalar(
@@ -696,7 +773,7 @@ std::int64_t PhaseQuantizedNnueModel::forward_positional_candidate(
 ) const {
     assert(loaded());
     assert(phase_index < PhaseCount);
-    assert(uses_neon_dotprod_kernel());
+    assert(uses_accelerated_kernel());
 
     return candidate_kernel_->evaluate(
         stm_accumulator.data(),

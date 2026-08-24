@@ -46,6 +46,10 @@ CounterHistoryTable::CounterHistoryTable(int penalty_divisor_numerator, int pena
     assert(penalty_divisor_denominator_ > 0);
 }
 
+void CounterHistoryTable::reset() {
+    scores.fill(0);
+}
+
 std::size_t CounterHistoryTable::get_index(
     Color color,
     PieceType previous_piece,

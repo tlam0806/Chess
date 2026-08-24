@@ -48,6 +48,7 @@ int main(int argc, char** argv) {
     const chess::NnueSearcherV38::SelectiveConfig v38_defaults;
     assert(!v38_defaults.enable_reverse_futility);
     assert(!v38_defaults.enable_late_move_pruning);
+    assert(!v38_defaults.enable_qsearch_see_pruning);
 
     chess::NnueSearcherV39 searcher(model);
     const chess::NnueSearcherV39::SelectiveConfig& defaults =
@@ -68,6 +69,8 @@ int main(int argc, char** argv) {
     assert(defaults.late_move_pruning_max_depth == 3);
     assert(defaults.late_move_pruning_base == 4);
     assert(defaults.late_move_pruning_depth_multiplier == 2);
+    assert(!defaults.enable_qsearch_see_pruning);
+    assert(defaults.qsearch_see_threshold == -200);
     assert(searcher.name() == "nnue_selective_v39");
 
     chess::Position start;

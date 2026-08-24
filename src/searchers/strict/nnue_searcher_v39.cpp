@@ -26,6 +26,9 @@ NnueSearcherV38::SelectiveConfig NnueSearcherV39::to_v38_config(
     result.late_move_pruning_base = config.late_move_pruning_base;
     result.late_move_pruning_depth_multiplier =
         config.late_move_pruning_depth_multiplier;
+    result.enable_qsearch_see_pruning =
+        config.enable_qsearch_see_pruning;
+    result.qsearch_see_threshold = config.qsearch_see_threshold;
     return result;
 }
 
@@ -106,12 +109,32 @@ SearchResult NnueSearcherV39::search_best_move(
     return searcher_.search_best_move(pos, limits);
 }
 
+SearchResult NnueSearcherV39::search_best_move(
+    const Position& pos,
+    int depth,
+    std::span<const HashKey> game_history
+) {
+    return searcher_.search_best_move(pos, depth, game_history);
+}
+
+SearchResult NnueSearcherV39::search_best_move(
+    const Position& pos,
+    const SearchLimits& limits,
+    std::span<const HashKey> game_history
+) {
+    return searcher_.search_best_move(pos, limits, game_history);
+}
+
 std::string_view NnueSearcherV39::name() const {
     return "nnue_selective_v39";
 }
 
 void NnueSearcherV39::clear_tt() {
     searcher_.clear_tt();
+}
+
+void NnueSearcherV39::clear_search_heuristics() {
+    searcher_.clear_search_heuristics();
 }
 
 std::size_t NnueSearcherV39::tt_entry_count() const {
@@ -146,6 +169,10 @@ void NnueSearcherV39::clear_selective_stats() {
 const NnueSearcherV39::SelectiveStats&
 NnueSearcherV39::selective_stats() const {
     return searcher_.selective_stats();
+}
+
+const RepetitionStack::Stats& NnueSearcherV39::repetition_stats() const {
+    return searcher_.repetition_stats();
 }
 
 void NnueSearcherV39::set_selective_config(SelectiveConfig config) {

@@ -82,6 +82,7 @@ public:
     std::string_view name() const override;
 
     void clear_tt();
+    void clear_search_heuristics();
     std::size_t tt_entry_count() const;
     void clear_tt_stats();
     const RangeTranspositionTableStats& tt_stats() const;

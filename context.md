@@ -853,3 +853,70 @@ The historical adversarial LMR/NMP pipeline above remains useful as provenance,
 but its strict-V36 seed and hard-gate policy are not the current runtime
 baseline. New V39 tuning should start from Fast, keep it as an explicit control,
 and require a direct paired-opening self-play win before changing the default.
+
+## Experimental V40: QSEE pruning
+
+V40 is the first experimental child of the validated V39/Fast baseline. It
+keeps all Fast parameters unchanged and enables quiescence static-exchange
+evaluation pruning. The completed 2026-08-17 threshold tune selected
+`qsearch_see_threshold = -75cp` as the balanced self-play candidate. On the
+fresh 6k-position depth-8 holdout it reduced candidate nodes by 15.50% and
+measured time by 11.36% versus QSEE off, while mean WDL loss moved from
+0.00501209 to 0.00512550. Threshold zero saved slightly more nodes but was
+slower in wall time and had higher WDL loss.
+
+QSEE applies only to non-promotion captures in quiescence when the side to move
+is not in check. A capture is skipped only when its SEE is below the configured
+threshold and it does not give check. Check evasions, promotions, checking
+captures, and en-passant captures at the current SEE value of zero are kept.
+V38 and V39 expose the same config fields but leave QSEE disabled, preserving
+V39/Fast as an unchanged control.
+
+The one-dimensional tune evaluated the following full grid before Pareto
+selection and fresh holdout:
+
+```text
+OFF, -600, -500, -400, -350, -300, -250, -225, -200,
+-175, -150, -125, -100, -75, -50, -25, 0
+```
+
+Use `evaluate_nnue_v40_selective` for fixed-depth/fixed-time evaluation and
+`nnue_v40_time_gauntlet` for paired-opening self-play. Promotion to the default
+still requires a direct win over V39/Fast; V40 is not yet a validated baseline.
+
+Relevant tune result:
+
+```text
+logs/nnue_v40_qsee_tune_20260817_005158/summary.json
+```
+
+## Production V41: in-search draw rules
+
+V41 wraps the V40/QSEE `-75cp` search profile and moves draw handling into the
+search tree. The UCI adapter replays the real game moves into a hash history;
+each real search move then pushes its child hash onto a fixed-capacity,
+path-local stack. Artificial null moves do not modify or query this stack.
+
+At every real node V41 returns an exact score of zero for the third occurrence
+or when `halfmove_clock >= 100`. Checkmate takes precedence over the 50-move
+draw. Once any position has occurred twice on the active reversible path, TT
+score cutoffs and TT stores are suppressed while the TT move hint remains
+usable. Pawn moves, captures, and permanent castling-right changes delimit the
+relevant history segment.
+
+Implementing the 50-move rule exposed and fixed a core metadata bug: a normal
+single-square pawn push uses `MoveFlag::Quiet`, but must reset
+`halfmove_clock` to zero rather than incrementing it. Make/unmake regression
+coverage now verifies the reset and restoration explicitly.
+
+Paired V40/V41 benchmarks with the production NNUE model measured:
+
+```text
+depth 7: node ratio 97.15%, median paired NPS ratio 98.47%, time ratio 98.66%
+depth 8: node ratio 94.50%, median paired NPS ratio 99.20%, time ratio 95.27%
+```
+
+The production Lichess deployment uses `uci_nnue_v41`, the strongest existing
+200M Huber model, and no external `AvoidDraw` options. Heroku release v10 was
+deployed to `stormy-garden-92984` on 2026-08-23; its worker passed engine
+configuration and connected as `TrumCoVuaa` awaiting challenges.

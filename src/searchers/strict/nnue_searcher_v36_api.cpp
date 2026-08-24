@@ -46,6 +46,13 @@ void NnueSearcherV36::clear_tt() {
     tt_.clear();
 }
 
+void NnueSearcherV36::clear_search_heuristics() {
+    killer_table_.clear();
+    counter_move_table_.clear();
+    history_table_.reset();
+    counter_history_table_.reset();
+}
+
 std::size_t NnueSearcherV36::tt_entry_count() const {
     return tt_.entry_count();
 }

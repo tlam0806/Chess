@@ -1,0 +1,650 @@
+{
+  "benchmark_id": "nnue_v41_x86_simd_heroku_20260825",
+  "correctness": {
+    "cross_backend_or_dyno_mismatches": 0,
+    "fixed_depth_signature_groups": 24,
+    "measured_observations": 3240,
+    "parity_backend_position_checks": 73728,
+    "production_baseline_signature_mismatches": 0,
+    "warnings": 0
+  },
+  "design": {
+    "latin_square_complete": true,
+    "orders": [
+      [
+        "scalar",
+        "avx2",
+        "vnni"
+      ],
+      [
+        "avx2",
+        "vnni",
+        "scalar"
+      ],
+      [
+        "vnni",
+        "scalar",
+        "avx2"
+      ]
+    ],
+    "same_dyno_backend_matrix": true,
+    "timings_pooled_across_backends": false
+  },
+  "fixed_depth_signatures": [
+    {
+      "bestmove": "f1d1",
+      "limit_depth": 7,
+      "nodes": 63947,
+      "position_id": "closed_center",
+      "reported_depth": 7,
+      "score_type": "cp",
+      "score_value": -123
+    },
+    {
+      "bestmove": "d4c5",
+      "limit_depth": 7,
+      "nodes": 51654,
+      "position_id": "development",
+      "reported_depth": 7,
+      "score_type": "cp",
+      "score_value": 1206
+    },
+    {
+      "bestmove": "e2a6",
+      "limit_depth": 7,
+      "nodes": 128032,
+      "position_id": "kiwipete",
+      "reported_depth": 7,
+      "score_type": "cp",
+      "score_value": -133
+    },
+    {
+      "bestmove": "d4c5",
+      "limit_depth": 7,
+      "nodes": 31104,
+      "position_id": "middlegame_rooks",
+      "reported_depth": 7,
+      "score_type": "cp",
+      "score_value": 172
+    },
+    {
+      "bestmove": "d2d4",
+      "limit_depth": 7,
+      "nodes": 29957,
+      "position_id": "opening_knights",
+      "reported_depth": 7,
+      "score_type": "cp",
+      "score_value": 62
+    },
+    {
+      "bestmove": "e1d2",
+      "limit_depth": 7,
+      "nodes": 3133,
+      "position_id": "pawn_structure",
+      "reported_depth": 7,
+      "score_type": "cp",
+      "score_value": -11
+    },
+    {
+      "bestmove": "a7a8r",
+      "limit_depth": 7,
+      "nodes": 14385,
+      "position_id": "promotion_race",
+      "reported_depth": 7,
+      "score_type": "cp",
+      "score_value": 1883
+    },
+    {
+      "bestmove": "g7g6",
+      "limit_depth": 7,
+      "nodes": 503759,
+      "position_id": "queenside_pressure",
+      "reported_depth": 7,
+      "score_type": "cp",
+      "score_value": -1671
+    },
+    {
+      "bestmove": "f2f4",
+      "limit_depth": 7,
+      "nodes": 26870,
+      "position_id": "simple_king_pawns",
+      "reported_depth": 7,
+      "score_type": "cp",
+      "score_value": -20
+    },
+    {
+      "bestmove": "e2e4",
+      "limit_depth": 7,
+      "nodes": 33514,
+      "position_id": "startpos",
+      "reported_depth": 7,
+      "score_type": "cp",
+      "score_value": 25
+    },
+    {
+      "bestmove": "f6g7",
+      "limit_depth": 7,
+      "nodes": 39004,
+      "position_id": "tactical_advanced_pawns",
+      "reported_depth": 7,
+      "score_type": "cp",
+      "score_value": -1700
+    },
+    {
+      "bestmove": "d7c8q",
+      "limit_depth": 7,
+      "nodes": 39371,
+      "position_id": "tactical_castling",
+      "reported_depth": 7,
+      "score_type": "cp",
+      "score_value": 1123
+    },
+    {
+      "bestmove": "e3e4",
+      "limit_depth": 8,
+      "nodes": 200469,
+      "position_id": "closed_center",
+      "reported_depth": 8,
+      "score_type": "cp",
+      "score_value": -150
+    },
+    {
+      "bestmove": "d4c5",
+      "limit_depth": 8,
+      "nodes": 126799,
+      "position_id": "development",
+      "reported_depth": 8,
+      "score_type": "cp",
+      "score_value": 1256
+    },
+    {
+      "bestmove": "e2a6",
+      "limit_depth": 8,
+      "nodes": 239517,
+      "position_id": "kiwipete",
+      "reported_depth": 8,
+      "score_type": "cp",
+      "score_value": -120
+    },
+    {
+      "bestmove": "d4c5",
+      "limit_depth": 8,
+      "nodes": 81934,
+      "position_id": "middlegame_rooks",
+      "reported_depth": 8,
+      "score_type": "cp",
+      "score_value": 207
+    },
+    {
+      "bestmove": "d2d4",
+      "limit_depth": 8,
+      "nodes": 58431,
+      "position_id": "opening_knights",
+      "reported_depth": 8,
+      "score_type": "cp",
+      "score_value": 76
+    },
+    {
+      "bestmove": "e1e2",
+      "limit_depth": 8,
+      "nodes": 9877,
+      "position_id": "pawn_structure",
+      "reported_depth": 8,
+      "score_type": "cp",
+      "score_value": -34
+    },
+    {
+      "bestmove": "a7a8r",
+      "limit_depth": 8,
+      "nodes": 27183,
+      "position_id": "promotion_race",
+      "reported_depth": 8,
+      "score_type": "cp",
+      "score_value": 1888
+    },
+    {
+      "bestmove": "f6e4",
+      "limit_depth": 8,
+      "nodes": 684274,
+      "position_id": "queenside_pressure",
+      "reported_depth": 8,
+      "score_type": "cp",
+      "score_value": -1496
+    },
+    {
+      "bestmove": "g2g3",
+      "limit_depth": 8,
+      "nodes": 66524,
+      "position_id": "simple_king_pawns",
+      "reported_depth": 8,
+      "score_type": "cp",
+      "score_value": 25
+    },
+    {
+      "bestmove": "e2e4",
+      "limit_depth": 8,
+      "nodes": 52702,
+      "position_id": "startpos",
+      "reported_depth": 8,
+      "score_type": "cp",
+      "score_value": 44
+    },
+    {
+      "bestmove": "f6g7",
+      "limit_depth": 8,
+      "nodes": 76558,
+      "position_id": "tactical_advanced_pawns",
+      "reported_depth": 8,
+      "score_type": "cp",
+      "score_value": -1620
+    },
+    {
+      "bestmove": "d7c8q",
+      "limit_depth": 8,
+      "nodes": 74043,
+      "position_id": "tactical_castling",
+      "reported_depth": 8,
+      "score_type": "cp",
+      "score_value": 1073
+    }
+  ],
+  "backend_result_interval_utc": {
+    "finished_at": "2026-08-24T17:04:55.439185+00:00",
+    "started_at": "2026-08-24T16:14:50.458230+00:00"
+  },
+  "paired_speedups": {
+    "metrics": [
+      {
+        "limit": 7,
+        "mode": "fixed_depth",
+        "paired_cases_per_backend": 360,
+        "ratios": {
+          "avx2_over_scalar": {
+            "estimate": 4.239064157638958,
+            "paired_bootstrap_interval95": [
+              3.9330553669642945,
+              4.4614944932059295
+            ]
+          },
+          "vnni_over_avx2": {
+            "estimate": 1.434852985944196,
+            "paired_bootstrap_interval95": [
+              1.4122654037138354,
+              1.4550615472382522
+            ]
+          },
+          "vnni_over_scalar": {
+            "estimate": 6.082433864197276,
+            "paired_bootstrap_interval95": [
+              5.635078701158721,
+              6.435148899967752
+            ]
+          }
+        }
+      },
+      {
+        "limit": 8,
+        "mode": "fixed_depth",
+        "paired_cases_per_backend": 360,
+        "ratios": {
+          "avx2_over_scalar": {
+            "estimate": 4.335749563521023,
+            "paired_bootstrap_interval95": [
+              4.071484128904638,
+              4.539370354016312
+            ]
+          },
+          "vnni_over_avx2": {
+            "estimate": 1.48012753686876,
+            "paired_bootstrap_interval95": [
+              1.4514547116500365,
+              1.5110769461391838
+            ]
+          },
+          "vnni_over_scalar": {
+            "estimate": 6.417462321934173,
+            "paired_bootstrap_interval95": [
+              6.011154656491342,
+              6.7105488750954265
+            ]
+          }
+        }
+      },
+      {
+        "limit": 1000,
+        "mode": "movetime_ms",
+        "paired_cases_per_backend": 180,
+        "ratios": {
+          "avx2_over_scalar": {
+            "estimate": 4.452017548132385,
+            "paired_bootstrap_interval95": [
+              4.2273705161214155,
+              4.685401616572122
+            ]
+          },
+          "vnni_over_avx2": {
+            "estimate": 1.4517483150929305,
+            "paired_bootstrap_interval95": [
+              1.4279151349099652,
+              1.480846502585697
+            ]
+          },
+          "vnni_over_scalar": {
+            "estimate": 6.463208974265349,
+            "paired_bootstrap_interval95": [
+              6.231805944819289,
+              6.744940304041643
+            ]
+          }
+        }
+      },
+      {
+        "limit": 3000,
+        "mode": "movetime_ms",
+        "paired_cases_per_backend": 180,
+        "ratios": {
+          "avx2_over_scalar": {
+            "estimate": 4.323716442581228,
+            "paired_bootstrap_interval95": [
+              4.1308546178315675,
+              4.588905198728086
+            ]
+          },
+          "vnni_over_avx2": {
+            "estimate": 1.4374071666977206,
+            "paired_bootstrap_interval95": [
+              1.4121623689526432,
+              1.4605822029113036
+            ]
+          },
+          "vnni_over_scalar": {
+            "estimate": 6.214941001335031,
+            "paired_bootstrap_interval95": [
+              5.992873430845056,
+              6.481766734386879
+            ]
+          }
+        }
+      }
+    ],
+    "replicates": 10000,
+    "resampling": "dynos_then_matched_cases_within_dyno",
+    "status": "pass"
+  },
+  "performance": [
+    {
+      "avx2_nps": 1022380.0577206569,
+      "avx2_over_scalar": 4.239064157638958,
+      "limit": 7,
+      "mode": "fixed_depth",
+      "scalar_nps": 241180.6048932495,
+      "vnni_nps": 1466965.078590284,
+      "vnni_over_avx2": 1.434852985944196,
+      "vnni_over_scalar": 6.082433864197276
+    },
+    {
+      "avx2_nps": 1052906.4694729405,
+      "avx2_over_scalar": 4.335749563521023,
+      "limit": 8,
+      "mode": "fixed_depth",
+      "scalar_nps": 242843.00881480912,
+      "vnni_nps": 1558435.8592141657,
+      "vnni_over_avx2": 1.48012753686876,
+      "vnni_over_scalar": 6.417462321934173
+    },
+    {
+      "avx2_nps": 1253977.7514332545,
+      "avx2_over_scalar": 4.452017548132385,
+      "limit": 1000,
+      "mode": "movetime_ms",
+      "scalar_nps": 281665.0513786264,
+      "vnni_nps": 1820460.0878072486,
+      "vnni_over_avx2": 1.4517483150929305,
+      "vnni_over_scalar": 6.463208974265349
+    },
+    {
+      "avx2_nps": 1270175.689031789,
+      "avx2_over_scalar": 4.323716442581228,
+      "limit": 3000,
+      "mode": "movetime_ms",
+      "scalar_nps": 293769.42403593496,
+      "vnni_nps": 1825759.638379509,
+      "vnni_over_avx2": 1.4374071666977206,
+      "vnni_over_scalar": 6.214941001335031
+    }
+  ],
+  "production": {
+    "app": "stormy-garden-92984",
+    "modified_by_benchmark": false,
+    "release_during_and_after_benchmark": "v10"
+  },
+  "promotion_gate": {
+    "application": "recomputed after the archived comparison; enforced automatically by the current runner",
+    "criterion": "all per-dyno fixed-depth ratios and paired 95% interval lower bounds must exceed 1.0",
+    "failures": [],
+    "interval_checks": [
+      {
+        "depth": 7,
+        "lower95": 3.9330553669642945,
+        "ratio": "avx2_over_scalar"
+      },
+      {
+        "depth": 7,
+        "lower95": 5.635078701158721,
+        "ratio": "vnni_over_scalar"
+      },
+      {
+        "depth": 7,
+        "lower95": 1.4122654037138354,
+        "ratio": "vnni_over_avx2"
+      },
+      {
+        "depth": 8,
+        "lower95": 4.071484128904638,
+        "ratio": "avx2_over_scalar"
+      },
+      {
+        "depth": 8,
+        "lower95": 6.011154656491342,
+        "ratio": "vnni_over_scalar"
+      },
+      {
+        "depth": 8,
+        "lower95": 1.4514547116500365,
+        "ratio": "vnni_over_avx2"
+      }
+    ],
+    "per_dyno": [
+      {
+        "depth": 7,
+        "dyno_ordinal": 1,
+        "nps": {
+          "avx2": 1066028.0399534523,
+          "scalar": 241418.03613313625,
+          "vnni": 1542564.2970972997
+        },
+        "ratios": {
+          "avx2_over_scalar": 4.415693446224388,
+          "vnni_over_avx2": 1.4470203777797956,
+          "vnni_over_scalar": 6.389598398715383
+        }
+      },
+      {
+        "depth": 8,
+        "dyno_ordinal": 1,
+        "nps": {
+          "avx2": 1079497.3139889864,
+          "scalar": 244658.2380122445,
+          "vnni": 1631582.270601632
+        },
+        "ratios": {
+          "avx2_over_scalar": 4.412266362904814,
+          "vnni_over_avx2": 1.5114278187247794,
+          "vnni_over_scalar": 6.6688221245179395
+        }
+      },
+      {
+        "depth": 7,
+        "dyno_ordinal": 2,
+        "nps": {
+          "avx2": 1024828.1180754283,
+          "scalar": 232950.23846716984,
+          "vnni": 1462736.3280809098
+        },
+        "ratios": {
+          "avx2_over_scalar": 4.399343502796454,
+          "vnni_over_avx2": 1.4272991756196634,
+          "vnni_over_scalar": 6.279179354809101
+        }
+      },
+      {
+        "depth": 8,
+        "dyno_ordinal": 2,
+        "nps": {
+          "avx2": 1055866.8461541224,
+          "scalar": 232603.97167629615,
+          "vnni": 1536839.4118678127
+        },
+        "ratios": {
+          "avx2_over_scalar": 4.539332834881779,
+          "vnni_over_avx2": 1.455523883021405,
+          "vnni_over_scalar": 6.6071073541536895
+        }
+      },
+      {
+        "depth": 7,
+        "dyno_ordinal": 3,
+        "nps": {
+          "avx2": 979917.0670039972,
+          "scalar": 249759.21469889258,
+          "vnni": 1402294.335518802
+        },
+        "ratios": {
+          "avx2_over_scalar": 3.9234471015829233,
+          "vnni_over_avx2": 1.4310336892143158,
+          "vnni_over_scalar": 5.614584980215426
+        }
+      },
+      {
+        "depth": 8,
+        "dyno_ordinal": 3,
+        "nps": {
+          "avx2": 1024789.9649939784,
+          "scalar": 252068.65503593197,
+          "vnni": 1511900.9499725096
+        },
+        "ratios": {
+          "avx2_over_scalar": 4.065519232638807,
+          "vnni_over_avx2": 1.4753276296781395,
+          "vnni_over_scalar": 5.9979728528999
+        }
+      }
+    ],
+    "required_depths": [
+      7,
+      8
+    ],
+    "status": "pass"
+  },
+  "provenance": {
+    "config_validation_match": true,
+    "hashes_match": true,
+    "missing": [],
+    "status": "pass",
+    "values": {
+      "config_sha256": [
+        "f0672851d58a0467211a8660a5306b4440c2b333b2cc2a9d01aafeb2e02887af"
+      ],
+      "effective_spec_sha256": [
+        "e452c0e0adb6a82f9555f02a8e16c61d5380ab3ba16312f4983f4e4609b89e49"
+      ],
+      "engine_sha256": [
+        "29579ec5bceafc00fa77a4caef50d4ca9ad5a181123369047a00af6456a08527"
+      ],
+      "harness_sha256": [
+        "f6b0d01c4258dcffececcf7c5590940dd25cc554bedeca324563be164e288f4e"
+      ],
+      "model_sha256": [
+        "a1a52891f95db9a1bacc48557325b0c5904da4b3c9f8a333eb2ec090b1bb9c02"
+      ],
+      "runner_sha256": [
+        "e7e2d782194d7c25250954574997a4245a2c7c657d6545960233c4baaa232824"
+      ],
+      "spec_sha256": [
+        "b297dfe39c869e2f3eca07175f57e7302c4c29257f04d75493a70701648ed67e"
+      ]
+    }
+  },
+  "raw_artifacts": {
+    "files": {
+      "comparison.json": {
+        "bytes": 6386,
+        "sha256": "0d74b373e12278ccfdcaa52bab64798dbf9fe3475dbb26825903f6f86a0b0a6c"
+      },
+      "heroku-matrix-run-1.console.log": {
+        "bytes": 100874,
+        "sha256": "973740ae2a2e20e868e88c62d30b74c81febdf241d180f8b25b23abb44e31997"
+      },
+      "heroku-matrix-run-1.json": {
+        "bytes": 785415,
+        "sha256": "28c776045f4790cda0f03cdff7e5fef04aacc1240901852e644e078da5314cb6"
+      },
+      "heroku-matrix-run-2.console.log": {
+        "bytes": 101304,
+        "sha256": "b67c2cb3944b8a165988b5ff489b4f6e4875273edb38c4e3e06188c0127a1b0c"
+      },
+      "heroku-matrix-run-2.json": {
+        "bytes": 785450,
+        "sha256": "914e6da0ac7c6d85e06ae92b7b18a58011a6c39e2f6a696da10925f086e74994"
+      },
+      "heroku-matrix-run-3.console.log": {
+        "bytes": 101169,
+        "sha256": "f18594e34c51b55b27b523d5d3ab3fd1176c0907aed768c6aa23ccb32eb3f727"
+      },
+      "heroku-matrix-run-3.json": {
+        "bytes": 785404,
+        "sha256": "8f80ce7c2e62e36ac74e866e50fdeb2356644748e619b699b87b020dbe1c94d8"
+      },
+      "request.json": {
+        "bytes": 1282,
+        "sha256": "a18fd230fa4e81cc4cc76741bebc6bab3e4b8b39c170550b2952b0832beea081"
+      },
+      "snapshots/comparator.snapshot.py": {
+        "bytes": 10058,
+        "sha256": "3bb10908910eaa148570498f5f11534d81dd5bf0600aa622792adbba74779ab7"
+      },
+      "snapshots/harness.snapshot.py": {
+        "bytes": 37633,
+        "sha256": "f6b0d01c4258dcffececcf7c5590940dd25cc554bedeca324563be164e288f4e"
+      },
+      "snapshots/matrix_runner_local.snapshot.py": {
+        "bytes": 20312,
+        "sha256": "531c307f51628bb2aadef82e31f21645488ef6d192a32c70a2d28b8617ce7286"
+      },
+      "snapshots/matrix_runner_remote.snapshot.py": {
+        "bytes": 12248,
+        "sha256": "cbe8d81c893a3ec53fa0cf3fd5218051172aa146610a6d315f4a67382e421f14"
+      },
+      "snapshots/platform_aggregator.snapshot.py": {
+        "bytes": 21003,
+        "sha256": "d287f1d65630efaf37ad2ebb899bde9be00c1f3417df200b10c3bb0a6d68b040"
+      },
+      "snapshots/spec.snapshot.json": {
+        "bytes": 2695,
+        "sha256": "b297dfe39c869e2f3eca07175f57e7302c4c29257f04d75493a70701648ed67e"
+      }
+    },
+    "git_ignored": true,
+    "local_directory": "logs/nnue_simd_matrix_full_20260824T161435Z"
+  },
+  "schema_version": 1,
+  "staging": {
+    "app": "chess-nnue-simd-0825-0008",
+    "container_image_digest": "sha256:1ca72f2742644f697ce4196051439712d0352d0dc82e05cd6efbdf6d8f1fe1ce",
+    "destroyed_after_artifact_retention": true,
+    "metadata_source": "captured operationally before staging teardown",
+    "release": "v3",
+    "source_tree": "700ffab0eed6c471f1c778e5841d76a3e8ecb203"
+  },
+  "status": "validated_staging_candidate_not_deployed"
+}

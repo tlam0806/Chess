@@ -4,6 +4,7 @@
 
 #include <array>
 #include <cassert>
+#include <cstdlib>
 #include <cstdint>
 #include <filesystem>
 #include <iostream>
@@ -117,6 +118,39 @@ void assert_unsafe_accumulator_bias_is_rejected(
     assert(std::filesystem::remove(unsafe_path));
 }
 
+void assert_failed_backend_request_leaves_model_unloaded(
+    const std::filesystem::path& model_path
+) {
+    const char* previous_value = std::getenv("CHESS_NNUE_BACKEND");
+    const bool had_previous_value = previous_value != nullptr;
+    const std::string previous = had_previous_value
+        ? std::string(previous_value)
+        : std::string{};
+
+#if defined(_WIN32)
+    assert(_putenv_s("CHESS_NNUE_BACKEND", "not-a-kernel") == 0);
+#else
+    assert(setenv("CHESS_NNUE_BACKEND", "not-a-kernel", 1) == 0);
+#endif
+
+    chess::PhaseQuantizedNnueModel failed_model;
+    assert(!failed_model.load(model_path.string()));
+    assert(!failed_model.loaded());
+    assert(!failed_model.has_candidate_kernel());
+
+#if defined(_WIN32)
+    assert(_putenv_s(
+        "CHESS_NNUE_BACKEND",
+        had_previous_value ? previous.c_str() : "") == 0);
+#else
+    if (had_previous_value) {
+        assert(setenv("CHESS_NNUE_BACKEND", previous.c_str(), 1) == 0);
+    } else {
+        assert(unsetenv("CHESS_NNUE_BACKEND") == 0);
+    }
+#endif
+}
+
 void overwrite_header_value(
     const std::filesystem::path& model_path,
     std::size_t header_index,
@@ -198,9 +232,20 @@ void assert_neon_scale_dispatch_parity(
         std::filesystem::copy_options::overwrite_existing);
     overwrite_header_value(fallback_path, 11, 3);
     chess::PhaseQuantizedNnueModel fallback_model;
-    assert(fallback_model.load(fallback_path.string()));
-    assert(!fallback_model.has_candidate_kernel());
-    assert(!fallback_model.uses_neon_dotprod_kernel());
+    const char* requested_backend = std::getenv("CHESS_NNUE_BACKEND");
+    const bool explicitly_forced_accelerated = requested_backend != nullptr
+        && std::string_view(requested_backend) != ""
+        && std::string_view(requested_backend) != "auto"
+        && std::string_view(requested_backend) != "scalar";
+    if (explicitly_forced_accelerated) {
+        assert(!fallback_model.load(fallback_path.string()));
+        assert(!fallback_model.loaded());
+        assert(!fallback_model.has_candidate_kernel());
+    } else {
+        assert(fallback_model.load(fallback_path.string()));
+        assert(!fallback_model.has_candidate_kernel());
+        assert(!fallback_model.uses_neon_dotprod_kernel());
+    }
     assert(std::filesystem::remove(fallback_path));
 }
 
@@ -258,6 +303,36 @@ void assert_all_aux_state_parity(chess::PhaseQuantizedNnueModel& model) {
     model.set_neon_dotprod_enabled(true);
 }
 
+void assert_horizontal_mirror_invariance(
+    const chess::PhaseQuantizedNnueModel& model
+) {
+    if (!model.uses_horizontal_mirror()) {
+        return;
+    }
+    constexpr std::array<std::array<std::string_view, 2>, 3> Pairs{{
+        {{
+            "7k/8/8/3pP3/8/2N5/8/4K3 w - d6 0 1",
+            "k7/8/8/3Pp3/8/5N2/8/3K4 w - e6 0 1",
+        }},
+        {{
+            "2r3k1/5ppp/1p2p3/p2pP3/P2P1P2/1P1B2P1/5K1P/2R5 b - - 0 28",
+            "1k3r2/ppp5/3p2p1/3Pp2p/2P1P2P/1P2B1P1/P1K5/5R2 b - - 0 28",
+        }},
+        {{
+            "r3k2r/8/8/8/8/8/8/R3K2R w Kq - 0 1",
+            "r2k3r/8/8/8/8/8/8/R2K3R w Qk - 0 1",
+        }},
+    }};
+    for (const auto& pair : Pairs) {
+        chess::Position original;
+        chess::Position mirrored;
+        assert(original.set_fen(pair[0]));
+        assert(mirrored.set_fen(pair[1]));
+        assert(model.evaluate_cp_rounded(original)
+            == model.evaluate_cp_rounded(mirrored));
+    }
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -267,16 +342,24 @@ int main(int argc, char** argv) {
     }
     chess::PhaseQuantizedNnueModel model;
     assert(model.load(argv[1]));
+    assert(model.feature_row_count() == (
+        model.uses_horizontal_mirror()
+            ? chess::PhaseQuantizedNnueModel::HorizontalMirrorFeatureRowCount
+            : chess::PhaseQuantizedNnueModel::FeatureRowCount));
     assert_unsafe_accumulator_bias_is_rejected(argv[1]);
+    assert_failed_backend_request_leaves_model_unloaded(argv[1]);
     assert_neon_scale_dispatch_parity(argv[1]);
     assert_all_aux_state_parity(model);
+    assert_horizontal_mirror_invariance(model);
     assert(model.hidden_clip() == 181);
     assert(model.screlu_divisor() == 128);
     assert(model.hidden2_scale() > 0);
     assert(model.hidden3_scale() > 0);
     assert(model.output_scale() > 0);
     assert(model.psqt_scale() == 16);
-    assert(model.has_candidate_kernel());
+    assert(model.has_candidate_kernel() == model.uses_accelerated_kernel());
+    assert((model.forward_kernel_name() == "scalar")
+        == !model.uses_accelerated_kernel());
 
     run_sequence(
         model,

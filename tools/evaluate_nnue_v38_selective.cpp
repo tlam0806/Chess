@@ -2,7 +2,9 @@
 #include "move.hpp"
 #include "nnue_wdl_calibration.hpp"
 #include "nnue_searcher_v36.hpp"
-#ifdef CHESS_EVALUATE_NNUE_V39
+#if defined(CHESS_EVALUATE_NNUE_V40)
+#include "nnue_searcher_v40.hpp"
+#elif defined(CHESS_EVALUATE_NNUE_V39)
 #include "nnue_searcher_v39.hpp"
 #else
 #include "nnue_searcher_v38.hpp"
@@ -25,7 +27,9 @@
 
 namespace {
 
-#ifdef CHESS_EVALUATE_NNUE_V39
+#if defined(CHESS_EVALUATE_NNUE_V40)
+using CandidateSearcher = chess::NnueSearcherV40;
+#elif defined(CHESS_EVALUATE_NNUE_V39)
 using CandidateSearcher = chess::NnueSearcherV39;
 #else
 using CandidateSearcher = chess::NnueSearcherV38;
@@ -183,6 +187,12 @@ Options parse(int argc, char** argv) {
         else if (arg == "--late-move-pruning-depth-multiplier")
             options.config.late_move_pruning_depth_multiplier =
                 static_cast<std::size_t>(integer(next(), arg));
+        else if (arg == "--disable-qsearch-see-pruning")
+            options.config.enable_qsearch_see_pruning = false;
+        else if (arg == "--enable-qsearch-see-pruning")
+            options.config.enable_qsearch_see_pruning = true;
+        else if (arg == "--qsearch-see-threshold")
+            options.config.qsearch_see_threshold = integer(next(), arg);
         else throw std::runtime_error("unknown argument: " + std::string(arg));
     }
     if (options.dataset.empty()) throw std::runtime_error("--dataset is required");
@@ -203,6 +213,7 @@ chess::SearchResult run_control(
     chess::NnueSearcherV36& searcher, const chess::Position& position, int depth
 ) {
     searcher.clear_tt();
+    searcher.clear_search_heuristics();
     return searcher.search_best_move(position, depth);
 }
 
@@ -212,6 +223,7 @@ chess::SearchResult run_candidate(
     const Options& options
 ) {
     searcher.clear_tt();
+    searcher.clear_search_heuristics();
     searcher.clear_selective_stats();
     if (options.candidate_time_ms > 0) {
         return searcher.search_best_move(
@@ -281,6 +293,8 @@ int main(int argc, char** argv) {
         std::uint64_t reverse_futility_cutoffs = 0;
         std::uint64_t late_move_pruned_nodes = 0;
         std::uint64_t late_move_pruned_moves = 0;
+        std::uint64_t qsearch_see_evaluations = 0;
+        std::uint64_t qsearch_see_pruned_moves = 0;
         std::uint64_t candidate_depth_sum = 0;
         int candidate_stopped = 0;
         int agreements = 0, ranking_agreements = 0, above100 = 0;
@@ -332,6 +346,8 @@ int main(int argc, char** argv) {
             reverse_futility_cutoffs += stats.reverse_futility_cutoffs;
             late_move_pruned_nodes += stats.late_move_pruned_nodes;
             late_move_pruned_moves += stats.late_move_pruned_moves;
+            qsearch_see_evaluations += stats.qsearch_see_evaluations;
+            qsearch_see_pruned_moves += stats.qsearch_see_pruned_moves;
 
             int strict_candidate_score = base.score;
             if (base.best_move == mutant.best_move) {
@@ -409,6 +425,7 @@ int main(int argc, char** argv) {
             << ",\"ranking_target_abs_cp\":" << options.ranking_target_abs_cp
             << ",\"include_all_in_objective\":"
             << (options.include_all_in_objective ? "true" : "false")
+            << ",\"heuristics_reset_per_sample\":true"
             << ",\"objective\":\"" << options.objective << '"'
             << ",\"wdl_formula\":\""
             << chess::wdl_calibration::formula << '"'
@@ -470,6 +487,10 @@ int main(int argc, char** argv) {
             << late_move_pruned_nodes
             << ",\"late_move_pruned_moves\":"
             << late_move_pruned_moves
+            << ",\"qsearch_see_evaluations\":"
+            << qsearch_see_evaluations
+            << ",\"qsearch_see_pruned_moves\":"
+            << qsearch_see_pruned_moves
             << "}\n";
     } catch (const std::exception& error) {
         std::cerr << "error: " << error.what() << '\n';

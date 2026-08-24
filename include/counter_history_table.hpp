@@ -14,6 +14,7 @@ public:
 
     explicit CounterHistoryTable(int penalty_divisor_numerator = 6, int penalty_divisor_denominator = 5);
 
+    void reset();
     void store(Color color, PieceType previous_piece, Move previous_move, PieceType counter_piece, Move counter_move, int depth);
     void penalize(Color color, PieceType previous_piece, Move previous_move, PieceType counter_piece, Move counter_move, int depth);
     Score get_score(Color color, PieceType previous_piece, Move previous_move, PieceType counter_piece, Move counter_move) const;

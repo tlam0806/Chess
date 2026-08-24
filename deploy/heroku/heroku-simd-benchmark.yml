@@ -1,0 +1,5 @@
+build:
+  docker:
+    benchmark: Dockerfile
+run:
+  benchmark: /bin/true

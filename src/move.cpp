@@ -2025,7 +2025,11 @@ void make_move_impl(Position& pos, Move move, PieceType moved_piece, PieceType c
 
     if (flag == MoveFlag::Quiet) {
         move_piece_fast(pos, color, moved_piece, from, to);
-        finish_quiet_move_metadata(pos, color, enemy);
+        if (moved_piece == PieceType::Pawn) {
+            finish_capture_or_pawn_move_metadata(pos, color, enemy);
+        } else {
+            finish_quiet_move_metadata(pos, color, enemy);
+        }
         if constexpr (UpdateKingSafety) {
             update_king_safety_after_move(pos, move, color, moved_piece, PieceType::None, NoSquare);
         }

@@ -1,12 +1,19 @@
 #include "attacks.hpp"
 #include "game_state.hpp"
 #include "move.hpp"
+#if defined(CHESS_UCI_NNUE_V41)
+#include "nnue_searcher_v41.hpp"
+#elif defined(CHESS_UCI_NNUE_V40)
+#include "nnue_searcher_v40.hpp"
+#else
 #include "nnue_searcher_v38.hpp"
+#endif
 #include "phase_quantized_nnue.hpp"
 #include "position.hpp"
 
 #include <algorithm>
 #include <chrono>
+#include <cstdint>
 #include <cstdlib>
 #include <iostream>
 #include <sstream>
@@ -17,6 +24,17 @@ namespace {
 
 constexpr int DefaultDepth = 8;
 
+#if defined(CHESS_UCI_NNUE_V41)
+using UciSearcher = chess::NnueSearcherV41;
+constexpr const char* EngineName = "ChessNNUEV41";
+#elif defined(CHESS_UCI_NNUE_V40)
+using UciSearcher = chess::NnueSearcherV40;
+constexpr const char* EngineName = "ChessNNUEV40";
+#else
+using UciSearcher = chess::NnueSearcherV38;
+constexpr const char* EngineName = "ChessNNUEV38";
+#endif
+
 struct AdapterOptions {
     bool avoid_draw = true;
     int avoid_draw_min_cp = 120;
@@ -24,10 +42,25 @@ struct AdapterOptions {
     int move_overhead_ms = 200;
 };
 
-bool apply_uci_move(chess::Position& pos, const std::string& uci) {
+std::uint8_t castling_rights(const chess::Position& pos) {
+    return static_cast<std::uint8_t>(
+        (pos.white_can_castle_kingside ? 1 : 0)
+        | (pos.white_can_castle_queenside ? 2 : 0)
+        | (pos.black_can_castle_kingside ? 4 : 0)
+        | (pos.black_can_castle_queenside ? 8 : 0));
+}
+
+bool apply_uci_move(
+    chess::Position& pos,
+    const std::string& uci,
+    bool& irreversible
+) {
     for (chess::Move move : chess::generate_legal_moves(pos)) {
         if (chess::move_to_string(move) == uci) {
+            const std::uint8_t rights_before = castling_rights(pos);
             pos.make_move(move);
+            irreversible = pos.halfmove_clock == 0
+                || castling_rights(pos) != rights_before;
             return true;
         }
     }
@@ -37,7 +70,7 @@ bool apply_uci_move(chess::Position& pos, const std::string& uci) {
 void set_position(
     chess::Position& pos,
     std::vector<chess::HashKey>& history,
-    chess::NnueSearcherV38& searcher,
+    UciSearcher& searcher,
     std::istringstream& input
 ) {
     std::string token;
@@ -71,8 +104,12 @@ void set_position(
     searcher.clear_tt();
     if (token == "moves") {
         while (input >> token) {
-            if (!apply_uci_move(pos, token)) {
+            bool irreversible = false;
+            if (!apply_uci_move(pos, token, irreversible)) {
                 break;
+            }
+            if (irreversible) {
+                history.clear();
             }
             history.push_back(pos.zobrist_key);
         }
@@ -187,7 +224,7 @@ chess::Move choose_non_drawing_alternative(
 void set_option(
     std::istringstream& input,
     AdapterOptions& adapter,
-    chess::NnueSearcherV38& searcher
+    UciSearcher& searcher
 ) {
     std::string token;
     input >> token;
@@ -213,6 +250,16 @@ void set_option(
         else if (name == "LmrMinMoveIndex") config.lmr_min_move_index = std::stoul(value);
         else if (name == "NullMoveMinDepth") config.null_move_min_depth = std::stoi(value);
         else if (name == "NullMoveReduction") config.null_move_reduction = std::stoi(value);
+        else if (name == "RfpEnabled") config.enable_reverse_futility = value == "true";
+        else if (name == "RfpMaxDepth") config.reverse_futility_max_depth = std::stoi(value);
+        else if (name == "RfpBaseMargin") config.reverse_futility_base_margin = std::stoi(value);
+        else if (name == "RfpMarginPerDepth") config.reverse_futility_margin_per_depth = std::stoi(value);
+        else if (name == "LmpEnabled") config.enable_late_move_pruning = value == "true";
+        else if (name == "LmpMaxDepth") config.late_move_pruning_max_depth = std::stoi(value);
+        else if (name == "LmpBase") config.late_move_pruning_base = std::stoul(value);
+        else if (name == "LmpDepthMultiplier") config.late_move_pruning_depth_multiplier = std::stoul(value);
+        else if (name == "QseeEnabled") config.enable_qsearch_see_pruning = value == "true";
+        else if (name == "QseeThreshold") config.qsearch_see_threshold = std::stoi(value);
         searcher.set_selective_config(config);
         searcher.clear_tt();
     } catch (...) {
@@ -235,14 +282,16 @@ int main(int argc, char** argv) {
         std::cerr << "Failed to load NNUE model: " << model_path << '\n';
         return 2;
     }
-    chess::NnueSearcherV38 searcher(model);
+    UciSearcher searcher(model);
     auto selective_config = searcher.selective_config();
+#if !defined(CHESS_UCI_NNUE_V40) && !defined(CHESS_UCI_NNUE_V41)
     selective_config.lmr_base = 0.5;
     selective_config.lmr_divisor = 2.45;
     selective_config.lmr_min_depth = 4;
     selective_config.lmr_min_move_index = 5;
     selective_config.null_move_min_depth = 2;
     selective_config.null_move_reduction = 3;
+#endif
     searcher.set_selective_config(selective_config);
     chess::Position pos;
     pos.set_startpos();
@@ -255,18 +304,36 @@ int main(int argc, char** argv) {
         std::string command;
         input >> command;
         if (command == "uci") {
-            std::cout << "id name ChessNNUEV38\n"
+            const auto& config = searcher.selective_config();
+            std::cout << "id name " << EngineName << '\n'
                       << "id author TungLamNguyen\n"
+                      << "info string nnue_kernel="
+                      << model.forward_kernel_name()
+                      << '\n';
+#if !defined(CHESS_UCI_NNUE_V41)
+            std::cout
                       << "option name AvoidDraw type check default true\n"
                       << "option name AvoidDrawMinCp type spin default 120 min 0 max 2000\n"
-                      << "option name AvoidDrawMaxLossCp type spin default 80 min 0 max 1000\n"
+                      << "option name AvoidDrawMaxLossCp type spin default 80 min 0 max 1000\n";
+#endif
+            std::cout
                       << "option name MoveOverhead type spin default 200 min 0 max 5000\n"
-                      << "option name LmrBase type string default 0.5\n"
-                      << "option name LmrDivisor type string default 2.45\n"
-                      << "option name LmrMinDepth type spin default 4 min 1 max 16\n"
-                      << "option name LmrMinMoveIndex type spin default 5 min 1 max 64\n"
-                      << "option name NullMoveMinDepth type spin default 2 min 1 max 16\n"
-                      << "option name NullMoveReduction type spin default 3 min 1 max 8\n"
+                      << "option name LmrBase type string default " << config.lmr_base << '\n'
+                      << "option name LmrDivisor type string default " << config.lmr_divisor << '\n'
+                      << "option name LmrMinDepth type spin default " << config.lmr_min_depth << " min 1 max 16\n"
+                      << "option name LmrMinMoveIndex type spin default " << config.lmr_min_move_index << " min 1 max 64\n"
+                      << "option name NullMoveMinDepth type spin default " << config.null_move_min_depth << " min 1 max 16\n"
+                      << "option name NullMoveReduction type spin default " << config.null_move_reduction << " min 1 max 8\n"
+                      << "option name RfpEnabled type check default " << (config.enable_reverse_futility ? "true" : "false") << '\n'
+                      << "option name RfpMaxDepth type spin default " << config.reverse_futility_max_depth << " min 1 max 16\n"
+                      << "option name RfpBaseMargin type spin default " << config.reverse_futility_base_margin << " min 0 max 5000\n"
+                      << "option name RfpMarginPerDepth type spin default " << config.reverse_futility_margin_per_depth << " min 0 max 5000\n"
+                      << "option name LmpEnabled type check default " << (config.enable_late_move_pruning ? "true" : "false") << '\n'
+                      << "option name LmpMaxDepth type spin default " << config.late_move_pruning_max_depth << " min 1 max 16\n"
+                      << "option name LmpBase type spin default " << config.late_move_pruning_base << " min 1 max 128\n"
+                      << "option name LmpDepthMultiplier type spin default " << config.late_move_pruning_depth_multiplier << " min 0 max 32\n"
+                      << "option name QseeEnabled type check default " << (config.enable_qsearch_see_pruning ? "true" : "false") << '\n'
+                      << "option name QseeThreshold type spin default " << config.qsearch_see_threshold << " min -2000 max 2000\n"
                       << "uciok" << std::endl;
         } else if (command == "isready") {
             std::cout << "readyok" << std::endl;
@@ -281,9 +348,16 @@ int main(int argc, char** argv) {
         } else if (command == "go") {
             const chess::SearchLimits limits =
                 parse_go_limits(input, pos.side_to_move, adapter);
-            chess::SearchResult result = searcher.search_best_move(pos, limits);
+            chess::SearchResult result =
+#if defined(CHESS_UCI_NNUE_V41)
+                searcher.search_best_move(pos, limits, history);
+#else
+                searcher.search_best_move(pos, limits);
+#endif
+#if !defined(CHESS_UCI_NNUE_V41)
             result.best_move = choose_non_drawing_alternative(
                 pos, history, model, result, adapter);
+#endif
             std::cout << "info depth " << result.depth << " score cp " << result.score
                       << " nodes " << result.nodes << '\n'
                       << "bestmove " << chess::move_to_string(result.best_move)

@@ -77,6 +77,28 @@ private:
     PhaseQuantizedNnueUndo undo_;
 };
 
+class ScopedRepetitionStatsCommit {
+public:
+    ScopedRepetitionStatsCommit(
+        RepetitionStack::Stats& destination,
+        const RepetitionStack& source
+    ) noexcept
+        : destination_(destination), source_(source) {
+        destination_ = {};
+    }
+
+    ~ScopedRepetitionStatsCommit() noexcept {
+        destination_ = source_.stats();
+    }
+
+    ScopedRepetitionStatsCommit(const ScopedRepetitionStatsCommit&) = delete;
+    ScopedRepetitionStatsCommit& operator=(const ScopedRepetitionStatsCommit&) = delete;
+
+private:
+    RepetitionStack::Stats& destination_;
+    const RepetitionStack& source_;
+};
+
 SearchResult ensure_legal_root_move(
     const Position& pos,
     SearchResult result
@@ -126,6 +148,62 @@ void NnueSearcherV38::make_null_move(Position& pos) {
     }
     pos.zobrist_key ^= zobrist::side_key();
     pos.side_to_move = opposite(pos.side_to_move);
+}
+
+bool NnueSearcherV38::castling_rights_changed(
+    const PositionStateSnapshot& before,
+    const Position& after
+) {
+    const std::uint8_t after_rights = static_cast<std::uint8_t>(
+        (after.white_can_castle_kingside ? 1 : 0)
+        | (after.white_can_castle_queenside ? 2 : 0)
+        | (after.black_can_castle_kingside ? 4 : 0)
+        | (after.black_can_castle_queenside ? 8 : 0));
+    return before.castling_rights != after_rights;
+}
+
+void NnueSearcherV38::initialize_repetition(
+    SearchState& state,
+    const Position& pos,
+    std::span<const HashKey> game_history
+) const {
+    state.repetition.reset(game_history, pos.zobrist_key, pos.halfmove_clock);
+}
+
+bool NnueSearcherV38::history_draw(
+    const Position& pos,
+    SearchState& state
+) const {
+    if (!state.repetition_enabled || state.in_null_move) {
+        return false;
+    }
+    if (state.repetition.current_is_threefold()) {
+        state.repetition.record_threefold_draw();
+        return true;
+    }
+    if (pos.halfmove_clock < 100) {
+        return false;
+    }
+
+    // A claimable 50-move draw does not override checkmate. Generating moves
+    // is confined to the extremely rare >=100-and-in-check case; the usual
+    // hot path is only the predictable halfmove_clock comparison above.
+    if (in_check(pos, pos.side_to_move)
+        && generate_legal_moves(pos).empty()) {
+        return false;
+    }
+    state.repetition.record_fifty_move_draw();
+    return true;
+}
+
+bool NnueSearcherV38::allow_repetition_tt_score(SearchState& state) const {
+    if (!state.repetition_enabled
+        || state.in_null_move
+        || !state.repetition.has_twofold_position()) {
+        return true;
+    }
+    state.repetition.record_tt_score_suppression();
+    return false;
 }
 
 void NnueSearcherV38::reward_quiet_cutoff(
@@ -242,12 +320,17 @@ NnueSearcherV38::SearchValue NnueSearcherV38::quiescence(
     int beta,
     int ply,
     int q_depth,
-    SearchState& state
+    SearchState& state,
+    bool check_current_repetition
 ) {
     assert(alpha < beta);
     ++state.nodes;
 
     if (should_stop(state)) {
+        return SearchValue{exact_range(0)};
+    }
+
+    if (check_current_repetition && history_draw(pos, state)) {
         return SearchValue{exact_range(0)};
     }
 
@@ -260,9 +343,21 @@ NnueSearcherV38::SearchValue NnueSearcherV38::quiescence(
     };
     const KingSafetyContext king_safety = current_king_safety_context(pos);
     const bool side_in_check = king_safety.checkers != EmptyBB;
-    auto generate_qsearch_capture_stage = [&]() {
+    auto generate_qsearch_capture_stage = [&](bool allow_see_pruning) {
         ScoredMoveList moves;
         auto score_move = [&](Move move, PieceType moved_piece, PieceType captured_piece) {
+            if (allow_see_pruning
+                && selective_config_.enable_qsearch_see_pruning) {
+                ++selective_stats_.qsearch_see_evaluations;
+                const int see = static_exchange_eval(
+                    pos, move, moved_piece, captured_piece);
+                if (see < selective_config_.qsearch_see_threshold
+                    && !gives_check_fast(
+                        pos, move, moved_piece, captured_piece)) {
+                    ++selective_stats_.qsearch_see_pruned_moves;
+                    return;
+                }
+            }
             moves.push_back(make_qsearch_scored_move<true, false>(
                 move, moved_piece, captured_piece));
         };
@@ -292,6 +387,16 @@ NnueSearcherV38::SearchValue NnueSearcherV38::quiescence(
                 scored_move.move,
                 moved_piece,
                 captured_piece);
+            const ScopedRepetitionPush repetition_push(
+                state.repetition_enabled && !state.in_null_move
+                    ? &state.repetition
+                    : nullptr,
+                pos.zobrist_key,
+                pos.halfmove_clock == 0
+                    || ((moved_piece == PieceType::King
+                         || moved_piece == PieceType::Rook)
+                        && castling_rights_changed(get_node_snapshot(), pos)),
+                pos.halfmove_clock);
             const ScopedNnueUpdate nnue_update(
                 state.accumulator,
                 scored_move.move,
@@ -305,7 +410,8 @@ NnueSearcherV38::SearchValue NnueSearcherV38::quiescence(
                 -alpha,
                 ply + 1,
                 q_depth + 1,
-                state);
+                state,
+                true);
             move_range = negate_range(child.range);
         }
         if (state.stopped) {
@@ -362,7 +468,8 @@ NnueSearcherV38::SearchValue NnueSearcherV38::quiescence(
             return SearchValue{ScoreRange{node_range.lower, Infinity}};
         }
 
-        const ScoredMoveList capture_moves = generate_qsearch_capture_stage();
+        const ScoredMoveList capture_moves =
+            generate_qsearch_capture_stage(false);
         has_legal_move = has_legal_move || !capture_moves.empty();
         if (q_depth < MaxCheckEvasionQuiescenceDepth
             && search_qsearch_stage(capture_moves, node_range)) {
@@ -411,7 +518,7 @@ NnueSearcherV38::SearchValue NnueSearcherV38::quiescence(
         return SearchValue{ScoreRange{node_range.lower, Infinity}};
     }
 
-    const ScoredMoveList capture_moves = generate_qsearch_capture_stage();
+    const ScoredMoveList capture_moves = generate_qsearch_capture_stage(true);
     if (search_qsearch_stage(capture_moves, node_range)) {
         if (state.stopped) {
             return SearchValue{exact_range(0)};
@@ -440,13 +547,26 @@ NnueSearcherV38::SearchValue NnueSearcherV38::negamax(
         return SearchValue{exact_range(0)};
     }
 
-    TTProbeResult tt_probe = probe_tt(pos.zobrist_key, depth, alpha, beta, ply, true);
+
+    if (history_draw(pos, state)) {
+        return SearchValue{exact_range(0)};
+    }
+
+    const bool allow_tt_score = allow_repetition_tt_score(state);
+    TTProbeResult tt_probe = probe_tt(
+        pos.zobrist_key,
+        depth,
+        alpha,
+        beta,
+        ply,
+        true,
+        allow_tt_score);
     if (tt_probe.hit) {
         return SearchValue{tt_probe.range};
     }
 
     if (depth == 0) {
-        return quiescence(pos, alpha, beta, ply, 0, state);
+        return quiescence(pos, alpha, beta, ply, 0, state, false);
     }
 
     const bool reverse_futility_allowed =
@@ -553,6 +673,16 @@ NnueSearcherV38::SearchValue NnueSearcherV38::negamax(
                     scored_move.move,
                     moved_piece,
                     captured_piece);
+                const ScopedRepetitionPush repetition_push(
+                    state.repetition_enabled && !state.in_null_move
+                        ? &state.repetition
+                        : nullptr,
+                    pos.zobrist_key,
+                    pos.halfmove_clock == 0
+                        || ((moved_piece == PieceType::King
+                             || moved_piece == PieceType::Rook)
+                            && castling_rights_changed(get_node_snapshot(), pos)),
+                    pos.halfmove_clock);
                 const ScopedNnueUpdate nnue_update(
                     state.accumulator,
                     scored_move.move,
@@ -595,7 +725,8 @@ NnueSearcherV38::SearchValue NnueSearcherV38::negamax(
                     node_range,
                     best_lower_move,
                     best_upper_move,
-                    fallback_best_move);
+                    fallback_best_move,
+                    allow_tt_score);
                 return SearchValue{node_range};
             }
             ++searched_move_count;
@@ -629,6 +760,16 @@ NnueSearcherV38::SearchValue NnueSearcherV38::negamax(
                 scored_move.move,
                 moved_piece,
                 captured_piece);
+            const ScopedRepetitionPush repetition_push(
+                state.repetition_enabled && !state.in_null_move
+                    ? &state.repetition
+                    : nullptr,
+                pos.zobrist_key,
+                pos.halfmove_clock == 0
+                    || ((moved_piece == PieceType::King
+                         || moved_piece == PieceType::Rook)
+                        && castling_rights_changed(get_node_snapshot(), pos)),
+                pos.halfmove_clock);
             const ScopedNnueUpdate nnue_update(
                 state.accumulator,
                 scored_move.move,
@@ -929,7 +1070,15 @@ NnueSearcherV38::SearchValue NnueSearcherV38::negamax(
     }
     assert(node_range.lower <= node_range.upper);
 
-    store_tt_if_needed(pos.zobrist_key, depth, ply, node_range, best_lower_move, best_upper_move, fallback_best_move);
+    store_tt_if_needed(
+        pos.zobrist_key,
+        depth,
+        ply,
+        node_range,
+        best_lower_move,
+        best_upper_move,
+        fallback_best_move,
+        allow_tt_score);
 
     return SearchValue{node_range};
 }
@@ -964,13 +1113,22 @@ NnueSearcherV38::RootSearchResult NnueSearcherV38::search_fixed_depth(
     result.depth = depth;
 
     if (depth == 0) {
-        root_result.range = quiescence(pos, -Infinity, Infinity, 0, 0, state).range;
+        root_result.range = quiescence(
+            pos, -Infinity, Infinity, 0, 0, state, true).range;
         result.score = representative_score(root_result.range);
         result.nodes = state.nodes;
         return root_result;
     }
 
-    TTProbeResult tt_probe = probe_tt(pos.zobrist_key, depth, alpha, beta, 0, allow_root_tt_probe);
+    const bool allow_tt_score = allow_repetition_tt_score(state);
+    TTProbeResult tt_probe = probe_tt(
+        pos.zobrist_key,
+        depth,
+        alpha,
+        beta,
+        0,
+        allow_root_tt_probe,
+        allow_tt_score);
     if (tt_probe.hit) {
         const Move tt_best_move = preferred_tt_move(tt_probe.moves);
         if (is_valid_move(tt_best_move)) {
@@ -1019,6 +1177,16 @@ NnueSearcherV38::RootSearchResult NnueSearcherV38::search_fixed_depth(
                     scored_move.move,
                     moved_piece,
                     captured_piece);
+                const ScopedRepetitionPush repetition_push(
+                    state.repetition_enabled
+                        ? &state.repetition
+                        : nullptr,
+                    pos.zobrist_key,
+                    pos.halfmove_clock == 0
+                        || ((moved_piece == PieceType::King
+                             || moved_piece == PieceType::Rook)
+                            && castling_rights_changed(node_snapshot, pos)),
+                    pos.halfmove_clock);
                 const ScopedNnueUpdate nnue_update(
                     state.accumulator,
                     scored_move.move,
@@ -1080,6 +1248,16 @@ NnueSearcherV38::RootSearchResult NnueSearcherV38::search_fixed_depth(
                 scored_move.move,
                 moved_piece,
                 captured_piece);
+            const ScopedRepetitionPush repetition_push(
+                state.repetition_enabled
+                    ? &state.repetition
+                    : nullptr,
+                pos.zobrist_key,
+                pos.halfmove_clock == 0
+                    || ((moved_piece == PieceType::King
+                         || moved_piece == PieceType::Rook)
+                        && castling_rights_changed(node_snapshot, pos)),
+                pos.halfmove_clock);
             const ScopedNnueUpdate nnue_update(
                 state.accumulator,
                 scored_move.move,
@@ -1246,7 +1424,15 @@ NnueSearcherV38::RootSearchResult NnueSearcherV38::search_fixed_depth(
         result.best_move = make_fallback_result(pos).best_move;
     }
 
-    store_tt_if_needed(pos.zobrist_key, depth, 0, root_range, best_lower_move, best_upper_move, fallback_best_move);
+    store_tt_if_needed(
+        pos.zobrist_key,
+        depth,
+        0,
+        root_range,
+        best_lower_move,
+        best_upper_move,
+        fallback_best_move,
+        allow_tt_score);
 
     result.nodes = state.nodes;
     return root_result;
@@ -1261,9 +1447,39 @@ SearchResult NnueSearcherV38::search_root_without_tt_probe(
 }
 
 SearchResult NnueSearcherV38::search_best_move(const Position& pos, int depth) {
+    return search_best_move_impl(pos, depth, {}, false);
+}
+
+SearchResult NnueSearcherV38::search_best_move(
+    const Position& pos,
+    int depth,
+    std::span<const HashKey> game_history
+) {
+    return search_best_move_impl(pos, depth, game_history, true);
+}
+
+SearchResult NnueSearcherV38::search_best_move_impl(
+    const Position& pos,
+    int depth,
+    std::span<const HashKey> game_history,
+    bool enable_repetition
+) {
     killer_table_.clear();
     counter_move_table_.clear();
     SearchState state;
+    const ScopedRepetitionStatsCommit repetition_stats_commit(
+        repetition_stats_, state.repetition);
+    state.repetition_enabled = enable_repetition;
+    if (enable_repetition) {
+        initialize_repetition(state, pos, game_history);
+        if (history_draw(pos, state)) {
+            SearchResult result = make_fallback_result(pos);
+            result.score = 0;
+            result.depth = depth;
+            result.nodes = 1;
+            return ensure_legal_root_move(pos, result);
+        }
+    }
     RootSearchResult current = search_fixed_depth(pos, depth, state);
     if (!current.result.stopped && !state.stopped && !is_exact_range(current.range)) {
         current = search_fixed_depth(pos, depth, state, -Infinity, Infinity, false);
@@ -1272,6 +1488,23 @@ SearchResult NnueSearcherV38::search_best_move(const Position& pos, int depth) {
 }
 
 SearchResult NnueSearcherV38::search_best_move(const Position& pos, const SearchLimits& limits) {
+    return search_best_move_impl(pos, limits, {}, false);
+}
+
+SearchResult NnueSearcherV38::search_best_move(
+    const Position& pos,
+    const SearchLimits& limits,
+    std::span<const HashKey> game_history
+) {
+    return search_best_move_impl(pos, limits, game_history, true);
+}
+
+SearchResult NnueSearcherV38::search_best_move_impl(
+    const Position& pos,
+    const SearchLimits& limits,
+    std::span<const HashKey> game_history,
+    bool enable_repetition
+) {
     assert(limits.max_depth >= 0);
 
     killer_table_.clear();
@@ -1280,6 +1513,17 @@ SearchResult NnueSearcherV38::search_best_move(const Position& pos, const Search
     best.depth = 0;
 
     SearchState state;
+    const ScopedRepetitionStatsCommit repetition_stats_commit(
+        repetition_stats_, state.repetition);
+    state.repetition_enabled = enable_repetition;
+    if (enable_repetition) {
+        initialize_repetition(state, pos, game_history);
+        if (history_draw(pos, state)) {
+            best.score = 0;
+            best.nodes = 1;
+            return ensure_legal_root_move(pos, best);
+        }
+    }
     state.has_deadline = limits.move_time.count() > 0;
     if (state.has_deadline) {
         state.deadline = Clock::now() + limits.move_time;

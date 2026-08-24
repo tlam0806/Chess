@@ -8,11 +8,13 @@
 #include "counter_history_table.hpp"
 #include "king_safety.hpp"
 #include "phase_quantized_nnue.hpp"
+#include "repetition_stack.hpp"
 
 #include <array>
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <span>
 #include <vector>
 
 namespace chess {
@@ -76,6 +78,8 @@ public:
         int late_move_pruning_max_depth = 3;
         std::size_t late_move_pruning_base = 4;
         std::size_t late_move_pruning_depth_multiplier = 2;
+        bool enable_qsearch_see_pruning = false;
+        int qsearch_see_threshold = -200;
     };
     struct SelectiveStats {
         std::uint64_t lmr_searches = 0;
@@ -86,6 +90,8 @@ public:
         std::uint64_t reverse_futility_cutoffs = 0;
         std::uint64_t late_move_pruned_nodes = 0;
         std::uint64_t late_move_pruned_moves = 0;
+        std::uint64_t qsearch_see_evaluations = 0;
+        std::uint64_t qsearch_see_pruned_moves = 0;
     };
     explicit NnueSearcherV38(
         const PhaseQuantizedNnueModel& model,
@@ -117,9 +123,20 @@ public:
 
     SearchResult search_best_move(const Position& pos, int depth) override;
     SearchResult search_best_move(const Position& pos, const SearchLimits& limits) override;
+    SearchResult search_best_move(
+        const Position& pos,
+        int depth,
+        std::span<const HashKey> game_history
+    );
+    SearchResult search_best_move(
+        const Position& pos,
+        const SearchLimits& limits,
+        std::span<const HashKey> game_history
+    );
     std::string_view name() const override;
 
     void clear_tt();
+    void clear_search_heuristics();
     std::size_t tt_entry_count() const;
     void clear_tt_stats();
     const RangeTranspositionTableStats& tt_stats() const;
@@ -128,6 +145,7 @@ public:
     void set_move_ordering_stats_enabled(bool enabled);
     void clear_selective_stats();
     const SelectiveStats& selective_stats() const;
+    const RepetitionStack::Stats& repetition_stats() const;
     void set_selective_config(SelectiveConfig config);
     const SelectiveConfig& selective_config() const;
 
@@ -139,6 +157,8 @@ private:
         bool has_deadline = false;
         bool stopped = false;
         bool in_null_move = false;
+        bool repetition_enabled = false;
+        RepetitionStack repetition;
     };
     enum class ScoringMode {
         MainSearch,
@@ -221,7 +241,8 @@ private:
         int beta,
         int ply,
         int q_depth,
-        SearchState& state
+        SearchState& state,
+        bool check_current_repetition
     );
 
     SearchResult make_fallback_result(const Position& pos) const;
@@ -334,7 +355,8 @@ private:
         int& alpha,
         int& beta,
         int ply,
-        bool allow_probe
+        bool allow_probe,
+        bool allow_score
     ) const;
     bool should_store_tt(ScoreRange range) const;
     int score_to_tt(int score, int ply) const;
@@ -353,7 +375,8 @@ private:
         ScoreRange range,
         Move best_lower_move,
         Move best_upper_move,
-        Move fallback_best_move
+        Move fallback_best_move,
+        bool allow_store
     );
     void reward_quiet_cutoff(
         Color side_to_move,
@@ -381,6 +404,29 @@ private:
         const SearchState& state
     ) const;
     static void make_null_move(Position& pos);
+    static bool castling_rights_changed(
+        const PositionStateSnapshot& before,
+        const Position& after
+    );
+    bool history_draw(const Position& pos, SearchState& state) const;
+    bool allow_repetition_tt_score(SearchState& state) const;
+    void initialize_repetition(
+        SearchState& state,
+        const Position& pos,
+        std::span<const HashKey> game_history
+    ) const;
+    SearchResult search_best_move_impl(
+        const Position& pos,
+        int depth,
+        std::span<const HashKey> game_history,
+        bool enable_repetition
+    );
+    SearchResult search_best_move_impl(
+        const Position& pos,
+        const SearchLimits& limits,
+        std::span<const HashKey> game_history,
+        bool enable_repetition
+    );
     LowerMoveRangeBucketTranspositionTable tt_;
     KillerMoveTable killer_table_;
     CounterMoveTable counter_move_table_;
@@ -391,6 +437,7 @@ private:
     MoveOrderingStats move_ordering_stats_{};
     SelectiveConfig selective_config_{};
     SelectiveStats selective_stats_{};
+    RepetitionStack::Stats repetition_stats_{};
     bool move_ordering_stats_enabled_ = false;
 };
 

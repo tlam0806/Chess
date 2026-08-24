@@ -27,6 +27,8 @@ class PhaseQuantizedNnueAccumulator;
 class PhaseQuantizedNnueModel {
 public:
     static constexpr std::size_t FeatureRowCount = 6 * 2 * 64 * 64;
+    static constexpr std::size_t HorizontalMirrorFeatureRowCount =
+        6 * 2 * 32 * 64;
     static constexpr std::size_t PerspectiveAccumulatorSize = 128;
     static constexpr std::size_t DenseInputSize = 2 * PerspectiveAccumulatorSize;
     static constexpr std::size_t Hidden2Size = 32;
@@ -43,7 +45,15 @@ public:
     bool load(std::string_view path);
 
     [[nodiscard]] bool loaded() const {
-        return feature_rows_.size() == FeatureRowCount;
+        return feature_row_count_ != 0
+            && feature_rows_.size() == feature_row_count_;
+    }
+
+    [[nodiscard]] bool uses_horizontal_mirror() const {
+        return horizontal_mirror_;
+    }
+    [[nodiscard]] std::size_t feature_row_count() const {
+        return feature_row_count_;
     }
 
     [[nodiscard]] int evaluate_cp_rounded(const Position& pos) const;
@@ -64,9 +74,17 @@ public:
     [[nodiscard]] bool has_candidate_kernel() const {
         return candidate_kernel_ != nullptr;
     }
+    [[nodiscard]] bool uses_accelerated_kernel() const;
+    [[nodiscard]] std::string_view forward_kernel_name() const;
+    void set_accelerated_kernel_enabled(bool enabled) {
+        accelerated_kernel_enabled_ = enabled;
+    }
+
+    // Backwards-compatible aliases retained for the existing tools.  The
+    // selected accelerated kernel may now be ARM NEON, x86 VNNI, or AVX2.
     [[nodiscard]] bool uses_neon_dotprod_kernel() const;
     void set_neon_dotprod_enabled(bool enabled) {
-        neon_dotprod_enabled_ = enabled;
+        set_accelerated_kernel_enabled(enabled);
     }
 
 private:
@@ -105,7 +123,7 @@ private:
         std::size_t phase_index
     ) const;
 
-    void initialize_candidate_kernel();
+    [[nodiscard]] bool initialize_candidate_kernel();
 
     [[nodiscard]] int evaluate(
         const Position& pos,
@@ -113,6 +131,7 @@ private:
             std::array<std::int32_t, PerspectiveAccumulatorSize>, 2>& accumulators,
         const std::array<
             std::array<std::int32_t, PsqtBucketCount>, 2>& psqt_accumulators,
+        const std::array<std::uint8_t, 2>& square_xor_masks,
         std::size_t piece_count
     ) const;
 
@@ -125,7 +144,9 @@ private:
     std::uint32_t linear_weight_scale_ = 0;
     std::uint32_t output_weight_scale_ = 0;
     std::uint32_t psqt_scale_ = 0;
-    bool neon_dotprod_enabled_ = true;
+    bool accelerated_kernel_enabled_ = true;
+    bool horizontal_mirror_ = false;
+    std::size_t feature_row_count_ = 0;
 
     std::array<std::int32_t, PerspectiveAccumulatorSize> accumulator_bias_{};
     std::vector<FeatureRow> feature_rows_;
@@ -181,6 +202,8 @@ private:
         std::array<PerspectiveAccumulator, 2> accumulators;
         std::array<PsqtAccumulator, 2> psqt;
         std::array<Square, 2> king_squares;
+        std::array<std::uint8_t, 2> square_xor_masks;
+        std::array<std::size_t, 2> king_row_bases;
         std::size_t piece_count;
     };
 

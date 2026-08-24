@@ -1,6 +1,6 @@
 #pragma once
 
-#include "nnue_searcher_v38.hpp"
+#include "nnue_searcher_v39.hpp"
 
 #include <cstddef>
 #include <span>
@@ -8,39 +8,21 @@
 
 namespace chess {
 
-class NnueSearcherV39 final : public Searcher {
+class NnueSearcherV40 final : public Searcher {
 public:
-    using CutoffStage = NnueSearcherV38::CutoffStage;
-    using MoveOrderingStats = NnueSearcherV38::MoveOrderingStats;
-    using MoveOrderingWeights = NnueSearcherV38::MoveOrderingWeights;
-    using SelectiveStats = NnueSearcherV38::SelectiveStats;
+    using CutoffStage = NnueSearcherV39::CutoffStage;
+    using MoveOrderingStats = NnueSearcherV39::MoveOrderingStats;
+    using MoveOrderingWeights = NnueSearcherV39::MoveOrderingWeights;
+    using SelectiveStats = NnueSearcherV39::SelectiveStats;
 
-    struct SelectiveConfig {
-        bool enable_lmr = true;
-        double lmr_base = 0.45;
-        double lmr_divisor = 2.9;
-        int lmr_min_depth = 3;
-        std::size_t lmr_min_move_index = 6;
-        bool enable_null_move = true;
-        int null_move_min_depth = 2;
-        int null_move_reduction = 3;
-
-        bool enable_reverse_futility = true;
-        int reverse_futility_max_depth = 2;
-        int reverse_futility_base_margin = 175;
-        int reverse_futility_margin_per_depth = 275;
-
-        bool enable_late_move_pruning = true;
-        int late_move_pruning_max_depth = 3;
-        std::size_t late_move_pruning_base = 4;
-        std::size_t late_move_pruning_depth_multiplier = 2;
-
-        // Kept disabled so V39 remains the validated Fast control.
-        bool enable_qsearch_see_pruning = false;
-        int qsearch_see_threshold = -200;
+    struct SelectiveConfig : NnueSearcherV39::SelectiveConfig {
+        SelectiveConfig() {
+            enable_qsearch_see_pruning = true;
+            qsearch_see_threshold = -75;
+        }
     };
 
-    explicit NnueSearcherV39(
+    explicit NnueSearcherV40(
         const PhaseQuantizedNnueModel& model,
         std::size_t tt_mb = 64,
         std::size_t bucket_size = 4,
@@ -48,7 +30,7 @@ public:
         int history_penalty_divisor_denominator = 14,
         int counter_history_bonus = 14'000
     );
-    NnueSearcherV39(
+    NnueSearcherV40(
         const PhaseQuantizedNnueModel& model,
         std::size_t tt_mb,
         std::size_t bucket_size,
@@ -57,7 +39,7 @@ public:
         int counter_history_bonus,
         MoveOrderingWeights weights
     );
-    NnueSearcherV39(
+    NnueSearcherV40(
         const PhaseQuantizedNnueModel& model,
         std::size_t tt_mb,
         std::size_t bucket_size,
@@ -100,12 +82,8 @@ public:
     const SelectiveConfig& selective_config() const;
 
 private:
-    static NnueSearcherV38::SelectiveConfig to_v38_config(
-        const SelectiveConfig& config
-    );
-
     SelectiveConfig selective_config_{};
-    NnueSearcherV38 searcher_;
+    NnueSearcherV39 searcher_;
 };
 
 } // namespace chess

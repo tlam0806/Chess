@@ -28,7 +28,8 @@ namespace chess {
 namespace {
 
 constexpr std::array<char, 8> Magic{'Q', 'P', 'H', 'N', 'U', 'E', '1', '\0'};
-constexpr std::uint32_t Version = 1;
+constexpr std::uint32_t LegacyVersion = 1;
+constexpr std::uint32_t HorizontalMirrorVersion = 2;
 constexpr std::int64_t MaximumPositionPieces = 64;
 constexpr std::int64_t MaximumAbsInt8 = 128;
 constexpr std::int64_t PositionalAccumulatorHeadroom =
@@ -80,17 +81,26 @@ bool can_castle_queenside(const Position& pos, Color color) {
 }
 
 std::array<std::uint8_t, PhaseQuantizedNnueModel::AuxFeatureCount>
-aux_features(const Position& pos, Color perspective) {
+aux_features(
+    const Position& pos,
+    Color perspective,
+    std::uint8_t horizontal_mirror_mask
+) {
     std::array<std::uint8_t, PhaseQuantizedNnueModel::AuxFeatureCount> aux{};
     const Color enemy = opposite(perspective);
-    aux[FriendlyCanCastleKingside] = can_castle_kingside(pos, perspective);
-    aux[FriendlyCanCastleQueenside] = can_castle_queenside(pos, perspective);
-    aux[EnemyCanCastleKingside] = can_castle_kingside(pos, enemy);
-    aux[EnemyCanCastleQueenside] = can_castle_queenside(pos, enemy);
+    const bool mirrored = horizontal_mirror_mask != 0;
+    aux[mirrored ? FriendlyCanCastleQueenside : FriendlyCanCastleKingside] =
+        can_castle_kingside(pos, perspective);
+    aux[mirrored ? FriendlyCanCastleKingside : FriendlyCanCastleQueenside] =
+        can_castle_queenside(pos, perspective);
+    aux[mirrored ? EnemyCanCastleQueenside : EnemyCanCastleKingside] =
+        can_castle_kingside(pos, enemy);
+    aux[mirrored ? EnemyCanCastleKingside : EnemyCanCastleQueenside] =
+        can_castle_queenside(pos, enemy);
     if (pos.en_passant_square != NoSquare) {
         const Square square = relative_square(perspective, pos.en_passant_square);
         aux[HasEnPassant] = 1;
-        aux[EnPassantFileA + file_of(square)] = 1;
+        aux[EnPassantFileA + (file_of(square) ^ horizontal_mirror_mask)] = 1;
     }
     return aux;
 }
@@ -188,9 +198,17 @@ bool PhaseQuantizedNnueModel::load(std::string_view path) {
     if (!read_array(input, header)) {
         return false;
     }
-    const std::array<std::uint32_t, 9> expected_prefix{
-        Version,
-        static_cast<std::uint32_t>(FeatureRowCount),
+    const bool legacy =
+        header[0] == LegacyVersion
+        && header[1] == static_cast<std::uint32_t>(FeatureRowCount);
+    const bool horizontal_mirror =
+        header[0] == HorizontalMirrorVersion
+        && header[1]
+            == static_cast<std::uint32_t>(HorizontalMirrorFeatureRowCount);
+    if (!legacy && !horizontal_mirror) {
+        return false;
+    }
+    const std::array<std::uint32_t, 7> expected_shape{
         static_cast<std::uint32_t>(PerspectiveAccumulatorSize),
         static_cast<std::uint32_t>(DenseInputSize),
         static_cast<std::uint32_t>(Hidden2Size),
@@ -199,33 +217,38 @@ bool PhaseQuantizedNnueModel::load(std::string_view path) {
         static_cast<std::uint32_t>(PsqtBucketCount),
         static_cast<std::uint32_t>(AuxFeatureCount),
     };
-    if (!std::equal(expected_prefix.begin(), expected_prefix.end(), header.begin())) {
+    if (!std::equal(
+            expected_shape.begin(), expected_shape.end(), header.begin() + 2)) {
         return false;
     }
-    for (std::size_t index = expected_prefix.size(); index < header.size(); ++index) {
+    for (std::size_t index = 9; index < header.size(); ++index) {
         if (header[index] == 0) {
             return false;
         }
     }
 
+    const std::size_t feature_row_count = horizontal_mirror
+        ? HorizontalMirrorFeatureRowCount
+        : FeatureRowCount;
+    const std::size_t king_square_count = horizontal_mirror ? 32 : 64;
     std::array<std::int32_t, PerspectiveAccumulatorSize> accumulator_bias{};
-    std::vector<FeatureRow> feature_rows(FeatureRowCount);
+    std::vector<FeatureRow> feature_rows(feature_row_count);
     std::array<std::int8_t, AuxFeatureCount * DenseInputSize> aux_weights{};
     std::array<DensePhase, PhaseCount> phases{};
     if (!read_array(input, accumulator_bias)) {
         return false;
     }
 
-    const auto runtime_feature_row = [](std::size_t disk_row) {
+    const auto runtime_feature_row = [king_square_count](std::size_t disk_row) {
         const std::size_t square = disk_row % 64;
         disk_row /= 64;
-        const std::size_t king = disk_row % 64;
-        disk_row /= 64;
+        const std::size_t king = disk_row % king_square_count;
+        disk_row /= king_square_count;
         const std::size_t piece_side = disk_row % 2;
         const std::size_t piece = disk_row / 2;
         return (((king * 6 + piece) * 2 + piece_side) * 64) + square;
     };
-    for (std::size_t disk_row = 0; disk_row < FeatureRowCount; ++disk_row) {
+    for (std::size_t disk_row = 0; disk_row < feature_row_count; ++disk_row) {
         if (!read_array(
                 input,
                 feature_rows[runtime_feature_row(disk_row)].positional)) {
@@ -235,7 +258,7 @@ bool PhaseQuantizedNnueModel::load(std::string_view path) {
     if (!read_array(input, aux_weights)) {
         return false;
     }
-    for (std::size_t disk_row = 0; disk_row < FeatureRowCount; ++disk_row) {
+    for (std::size_t disk_row = 0; disk_row < feature_row_count; ++disk_row) {
         if (!read_array(
                 input,
                 feature_rows[runtime_feature_row(disk_row)].psqt)) {
@@ -281,11 +304,21 @@ bool PhaseQuantizedNnueModel::load(std::string_view path) {
     linear_weight_scale_ = header[15];
     output_weight_scale_ = header[16];
     psqt_scale_ = header[17];
+    horizontal_mirror_ = horizontal_mirror;
+    feature_row_count_ = feature_row_count;
     accumulator_bias_ = accumulator_bias;
     feature_rows_ = std::move(feature_rows);
     aux_weights_ = aux_weights;
     phases_ = phases;
-    initialize_candidate_kernel();
+    if (!initialize_candidate_kernel()) {
+        // Backend selection is part of loading when the caller explicitly
+        // requests one.  Do not leave an object that reports loaded()==true
+        // after load() has returned false.
+        feature_rows_.clear();
+        feature_row_count_ = 0;
+        horizontal_mirror_ = false;
+        return false;
+    }
     return true;
 }
 
@@ -295,13 +328,17 @@ int PhaseQuantizedNnueModel::evaluate(
         std::array<std::int32_t, PerspectiveAccumulatorSize>, 2>& accumulators,
     const std::array<
         std::array<std::int32_t, PsqtBucketCount>, 2>& psqt_accumulators,
+    const std::array<std::uint8_t, 2>& square_xor_masks,
     std::size_t piece_count
 ) const {
     assert(loaded());
     assert(piece_count > 0 && piece_count <= MaximumPositionPieces);
     const std::size_t stm = color_index(pos.side_to_move);
     const std::size_t opponent = 1 - stm;
-    const auto aux = aux_features(pos, pos.side_to_move);
+    const auto aux = aux_features(
+        pos,
+        pos.side_to_move,
+        static_cast<std::uint8_t>(square_xor_masks[stm] & 7U));
 
     const auto fill_dense_input = [&](auto& dense_input) {
         std::copy(
@@ -326,7 +363,7 @@ int PhaseQuantizedNnueModel::evaluate(
     const std::size_t phase_index = std::min<std::size_t>(
         (piece_count - 1) / 4, PhaseCount - 1);
     std::int64_t positional = 0;
-    if (uses_neon_dotprod_kernel()) {
+    if (uses_accelerated_kernel()) {
         positional = forward_positional_candidate(
             accumulators[stm],
             accumulators[opponent],
@@ -409,10 +446,23 @@ void PhaseQuantizedNnueAccumulator::rebuild_perspective(
     assert(model_ != nullptr);
     NnueState& state = current_state();
     const std::size_t index = color_index(perspective);
-    state.king_squares[index] = relative_square(
-        perspective, king_square(pos, perspective));
-    const std::size_t king =
+    const std::uint8_t vertical_mask =
+        perspective == Color::Black ? 56U : 0U;
+    const Square relative_king = static_cast<Square>(
+        king_square(pos, perspective) ^ vertical_mask);
+    const std::uint8_t horizontal_mask =
+        model_->horizontal_mirror_ && file_of(relative_king) >= 4 ? 7U : 0U;
+    const std::uint8_t square_xor_mask = vertical_mask ^ horizontal_mask;
+    state.square_xor_masks[index] = square_xor_mask;
+    state.king_squares[index] = static_cast<Square>(
+        king_square(pos, perspective) ^ square_xor_mask);
+    const std::size_t canonical_king =
         static_cast<std::size_t>(state.king_squares[index]);
+    const std::size_t king = model_->horizontal_mirror_
+        ? static_cast<std::size_t>(rank_of(state.king_squares[index]) * 4
+            + file_of(state.king_squares[index]))
+        : canonical_king;
+    state.king_row_bases[index] = king * PieceTypes.size() * 2 * BoardSize;
 
     std::array<std::size_t, 64> active_rows{};
     std::size_t active_count = 0;
@@ -420,9 +470,8 @@ void PhaseQuantizedNnueAccumulator::rebuild_perspective(
         const std::size_t piece_side = piece_color == perspective ? 0 : 1;
         for (PieceType piece : PieceTypes) {
             const std::size_t piece_index = static_cast<std::size_t>(piece);
-            const std::size_t row_base =
-                ((king * PieceTypes.size() + piece_index) * 2 + piece_side)
-                * BoardSize;
+            const std::size_t row_base = state.king_row_bases[index]
+                + (piece_index * 2 + piece_side) * BoardSize;
             Bitboard pieces =
                 pos.pieces[static_cast<int>(piece_color)][static_cast<int>(piece)];
             while (pieces != EmptyBB) {
@@ -431,9 +480,9 @@ void PhaseQuantizedNnueAccumulator::rebuild_perspective(
                     static_cast<Square>(std::countr_zero(pieces));
                 pieces &= pieces - 1;
                 const std::size_t piece_square = static_cast<std::size_t>(
-                    relative_square(perspective, square));
+                    square ^ square_xor_mask);
                 const std::size_t row = row_base + piece_square;
-                assert(row < PhaseQuantizedNnueModel::FeatureRowCount);
+                assert(row < model_->feature_row_count_);
                 active_rows[active_count++] = row;
             }
         }
@@ -490,13 +539,13 @@ std::size_t PhaseQuantizedNnueAccumulator::feature_row(
     assert(is_valid_square(square));
     const std::size_t piece_index = static_cast<std::size_t>(piece);
     const std::size_t piece_side = piece_color == perspective ? 0 : 1;
-    const std::size_t king = static_cast<std::size_t>(
-        current_state().king_squares[color_index(perspective)]);
+    const std::size_t perspective_index = color_index(perspective);
     const std::size_t piece_square = static_cast<std::size_t>(
-        relative_square(perspective, square));
-    const std::size_t row = (((king * 6 + piece_index) * 2 + piece_side) * 64)
+        square ^ current_state().square_xor_masks[perspective_index]);
+    const std::size_t row = current_state().king_row_bases[perspective_index]
+        + (piece_index * 2 + piece_side) * 64
         + piece_square;
-    assert(row < PhaseQuantizedNnueModel::FeatureRowCount);
+    assert(row < model_->feature_row_count_);
     return row;
 }
 
@@ -723,6 +772,7 @@ int PhaseQuantizedNnueAccumulator::evaluate_cp_rounded(const Position& pos) cons
         pos,
         state.accumulators,
         state.psqt,
+        state.square_xor_masks,
         state.piece_count);
 }
 
@@ -737,6 +787,8 @@ bool PhaseQuantizedNnueAccumulator::matches_full_recompute(
     return state.accumulators == rebuilt_state.accumulators
         && state.psqt == rebuilt_state.psqt
         && state.king_squares == rebuilt_state.king_squares
+        && state.square_xor_masks == rebuilt_state.square_xor_masks
+        && state.king_row_bases == rebuilt_state.king_row_bases
         && state.piece_count == rebuilt_state.piece_count;
 }
 
