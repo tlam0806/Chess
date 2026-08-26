@@ -6,6 +6,11 @@ Status: **valid current-release measurement** on one Heroku Basic one-off
 dyno. This is a hotspot profile of the deployed V41 binary, not a fleet-wide
 Heroku performance claim.
 
+Historical scope: “current release” here means scalar release v10 at the time
+of measurement. After SIMD, the same hotspot fell from 89.15% to 24.50% of
+sampled CPU; see the
+[post-SIMD and LTO report](nnue_v41_post_simd_and_lto_20260825.md).
+
 The binary was the one deployed in Heroku release v10. That release was built
 from a staged dirty working tree rather than a clean repository commit, so the
 profile is reproducible and auditable at the archived-binary level, not from a

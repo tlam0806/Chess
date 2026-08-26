@@ -1,0 +1,477 @@
+{
+  "schema_version": 1,
+  "created_at": "2026-08-25",
+  "purpose": "Tracked compact evidence for the milestone audit and clean-snapshot revalidation. Raw paths under logs/ and reports/ are local and Git-ignored unless stated otherwise.",
+  "tracked_raw_bundle": {
+    "path": "docs/benchmarks/evidence/milestone_revalidation_20260825.tar.gz",
+    "sha256": "c483ccebc01455b32fc7c378c5cf79f3bc7330278e140fb77ac60c40dedbfc90",
+    "contents": "The complete logs/milestone_revalidation_20260825 directory: local canonical smoke/full JSON, V40/V41 raw logs and analysis, ten classical V32/V35 logs, the 69-test clean run, and the 11-test current production gate."
+  },
+  "source_snapshot": {
+    "applies_to": [
+      "clean CTest revalidation",
+      "local canonical V41 benchmark",
+      "V40/V41 draw-rule benchmark",
+      "classical V32/V35 reconstruction"
+    ],
+    "git_commit": "634b2d481925abc4b5ebf6da9129ade2edf3a24f",
+    "snapshot_method": "clean git archive with the production model copied by SHA-256",
+    "build_type": "Release",
+    "lto": true,
+    "cmake_version": "4.2.0",
+    "compiler_id": "AppleClang",
+    "compiler_version": "21.0.0.21000101",
+    "local_machine": {
+      "model": "MacBook Air Mac16,12",
+      "chip": "Apple M4",
+      "cores": 10,
+      "memory_gib": 16,
+      "architecture": "arm64"
+    }
+  },
+  "identities": {
+    "scope": "Production V41 runtime and the 2026-08-25 clean revalidation only; historical V39/V40/model experiments carry their own artifact identities and limitations.",
+    "production_model_sha256": "a1a52891f95db9a1bacc48557325b0c5904da4b3c9f8a333eb2ec090b1bb9c02",
+    "canonical_suite_sha256": "b297dfe39c869e2f3eca07175f57e7302c4c29257f04d75493a70701648ed67e",
+    "canonical_benchmark_config_sha256": "f0672851d58a0467211a8660a5306b4440c2b333b2cc2a9d01aafeb2e02887af",
+    "local_effective_spec_sha256": "e452c0e0adb6a82f9555f02a8e16c61d5380ab3ba16312f4983f4e4609b89e49",
+    "local_engine_sha256": "ecd723c23e845ecbf27660a25615945201a459499f32bb1a9d6bc46219a9b73b",
+    "heroku_nonlto_engine_sha256": "29579ec5bceafc00fa77a4caef50d4ca9ad5a181123369047a00af6456a08527",
+    "heroku_lto_engine_sha256": "2b9bedd073bc6d15464567cc9a716a1b7e0b3f7227ed7b293b9f9bb2b7ba8128",
+    "local_backend": "arm_neon_dotprod_i8mm",
+    "heroku_backend": "x86_avx512vnni_256"
+  },
+  "deployment_observation": {
+    "application": "stormy-garden-92984",
+    "observed_at": "2026-08-25",
+    "release": "v12",
+    "release_created_at_utc": "2026-08-24T19:37:09Z",
+    "previous_release": "v11",
+    "source": "sanitized live read-only Heroku release query; account email and config values omitted",
+    "limitation": "The release number is an operational observation and is not embedded in the hashed engine smoke artifact."
+  },
+  "results": {
+    "v39_fast": {
+      "lifecycle": "promoted",
+      "evidence_status": "directional_historical_project_gate_not_sequentially_valid",
+      "limitations": [
+        "Nominal confidence intervals were repeatedly inspected and stopped at first exclusion of 0.5.",
+        "The gauntlet cleared TT but retained history, killer and counter heuristics between games."
+      ],
+      "matches": [
+        {
+          "opponent": "balanced_joint",
+          "wins": 21,
+          "draws": 59,
+          "losses": 10,
+          "score": 0.5611111111111111,
+          "ci95": [0.5004843436047398, 0.6217378786174824]
+        },
+        {
+          "opponent": "baseline7",
+          "wins": 20,
+          "draws": 55,
+          "losses": 9,
+          "score": 0.5654761904761905,
+          "ci95": [0.5028609850014851, 0.6280913959508958]
+        },
+        {
+          "opponent": "all4_winner",
+          "wins": 21,
+          "draws": 59,
+          "losses": 10,
+          "score": 0.5611111111111111,
+          "ci95": [0.5004843436047398, 0.6217378786174824],
+          "derived_as_reciprocal": true
+        }
+      ]
+    },
+    "v40_qsee_minus75": {
+      "lifecycle": "adopted_in_v41_for_efficiency",
+      "evidence_status": "historical_efficiency_evidence_with_provenance_caveats_strength_inconclusive",
+      "holdout": {
+        "positions": 6000,
+        "depth": 8,
+        "nodes_off": 740434977,
+        "nodes_minus75": 625697266,
+        "node_reduction_fraction": 0.15495987434964187,
+        "time_ratio_off": 0.0507945,
+        "time_ratio_minus75": 0.0450266,
+        "time_reduction_fraction": 0.11355363277520203,
+        "mean_wdl_loss_off": 0.00501209,
+        "mean_wdl_loss_minus75": 0.0051255
+      },
+      "self_play": {
+        "games": 600,
+        "pairs": 300,
+        "wins": 116,
+        "draws": 392,
+        "losses": 92,
+        "score": 0.52,
+        "ci95": [0.4970904526919554, 0.5429095473080446]
+      }
+    },
+    "v41_draw_rules_clean_rerun": {
+      "evidence_status": "validated_correctness_and_throughput",
+      "protocol": {
+        "positions": 12,
+        "rounds_per_depth": 20,
+        "depths": [7, 8],
+        "reset_per_position": ["tt", "search_heuristics"],
+        "bootstrap": {
+          "method": "paired complete-round percentile bootstrap",
+          "replicates": 10000,
+          "seed_base": 20260825,
+          "seed_scheme": "seed_base + zero-based input index",
+          "interpretation": "conditional descriptive interval"
+        }
+      },
+      "depth7": {
+        "bootstrap_seed": 20260825,
+        "v40_nodes": 23341220,
+        "v41_nodes": 22675020,
+        "node_ratio": 0.9714582185507012,
+        "nps_ratio": 0.9869374725815663,
+        "nps_ratio_ci95": [0.9771277498777711, 0.9940442703296217],
+        "time_ratio": 0.9843158716120328,
+        "time_ratio_ci95": [0.9772786258595609, 0.9941977583660468]
+      },
+      "depth8": {
+        "bootstrap_seed": 20260826,
+        "v40_nodes": 35335200,
+        "v41_nodes": 33392420,
+        "node_ratio": 0.9450185650569404,
+        "nps_ratio": 0.9974636529329263,
+        "nps_ratio_ci95": [0.9936138491716437, 1.0023544881564357],
+        "time_ratio": 0.9474215549390926,
+        "time_ratio_ci95": [0.9427987565509632, 0.951092384475924]
+      }
+    },
+    "local_canonical": {
+      "status": "valid",
+      "observations": 360,
+      "fixed_signature_groups": 24,
+      "fixed_signature_mismatches_internal": 0,
+      "fixed_signature_mismatches_vs_heroku_lto": 0,
+      "depth7": {
+        "aggregate_nps": 4712417.0269951,
+        "conditional_ci95": [4562922.710012582, 4828346.966378334],
+        "round_cv": 0.046709077778173014,
+        "heroku_lto_nps": 1479501.9814415812,
+        "local_over_heroku_point_ratio": 3.1851373543977726
+      },
+      "depth8": {
+        "aggregate_nps": 4936086.8867225265,
+        "conditional_ci95": [4771243.870847868, 5033566.399954423],
+        "round_cv": 0.0464249696445527,
+        "heroku_lto_nps": 1581861.2370513922,
+        "local_over_heroku_point_ratio": 3.120429764069224
+      },
+      "movetime1000": {
+        "aggregate_nps": 5770137.388376782,
+        "conditional_ci95": [5758140.116622805, 5785215.8400913915],
+        "heroku_lto_nps": 1891389.6670960903,
+        "local_over_heroku_point_ratio": 3.0507396168848984
+      },
+      "movetime3000": {
+        "aggregate_nps": 5781606.484856301,
+        "conditional_ci95": [5770772.155341801, 5792065.383358724],
+        "heroku_lto_nps": 1874143.4107213954,
+        "local_over_heroku_point_ratio": 3.0849328027842033
+      },
+      "interpretation": "The point ratios combine CPU, ISA, compiler, memory/cache and hosting differences; they are not isolated Heroku overhead."
+    },
+    "post_simd_profile": {
+      "evidence_status": "validated_nonlto_diagnostic",
+      "searches": 192,
+      "profiles": 96,
+      "total_sampled_cpu_seconds": 7.43,
+      "forward_seconds": 1.82,
+      "forward_share": 0.24495289367429343,
+      "complete_round_bootstrap_ci95": [0.2138964577656676, 0.2757201646090535],
+      "without_queenside_pressure_share": 0.22477064220183485,
+      "median_nps_sampling_slowdown_fraction": 0.011917652047296334
+    },
+    "lto": {
+      "lifecycle": "production",
+      "evidence_status": "validated_paired_heroku",
+      "ab_source_label": "clean-release-36b85a8-paired-lto",
+      "committed_production_source": "634b2d481925abc4b5ebf6da9129ade2edf3a24f",
+      "binary_identity_matches_production_smoke": true,
+      "dynos": 4,
+      "bootstrap_replicates": 10000,
+      "bootstrap_seed": 20260825,
+      "depth7": {
+        "speedup_fraction": 0.06150434435069463,
+        "ratio_ci95": [1.0078816198609302, 1.1123583369896022]
+      },
+      "depth8": {
+        "speedup_fraction": 0.06770651739164624,
+        "ratio_ci95": [1.0301737355757934, 1.1056668666316911]
+      },
+      "movetime1000": {
+        "speedup_fraction": 0.08647638158762238,
+        "ratio_ci95": [1.0606364269835118, 1.111846440252422]
+      },
+      "movetime3000": {
+        "speedup_fraction": 0.07434648835813945,
+        "ratio_ci95": [1.0510365879157568, 1.0984419422132738]
+      }
+    },
+    "classical_v32_v35_reconstruction": {
+      "evidence_status": "tree_parity_validated_timing_caveated",
+      "runs": 10,
+      "positions_per_run": 26,
+      "depth": 7,
+      "iterative": true,
+      "nodes_each_engine_per_run": 23294908,
+      "score_mismatches": 0,
+      "best_move_mismatches": 0,
+      "median_v35_over_v32_time_ratio": 0.9831355,
+      "pooled_v35_over_v32_time_ratio": 0.9711862937659379,
+      "ratio_range": [0.913383, 1.00243],
+      "limitation": "V35 was always timed before V32, so drift/order are confounded."
+    },
+    "model_scaling": {
+      "f2_500m_epoch4_vs_200m_reference": {
+        "lifecycle": "rejected",
+        "evidence_status": "historical_project_gate_with_cross_game_search_heuristic_state",
+        "candidate_model_sha256": "0e00cf02a8549a2f55be0520ae225ac0a7936ee2eb63268a280b07a6d4b96fee",
+        "reference_model_sha256": "da8c716c74e823655cbb9695846cb1006431f4483c2d61fd20aa24b3c69ee25d",
+        "reference_is_current_production": false,
+        "games": 600,
+        "pairs": 300,
+        "wins": 71,
+        "draws": 423,
+        "losses": 106,
+        "score": 0.4708333333333333,
+        "ci95": [0.4483461533694603, 0.49332051329720633]
+      },
+      "f2m_50m_offline": {
+        "lifecycle": "experimental",
+        "artifacts": {
+          "f2_checkpoint_sha256": "2b78942a7fac887311b09765f927ab6bdd5403c39996379569dadbd60c9edb4e",
+          "f2_binary_sha256": "a033115efda0b946a9fb51208bbd2e60073920267ae4a6fd94621889ed094c1e",
+          "f2m_checkpoint_sha256": "816ee34f2e183f6b7a8769524514989f30c1ae5db977234bedc93e1a08a8bdab",
+          "f2m_binary_sha256": "c6ea1039af21fdecdd2184ca09b94fe8a331b2478104c1a1bb64bb26b3720310",
+          "f2m_shared_l1_checkpoint_sha256": "6356f4936dad8262940fa58f1301fc56e115436af2bea7c995a95bbed204e476",
+          "f2m_shared_l1_binary_sha256": "c4b0111e52c5fa1b119f9f916a4fe0364b12c1551d9e9fc73ec53d1a5ed0d56a",
+          "comparison_sha256": "3f06ca5a4bd37457dbf100a2e1f19ca8ec0a579717d486c1048b5bf13a79a4f3",
+          "mirror_split_audit_sha256": "007f37b7c942977adf070ea36d1f700a088f71fd2f9ffcf8100d66ac4699f800"
+        },
+        "f2_ranking_cp_mae": 319.2366,
+        "f2m_independent_ranking_cp_mae": 313.0076,
+        "f2_minus_f2m_delta_cp": 6.2289,
+        "block_bootstrap_ci95": [5.7196, 6.7292],
+        "shared_l1_minus_independent_delta_cp": -0.1513,
+        "shared_l1_delta_ci95": [-0.4655, 0.1701]
+      },
+      "f2m_epoch5_long_selfplay": {
+        "lifecycle": "inconclusive_not_promotable",
+        "games": 600,
+        "pairs": 300,
+        "wins": 150,
+        "draws": 311,
+        "losses": 139,
+        "score": 0.5091666666666667,
+        "ci95": [0.483895107073597, 0.5344382262597364],
+        "provenance_grade": "exploratory"
+      },
+      "f2m_epoch5_early_clean_selfplay": {
+        "lifecycle": "early_stopped_exploratory_not_confirmed",
+        "candidate_model_sha256": "9bc944227185ec43a9beb5c265da2c7c06259c75fa90c655c889ee7f07576fbe",
+        "games": 94,
+        "pairs": 47,
+        "wins": 35,
+        "draws": 37,
+        "losses": 22,
+        "score": 0.5691489361702128,
+        "ci95": [0.5013394077310245, 0.6369584646094011],
+        "provenance_grade": "exploratory_due_to_repeated_peeking_and_cross_game_search_heuristic_state"
+      }
+    }
+  },
+  "test_gate": {
+    "registered_ctests": 69,
+    "passed": 64,
+    "failed": [
+      {
+        "name": "heuristic_searcher_v21_tests",
+        "reason": "reproducible historical cold.score == warm.score assertion"
+      },
+      {
+        "name": "heuristic_searcher_v22_tests",
+        "reason": "reproducible historical cold.score == warm.score assertion"
+      },
+      {
+        "name": "heuristic_searcher_v23_tests",
+        "reason": "reproducible historical cold.score == warm.score assertion"
+      },
+      {
+        "name": "nn_search_tests",
+        "reason": "legacy ignored value_net_stream_100k model absent from clean snapshot"
+      },
+      {
+        "name": "nn_value_tests",
+        "reason": "legacy ignored value_net_stream_100k model/data absent from clean snapshot"
+      }
+    ],
+    "current_line_passed": [
+      "search_tests",
+      "perft_tests",
+      "see_tests",
+      "make_move_tests",
+      "movegen_regression_tests",
+      "nnue_searcher_v36_strict_tests",
+      "nnue_searcher_v37_strict_tests",
+      "nnue_searcher_v39_selective_tests",
+      "nnue_searcher_v40_qsee_tests",
+      "nnue_searcher_v41_repetition_tests",
+      "phase_quantized_nnue_tests"
+    ],
+    "default_all_build_issue": "Optional TT-stat profiling executables link without the TT-stat compile mode in the default all target; production and test targets build."
+  },
+  "artifacts": {
+    "clean_ctest_all": {
+      "path": "logs/milestone_revalidation_20260825/clean-ctest-all.log",
+      "sha256": "527aac1db4fa9ca5d9f08d5c65d162bd2617465169f70446c7bcd7bad2170c79"
+    },
+    "clean_current_gate_tests": {
+      "path": "logs/milestone_revalidation_20260825/clean-current-gate-tests.log",
+      "sha256": "569a4a03e69e8c09ab0011e67f38510642fad052e3359f813efe90cbf11613cc"
+    },
+    "v39_round_robin_summary": {
+      "path": "logs/nnue_v39_audit3_round_robin_ci_20260802_120129/summary.stopped.json",
+      "sha256": "558778a834285cb1d18211830eee31b33e3a56e3795d5051129a1aa6728e5b7f"
+    },
+    "v39_all4_vs_fast_summary": {
+      "path": "logs/nnue_v39_all4_winner_vs_fast_ci_20260816_153741/summary.json",
+      "sha256": "145e38306e65b647594e38cad57b48ab98e9d8a634f9da0413a8da3f44b913bf"
+    },
+    "v40_tune_summary": {
+      "path": "logs/nnue_v40_qsee_tune_20260817_005158/summary.json",
+      "sha256": "debd8c0b38c83206899251e70c603a1057cbf06c8d96a6672c13e07ae7a490eb"
+    },
+    "v40_selfplay_summary": {
+      "path": "logs/nnue_v40_qsee_vs_v39_fast_ci_20260817_084202/summary.json",
+      "sha256": "31375140a34d786bc3298ab7cb81cc2485280a9b98008c7185efecdd92859cd9"
+    },
+    "v41_draw_depth7": {
+      "path": "logs/milestone_revalidation_20260825/v40-v41-depth7.log",
+      "sha256": "06df97224c89ce47a7f01e5cbb22c5e0a4d721cca1a9e047e8d59f57ff235a12"
+    },
+    "v41_draw_depth8": {
+      "path": "logs/milestone_revalidation_20260825/v40-v41-depth8.log",
+      "sha256": "cd7df202490a83583b752b3811fe46cdbe193594dd8e85f96d233ffb0d550f35"
+    },
+    "v41_draw_analysis": {
+      "path": "logs/milestone_revalidation_20260825/v40-v41-analysis.json",
+      "sha256": "8d3901e2525342abccac7c0b2321625bb39830e80154569da87723db3c688acc"
+    },
+    "v41_draw_analyzer": {
+      "path": "tools/analyze_v40_v41_benchmark.py",
+      "sha256": "cb8b1ea982202e9007e8d8b852ac2782935b4497fb295a0a42eda0adc1e3bdbd"
+    },
+    "local_canonical_full": {
+      "path": "logs/milestone_revalidation_20260825/local-canonical-full.json",
+      "sha256": "a0295f0e393947f3a18404b82c2a4a0999177a7f36ebedf690a1acdd1fc429a6"
+    },
+    "local_canonical_smoke": {
+      "path": "logs/milestone_revalidation_20260825/local-canonical-smoke.json",
+      "sha256": "f361420458e8cc7cfa491e0a54230fdfd67c7e1fbfa24fd9b6c8cb2f0150e6e1"
+    },
+    "local_canonical_harness": {
+      "path": "tools/benchmark_uci_platform.py",
+      "sha256": "f6b0d01c4258dcffececcf7c5590940dd25cc554bedeca324563be164e288f4e"
+    },
+    "classical_v32_v35_run_1": {
+      "path": "logs/milestone_revalidation_20260825/classical-v32-v35-run-1.log",
+      "sha256": "bd446c002928b8abd41c4c8fd53780142624e12b45d9252e0e3d6af5185da63d"
+    },
+    "classical_v32_v35_run_2": {
+      "path": "logs/milestone_revalidation_20260825/classical-v32-v35-run-2.log",
+      "sha256": "6869f37922e239051b9b7ba0d9de8fa7d8730293a9f7a6252986ffc477cfd8d5"
+    },
+    "classical_v32_v35_run_3": {
+      "path": "logs/milestone_revalidation_20260825/classical-v32-v35-run-3.log",
+      "sha256": "c1f1900948b9ec61c6d1ccda99e65de734bbfa053ad8cfb483c62d09ecb199f8"
+    },
+    "classical_v32_v35_run_4": {
+      "path": "logs/milestone_revalidation_20260825/classical-v32-v35-run-4.log",
+      "sha256": "343be1125eb05cd868f3c57bdbf78418bdb28e85d7175ad09dba42b649cb8be3"
+    },
+    "classical_v32_v35_run_5": {
+      "path": "logs/milestone_revalidation_20260825/classical-v32-v35-run-5.log",
+      "sha256": "eeeccbd9d2449aad9c7c211a00a474ece6b39432645845dc31a21f9a365ed251"
+    },
+    "classical_v32_v35_run_6": {
+      "path": "logs/milestone_revalidation_20260825/classical-v32-v35-run-6.log",
+      "sha256": "cdcf2479af3c7d368ea68f197d62a7adff2bd8733d5bde8c4b908744c095f737"
+    },
+    "classical_v32_v35_run_7": {
+      "path": "logs/milestone_revalidation_20260825/classical-v32-v35-run-7.log",
+      "sha256": "e197216c7c4529b7f2ba6f865b409dae5417beea8d5ee6e3d9fc6d60ea50e5d6"
+    },
+    "classical_v32_v35_run_8": {
+      "path": "logs/milestone_revalidation_20260825/classical-v32-v35-run-8.log",
+      "sha256": "0926121745e8e8f6ae04bab3c8f44ad902a0566479b3d1ef26aae4adca35a57a"
+    },
+    "classical_v32_v35_run_9": {
+      "path": "logs/milestone_revalidation_20260825/classical-v32-v35-run-9.log",
+      "sha256": "772aa2cef9b96542e9cf5021b462c6e663660885394ff3930d37611c2c14b2f9"
+    },
+    "classical_v32_v35_run_10": {
+      "path": "logs/milestone_revalidation_20260825/classical-v32-v35-run-10.log",
+      "sha256": "967df3a5b967589ac82a51a5cd78ad93af711b218c1f79c330f1c05bfdba0ff5"
+    },
+    "post_simd_profile_analysis": {
+      "path": "logs/nnue_v41_heroku_sampling_v11_full_barrier_20260825/profile-analysis.json",
+      "sha256": "31a0604924ae184720825ccd75ad062c7ec039ddcee7ccc752e8418d2c96ca46"
+    },
+    "post_simd_profile_archive": {
+      "path": "logs/nnue_v41_heroku_sampling_v11_full_barrier_20260825/profile-artifact.tar.gz",
+      "sha256": "12334f6c46bab0059f6e24c07740c567462cb796cbc8dd4edd01bfdfd8239505"
+    },
+    "lto_full_summary": {
+      "path": "logs/nnue_lto_ab_full_20260824T1854Z/summary.json",
+      "sha256": "cf15a677f94c43eb451ee09f7223ee395387e3fe1e97c20edacdba8bff2db42b"
+    },
+    "lto_production_smoke": {
+      "path": "logs/nnue_lto_production_smoke_20260824T1938Z/summary.json",
+      "sha256": "302e6ab693c8cedb5e007a3870a9847f0b267fcee8348d89fbe0f7fbb364badd"
+    },
+    "lto_production_smoke_raw_run": {
+      "path": "logs/nnue_lto_production_smoke_20260824T1938Z/heroku-run-1.json",
+      "sha256": "c389ef3d930838491b9166da64d88a38ecfe3d92ad494b2215647326601d612c"
+    },
+    "f2_500m_summary": {
+      "path": "logs/nnue_500m_epoch4_vs_200m_ci1_20260823_125056/summary.json",
+      "sha256": "bbeeb2d924f052ecddad6ea5be74bb8a863d5fc7794a710a1f8a5d1cffb4c332"
+    },
+    "f2_f2m_50m_report": {
+      "path": "reports/old_score_huber200_f2_f2m_50m_20260823.md",
+      "sha256": "30cfa4f6f4f70355b7c3001d501ddb20c51af81855b3f4a1263eb44647a0b5ad"
+    },
+    "f2_f2m_50m_comparison": {
+      "path": "models/quantized_scale_grid/old_score_huber200_f2_f2m_50m_20260823/comparison.json",
+      "sha256": "3f06ca5a4bd37457dbf100a2e1f19ca8ec0a579717d486c1048b5bf13a79a4f3"
+    },
+    "f2_f2m_mirror_split_audit": {
+      "path": "models/quantized_scale_grid/old_score_huber200_f2_f2m_50m_20260823/preflight/mirror_split_audit.json",
+      "sha256": "007f37b7c942977adf070ea36d1f700a088f71fd2f9ffcf8100d66ac4699f800"
+    },
+    "f2m_epoch5_long_games": {
+      "path": "logs/nnue_v41_dirty_f2m_epoch5_vs_baseline_20260825_015500/games.jsonl",
+      "sha256": "2893405abad6f894e0652ea6bfa3d7c291d1ac901e9f7966580788bbd0bfecba"
+    }
+  },
+  "open_gates": [
+    "Recover the original V19 tactical-disagreement corpus before claiming an exact historical rerun.",
+    "Fix or retire the historical V21-V23 warm/cold tests and make clean-clone legacy NN assets explicit.",
+    "Use a provenance-complete, heuristic-reset paired harness before claiming V41 strength over V39.",
+    "Directly match current F2 against the older validated hs2x8_os128 model before claiming a playing-strength gain from the model replacement.",
+    "Benchmark cross-search TT generation with a persistent UCI process before promotion.",
+    "Add a dedicated null-move/repetition-history regression for the V41 draw-rule boundary.",
+    "Export and parity-check a clean F2M epoch-8 artifact before a promotion-grade match."
+  ]
+}

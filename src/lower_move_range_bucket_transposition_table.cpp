@@ -146,11 +146,21 @@ LowerMoveRangeBucketTranspositionTable::LowerMoveRangeBucketTranspositionTable(
     const std::size_t entry_count = bucket_count_ * bucket_size_;
     keys_.resize(entry_count);
     values_.resize(entry_count);
+    generations_.resize(entry_count);
 }
 
 void LowerMoveRangeBucketTranspositionTable::clear() {
     std::fill(keys_.begin(), keys_.end(), HashKey{});
     std::fill(values_.begin(), values_.end(), TTValue{});
+    std::fill(generations_.begin(), generations_.end(), std::uint8_t{0});
+    generation_ = 0;
+}
+
+void LowerMoveRangeBucketTranspositionTable::advance_generation() {
+    if (generation_ == std::numeric_limits<std::uint8_t>::max()) {
+        clear();
+    }
+    ++generation_;
 }
 
 void LowerMoveRangeBucketTranspositionTable::clear_stats() {
@@ -203,6 +213,15 @@ bool LowerMoveRangeBucketTranspositionTable::probe(
         stored_move = MoveRange{value.lower_move, Move{}};
         if (stored_move.lower.value != 0) {
             CHESS_TT_STAT(stats_.move_hint_hits);
+        }
+
+        // Scores can depend on the root game history (repetition and the
+        // 50-move clock), which is not part of the Zobrist key.  Keep an old
+        // entry's best move for ordering, but only use scores written during
+        // the current search generation.
+        if (generations_[index] != generation_) {
+            CHESS_TT_STAT(stats_.depth_misses);
+            return false;
         }
 
         const bool lower_depth_matches =
@@ -329,29 +348,55 @@ void LowerMoveRangeBucketTranspositionTable::store(
     const std::size_t offset = bucket_offset(key);
 
     std::size_t shallowest_index = offset;
+    std::size_t shallowest_stale_index = offset;
+    bool found_stale_entry = false;
     for (std::size_t i = 0; i < bucket_size_; ++i) {
         const std::size_t index = offset + i;
         const HashKey entry_key = keys_[index];
         if (entry_key == key) {
             CHESS_TT_STAT(stats_.same_key_updates);
-            merge_tt_value(values_[index], depth, score, move);
+            if (generations_[index] == generation_) {
+                merge_tt_value(values_[index], depth, score, move);
+            } else {
+                values_[index] = make_tt_value(depth, score, move);
+                generations_[index] = generation_;
+            }
             return;
         }
         if (entry_key == 0) {
             CHESS_TT_STAT(stats_.new_stores);
             keys_[index] = key;
             values_[index] = make_tt_value(depth, score, move);
+            generations_[index] = generation_;
             return;
+        }
+        if (generations_[index] != generation_) {
+            if (!found_stale_entry
+                || replacement_depth(values_[index])
+                    < replacement_depth(values_[shallowest_stale_index])) {
+                shallowest_stale_index = index;
+            }
+            found_stale_entry = true;
+            continue;
         }
         if (replacement_depth(values_[index]) < replacement_depth(values_[shallowest_index])) {
             shallowest_index = index;
         }
     }
 
+    if (found_stale_entry) {
+        CHESS_TT_STAT(stats_.replacement_collisions);
+        keys_[shallowest_stale_index] = key;
+        values_[shallowest_stale_index] = make_tt_value(depth, score, move);
+        generations_[shallowest_stale_index] = generation_;
+        return;
+    }
+
     if (depth >= replacement_depth(values_[shallowest_index])) {
         CHESS_TT_STAT(stats_.replacement_collisions);
         keys_[shallowest_index] = key;
         values_[shallowest_index] = make_tt_value(depth, score, move);
+        generations_[shallowest_index] = generation_;
     } else {
         CHESS_TT_STAT(stats_.skipped_shallow_replacements);
     }

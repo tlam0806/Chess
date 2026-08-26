@@ -55,21 +55,32 @@ class NnueDataLoaderTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             paths = [Path(directory) / f"shard_{index}.cbin" for index in range(12)]
             worker_records: list[set[int]] = []
+            worker_paths: list[set[Path]] = []
             for worker_id in range(4):
                 dataset = self.make_dataset(Path(directory))
                 dataset._compact_paths = lambda paths=paths: paths  # type: ignore[method-assign]
+                opened: set[Path] = set()
                 dataset._iter_stream_blocks = (  # type: ignore[method-assign]
-                    lambda _path, base_index, _block_size: [(base_index, bytes(RECORD_SIZE))]
+                    lambda path, base_index, _block_size, opened=opened: (
+                        opened.add(path) or [(base_index, bytes(RECORD_SIZE))]
+                    )
                 )
                 worker = SimpleNamespace(id=worker_id, num_workers=4)
                 with patch("tools.train_nnue_architecture.get_worker_info", return_value=worker):
                     worker_records.append({index for index, _record in dataset._iter_shuffled_compact()})
+                    worker_paths.append(opened)
 
             combined: set[int] = set()
             for records in worker_records:
                 self.assertTrue(combined.isdisjoint(records))
                 combined.update(records)
             self.assertEqual(combined, set(range(12)))
+            combined_paths: set[Path] = set()
+            for opened in worker_paths:
+                self.assertEqual(len(opened), 3)
+                self.assertTrue(combined_paths.isdisjoint(opened))
+                combined_paths.update(opened)
+            self.assertEqual(combined_paths, set(paths))
 
     def test_duplicate_positions_always_use_the_same_split(self) -> None:
         board = bytes(range(32))
@@ -82,6 +93,78 @@ class NnueDataLoaderTests(unittest.TestCase):
         quotas = [worker_sample_limit(10, worker, 4) for worker in range(4)]
         self.assertEqual(quotas, [3, 3, 2, 2])
         self.assertEqual(sum(value for value in quotas if value is not None), 10)
+
+    def test_unshuffled_shards_are_opened_by_only_one_worker(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            paths = [Path(directory) / f"shard_{index}.cbin" for index in range(12)]
+            worker_paths: list[set[Path]] = []
+            sample = SimpleNamespace(score=10, board=bytes(32), aux_bits=0, ply=1, result=0)
+            for worker_id in range(4):
+                dataset = self.make_dataset(Path(directory))
+                dataset.shuffle_block_size = 0
+                dataset._compact_paths = lambda paths=paths: paths  # type: ignore[method-assign]
+                dataset._bucket_belongs_to_split = lambda _bucket: True  # type: ignore[method-assign]
+                opened: set[Path] = set()
+
+                def fake_samples(path: Path, opened: set[Path] = opened):
+                    opened.add(path)
+                    yield sample
+
+                worker = SimpleNamespace(id=worker_id, num_workers=4)
+                with (
+                    patch("tools.train_nnue_architecture.get_worker_info", return_value=worker),
+                    patch("tools.train_nnue_architecture.iter_compact_samples", fake_samples),
+                    patch(
+                        "tools.train_nnue_architecture.canonical_architecture_input",
+                        return_value=(bytes(32), 0, [1], [0] * 13),
+                    ),
+                ):
+                    list(dataset)
+                worker_paths.append(opened)
+
+            combined: set[Path] = set()
+            for opened in worker_paths:
+                self.assertEqual(len(opened), 3)
+                self.assertTrue(combined.isdisjoint(opened))
+                combined.update(opened)
+            self.assertEqual(combined, set(paths))
+
+    def test_cached_unshuffled_split_scans_shards_only_once(self) -> None:
+        paths = [Path(f"shard_{index}.cbin") for index in range(3)]
+        sample = SimpleNamespace(
+            score=10, board=bytes(32), aux_bits=0, ply=1, result=0
+        )
+        dataset = CompactSplitDataset(
+            path=Path("unused"),
+            architecture="base768",
+            split="val",
+            split_mod=100,
+            val_mod=98,
+            test_mod=99,
+            max_samples=None,
+            seed=0,
+            shuffle_block_size=0,
+            cache_unshuffled=True,
+        )
+        dataset._compact_paths = lambda: paths  # type: ignore[method-assign]
+        dataset._bucket_belongs_to_split = lambda _bucket: True  # type: ignore[method-assign]
+        opened: list[Path] = []
+
+        def fake_samples(path: Path):
+            opened.append(path)
+            yield sample
+
+        with (
+            patch("tools.train_nnue_architecture.iter_compact_samples", fake_samples),
+            patch(
+                "tools.train_nnue_architecture.canonical_architecture_input",
+                return_value=(bytes(32), 0, [1], [0] * 13),
+            ),
+        ):
+            self.assertEqual(len(list(dataset)), 3)
+            self.assertEqual(len(list(dataset)), 3)
+
+        self.assertEqual(opened, paths)
 
     def test_multiworker_loader_keeps_workers_across_epochs(self) -> None:
         loader = make_loader(
@@ -109,8 +192,8 @@ class NnueDataLoaderTests(unittest.TestCase):
         dataset._iter_shuffled_compact = lambda: iter(records)  # type: ignore[method-assign]
         dataset._bucket_belongs_to_split = lambda _bucket: True  # type: ignore[method-assign]
         with patch(
-            "tools.train_nnue_architecture.architecture_features_from_board",
-            return_value=[7],
+            "tools.train_nnue_architecture.canonical_architecture_input",
+            return_value=(bytes(32), 0, [7], [0] * 13),
         ):
             samples = list(dataset)
 
@@ -141,7 +224,11 @@ class NnueDataLoaderTests(unittest.TestCase):
                 other_buckets[0], other_buckets[1], 1, 0,
             )
 
-            samples = list(dataset)
+            with patch(
+                "tools.train_nnue_architecture.canonical_architecture_input",
+                return_value=(board, 0, [7], [0] * 13),
+            ):
+                samples = list(dataset)
 
         self.assertEqual(len(samples), 1)
         self.assertEqual(samples[0]["score"], -15)

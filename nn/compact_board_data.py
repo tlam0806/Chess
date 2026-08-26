@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import shutil
 import struct
 import subprocess
 import zlib
@@ -8,7 +9,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import BinaryIO, Iterable
 
-from nn.nnue_architectures import transform_features
+from nn.nnue_architectures import (
+    is_dual_accumulator_transform,
+    transform_features,
+)
 from nn.value_net import AUX_FEATURE_COUNT
 
 
@@ -24,6 +28,7 @@ HEADER = MAGIC + struct.pack(
 HEADER_SIZE = len(HEADER)
 RECORD_SIZE = 40
 SQUARES = 64
+HORIZONTAL_MIRROR_TRANSFORM = "dual_full_king_square_concat_horizontal_mirror"
 
 
 @dataclass(frozen=True)
@@ -75,6 +80,73 @@ def pack_aux(aux: list[int]) -> int:
 
 def unpack_aux(aux_bits: int) -> list[int]:
     return [(aux_bits >> index) & 1 for index in range(AUX_FEATURE_COUNT)]
+
+
+def uses_horizontal_mirror(transform: str) -> bool:
+    return transform == HORIZONTAL_MIRROR_TRANSFORM
+
+
+def horizontal_mirror_aux(aux: list[int]) -> list[int]:
+    """Mirror castling sides and en-passant files without changing labels."""
+    if len(aux) != AUX_FEATURE_COUNT:
+        raise ValueError(f"expected {AUX_FEATURE_COUNT} aux entries, got {len(aux)}")
+    return [
+        aux[1],
+        aux[0],
+        aux[3],
+        aux[2],
+        aux[4],
+        *reversed(aux[5:13]),
+    ]
+
+
+def horizontal_mirror_board(board: bytes) -> bytes:
+    """Return an a<->h mirror of a compact board for offline canonical keys."""
+    nibbles = unpack_board(board)
+    mirrored = [0] * SQUARES
+    for square, code in enumerate(nibbles):
+        mirrored[square ^ 7] = code
+    packed = bytearray(32)
+    for square in range(0, SQUARES, 2):
+        packed[square // 2] = mirrored[square] | (mirrored[square + 1] << 4)
+    return bytes(packed)
+
+
+def canonical_horizontal_mirror_input(
+    board: bytes,
+    aux_bits: int,
+) -> tuple[bytes, int]:
+    """Put the side-to-move king on files a-d for training and split keys."""
+    nibbles = unpack_board(board)
+    friendly_kings = [square for square, code in enumerate(nibbles) if code == 6]
+    if len(friendly_kings) != 1:
+        raise ValueError("compact board must contain exactly one friendly king")
+    if (friendly_kings[0] & 7) < 4:
+        return board, aux_bits
+    mirrored_aux = horizontal_mirror_aux(unpack_aux(aux_bits))
+    return horizontal_mirror_board(board), pack_aux(mirrored_aux)
+
+
+def canonical_architecture_input(
+    board: bytes,
+    aux_bits: int,
+    transform: str,
+) -> tuple[bytes, int, list[int], list[int]]:
+    """Return canonical board/key material plus sparse model inputs."""
+    if uses_horizontal_mirror(transform):
+        board, aux_bits = canonical_horizontal_mirror_input(board, aux_bits)
+    elif not is_dual_accumulator_transform(transform) and transform not in {
+        "base768",
+        "king_bucket",
+        "full_king_square",
+    }:
+        raise ValueError(f"unknown feature transform: {transform}")
+    return (
+        board,
+        aux_bits,
+        architecture_features_from_board(board, transform),
+        unpack_aux(aux_bits),
+    )
 
 
 def pack_board_from_raw_features(raw_features: list[int]) -> bytes:
@@ -185,10 +257,18 @@ def position_split_bucket(board: bytes, aux_bits: int, split_mod: int) -> int:
 
 class ZstdReader:
     def __init__(self, path: Path) -> None:
+        executable = shutil.which("zstd")
+        if executable is None:
+            raise FileNotFoundError("zstd executable is not available on PATH")
         self.process = subprocess.Popen(
-            ["zstd", "-q", "-dc", str(path)],
+            [executable, "-q", "-dc", "--", str(path)],
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
+            # Python 3.9 only selects posix_spawn when the executable is an
+            # absolute path and close_fds is false. This is correctness-critical
+            # after PyTorch initializes libomp: fork() runs libomp's atfork
+            # handler in the child and macOS aborts before exec (SIGABRT 6).
+            close_fds=False,
         )
         if self.process.stdout is None:
             raise RuntimeError("failed to open zstd stdout")
@@ -206,9 +286,13 @@ class ZstdReader:
 class ZstdWriter:
     def __init__(self, path: Path, level: int = 6) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
+        executable = shutil.which("zstd")
+        if executable is None:
+            raise FileNotFoundError("zstd executable is not available on PATH")
         self.process = subprocess.Popen(
-            ["zstd", "-T0", f"-{level}", "-q", "-o", str(path), "-"],
+            [executable, "-T0", f"-{level}", "-q", "-o", str(path), "-"],
             stdin=subprocess.PIPE,
+            close_fds=False,
         )
         if self.process.stdin is None:
             raise RuntimeError("failed to open zstd stdin")

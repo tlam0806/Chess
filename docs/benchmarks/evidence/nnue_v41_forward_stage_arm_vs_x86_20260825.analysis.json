@@ -1,0 +1,485 @@
+{
+  "bootstrap": {
+    "confidence_level": 0.95,
+    "design": {
+      "estimator": "median_of_cluster_medians",
+      "host_sampling": "independent",
+      "levels": [
+        "cluster",
+        "batch_within_cluster"
+      ],
+      "within_cluster_strata": "stage_order_0_to_3"
+    },
+    "replicates": 10000,
+    "seed": 20260825,
+    "stages": {
+      "full": {
+        "process_cpu": {
+          "delta_heroku_minus_local_ns_per_evaluation": {
+            "ci95": [
+              145.92366666666663,
+              148.63207500000001
+            ],
+            "median": 147.4805
+          },
+          "heroku_ns_per_evaluation": {
+            "ci95": [
+              226.2145,
+              228.38766666666666
+            ],
+            "median": 227.376
+          },
+          "local_ns_per_evaluation": {
+            "ci95": [
+              79.56200000000001,
+              81.1975
+            ],
+            "median": 79.74266666666666
+          },
+          "ratio_heroku_over_local": {
+            "ci95": [
+              2.8034504346398186,
+              2.8647513128148714
+            ],
+            "median": 2.8486850360109406
+          }
+        },
+        "wall": {
+          "delta_heroku_minus_local_ns_per_evaluation": {
+            "ci95": [
+              144.65107018749998,
+              148.44404616666668
+            ],
+            "median": 147.30088816666665
+          },
+          "heroku_ns_per_evaluation": {
+            "ci95": [
+              226.27405166666665,
+              228.44244199999997
+            ],
+            "median": 227.4287645
+          },
+          "local_ns_per_evaluation": {
+            "ci95": [
+              79.7445625,
+              82.68375
+            ],
+            "median": 79.96159716666666
+          },
+          "ratio_heroku_over_local": {
+            "ci95": [
+              2.7561644458554433,
+              2.857730106178659
+            ],
+            "median": 2.8420377096505463
+          }
+        }
+      },
+      "s1_input_to_hidden2": {
+        "process_cpu": {
+          "delta_heroku_minus_local_ns_per_evaluation": {
+            "ci95": [
+              113.782625,
+              116.108790625
+            ],
+            "median": 114.899
+          },
+          "heroku_ns_per_evaluation": {
+            "ci95": [
+              175.29125,
+              177.51850000000002
+            ],
+            "median": 176.37175
+          },
+          "local_ns_per_evaluation": {
+            "ci95": [
+              61.304874999999996,
+              61.682500000000005
+            ],
+            "median": 61.432
+          },
+          "ratio_heroku_over_local": {
+            "ci95": [
+              2.8473242931681244,
+              2.8925924038765296
+            ],
+            "median": 2.8718614157909705
+          }
+        },
+        "wall": {
+          "delta_heroku_minus_local_ns_per_evaluation": {
+            "ci95": [
+              113.645286815625,
+              115.9906695
+            ],
+            "median": 114.77206762500003
+          },
+          "heroku_ns_per_evaluation": {
+            "ci95": [
+              175.335586375,
+              177.572409
+            ],
+            "median": 176.27594262500003
+          },
+          "local_ns_per_evaluation": {
+            "ci95": [
+              61.448901,
+              61.8837865
+            ],
+            "median": 61.612432125
+          },
+          "ratio_heroku_over_local": {
+            "ci95": [
+              2.8390265324294663,
+              2.885876691858762
+            ],
+            "median": 2.8644476148809472
+          }
+        }
+      },
+      "s2_hidden2_to_hidden3": {
+        "process_cpu": {
+          "delta_heroku_minus_local_ns_per_evaluation": {
+            "ci95": [
+              22.949160000000006,
+              23.67645625
+            ],
+            "median": 23.341900000000003
+          },
+          "heroku_ns_per_evaluation": {
+            "ci95": [
+              34.381075,
+              35.06466624999999
+            ],
+            "median": 34.773475000000005
+          },
+          "local_ns_per_evaluation": {
+            "ci95": [
+              11.396374999999999,
+              11.462499999999999
+            ],
+            "median": 11.435825
+          },
+          "ratio_heroku_over_local": {
+            "ci95": [
+              3.0061007598079934,
+              3.0731918752736846
+            ],
+            "median": 3.0415869426883915
+          }
+        },
+        "wall": {
+          "delta_heroku_minus_local_ns_per_evaluation": {
+            "ci95": [
+              22.92446178,
+              23.644253825000007
+            ],
+            "median": 23.326384275000002
+          },
+          "heroku_ns_per_evaluation": {
+            "ci95": [
+              34.3885564,
+              35.06792645
+            ],
+            "median": 34.7878925
+          },
+          "local_ns_per_evaluation": {
+            "ci95": [
+              11.426298975,
+              11.500809375
+            ],
+            "median": 11.461935400000002
+          },
+          "ratio_heroku_over_local": {
+            "ci95": [
+              2.998596953960458,
+              3.0661957060770146
+            ],
+            "median": 3.0351344773409514
+          }
+        }
+      },
+      "s3_hidden3_to_output": {
+        "process_cpu": {
+          "delta_heroku_minus_local_ns_per_evaluation": {
+            "ci95": [
+              6.874109999999999,
+              6.962014999999999
+            ],
+            "median": 6.90241
+          },
+          "heroku_ns_per_evaluation": {
+            "ci95": [
+              9.011635,
+              9.09715
+            ],
+            "median": 9.035195
+          },
+          "local_ns_per_evaluation": {
+            "ci95": [
+              2.1254150000000003,
+              2.14506
+            ],
+            "median": 2.13265
+          },
+          "ratio_heroku_over_local": {
+            "ci95": [
+              4.206103791968523,
+              4.269953921807842
+            ],
+            "median": 4.238085186722674
+          }
+        },
+        "wall": {
+          "delta_heroku_minus_local_ns_per_evaluation": {
+            "ci95": [
+              6.870581809999999,
+              6.95754394025
+            ],
+            "median": 6.899105245
+          },
+          "heroku_ns_per_evaluation": {
+            "ci95": [
+              9.014377735,
+              9.0988696
+            ],
+            "median": 9.037516905
+          },
+          "local_ns_per_evaluation": {
+            "ci95": [
+              2.13044521,
+              2.1535335399999997
+            ],
+            "median": 2.1394870800000003
+          },
+          "ratio_heroku_over_local": {
+            "ci95": [
+              4.1930126614141345,
+              4.259629405027811
+            ],
+            "median": 4.226343879381779
+          }
+        }
+      }
+    }
+  },
+  "clusters": {
+    "heroku": [
+      {
+        "ordinal": 1,
+        "path": "logs/nnue_forward_stages_heroku_full_v2_20260825T1358Z/heroku-forward-stages-run-1.json",
+        "source_label": "source-commit:d9648da134c52198715167ae2b20aeb411608f59:source-tree:a015461078ce682caae0755198d01c8511196890:staging-tree:0567b97440b44269d12d2bad53195643ea8baa30"
+      },
+      {
+        "ordinal": 2,
+        "path": "logs/nnue_forward_stages_heroku_full_v2_20260825T1358Z/heroku-forward-stages-run-2.json",
+        "source_label": "source-commit:d9648da134c52198715167ae2b20aeb411608f59:source-tree:a015461078ce682caae0755198d01c8511196890:staging-tree:0567b97440b44269d12d2bad53195643ea8baa30"
+      },
+      {
+        "ordinal": 3,
+        "path": "logs/nnue_forward_stages_heroku_full_v2_20260825T1358Z/heroku-forward-stages-run-3.json",
+        "source_label": "source-commit:d9648da134c52198715167ae2b20aeb411608f59:source-tree:a015461078ce682caae0755198d01c8511196890:staging-tree:0567b97440b44269d12d2bad53195643ea8baa30"
+      }
+    ],
+    "local": [
+      {
+        "ordinal": 1,
+        "path": "logs/nnue_forward_stages_m4_v2_clean_20260825/local-forward-stages-run-1.json",
+        "source_label": "clean-stage-d9648da134c52198715167ae2b20aeb411608f59"
+      },
+      {
+        "ordinal": 2,
+        "path": "logs/nnue_forward_stages_m4_v2_clean_20260825/local-forward-stages-run-2.json",
+        "source_label": "clean-stage-d9648da134c52198715167ae2b20aeb411608f59"
+      },
+      {
+        "ordinal": 3,
+        "path": "logs/nnue_forward_stages_m4_v2_clean_20260825/local-forward-stages-run-3.json",
+        "source_label": "clean-stage-d9648da134c52198715167ae2b20aeb411608f59"
+      }
+    ]
+  },
+  "identity": {
+    "corpus": {
+      "checksum": "0xf5399956b2fa9ea8",
+      "nonzero_aux_samples": 112,
+      "phase_histogram": [
+        32,
+        32,
+        16,
+        16,
+        16,
+        32,
+        32,
+        80
+      ],
+      "samples": 256,
+      "seed": 20260825
+    },
+    "correctness_checksum": "0x61bbf9ec6191a24b",
+    "model_sha256": "a1a52891f95db9a1bacc48557325b0c5904da4b3c9f8a333eb2ec090b1bb9c02",
+    "source_commit": "d9648da134c52198715167ae2b20aeb411608f59",
+    "stage_checksums": {
+      "full": "0x61bbf9ec6191a24b",
+      "s1_input_to_hidden2": "0xd264620b4b94ba37",
+      "s2_hidden2_to_hidden3": "0x89dbdb9bf3a1ddde",
+      "s3_hidden3_to_output": "0x61bbf9ec6191a24b"
+    },
+    "timed_sinks": {
+      "full": "0xffffffff59975e48",
+      "s1_input_to_hidden2": "0x00000000c610f4c0",
+      "s2_hidden2_to_hidden3": "0x00000019de98fab0",
+      "s3_hidden3_to_output": "0xffffffea550af160"
+    }
+  },
+  "input_protocol": "phase_nnue_forward_stages_v2",
+  "interpretation": {
+    "ratio_is_pure_heroku_overhead": false,
+    "scope": "isolated_kernel_core_stage_timing",
+    "stages_are_additive": false
+  },
+  "primary": {
+    "estimator": "median_of_cluster_medians",
+    "stages": {
+      "full": {
+        "process_cpu": {
+          "delta_heroku_minus_local_ns_per_evaluation": 147.30116666666663,
+          "heroku_cluster_medians_ns_per_evaluation": [
+            226.349,
+            227.81116666666668,
+            227.03449999999998
+          ],
+          "heroku_median_of_cluster_medians_ns_per_evaluation": 227.03449999999998,
+          "local_cluster_medians_ns_per_evaluation": [
+            79.69516666666667,
+            80.33483333333334,
+            79.73333333333333
+          ],
+          "local_median_of_cluster_medians_ns_per_evaluation": 79.73333333333333,
+          "ratio_heroku_over_local": 2.847422658862876
+        },
+        "wall": {
+          "delta_heroku_minus_local_ns_per_evaluation": 147.16018150000002,
+          "heroku_cluster_medians_ns_per_evaluation": [
+            226.40420683333332,
+            227.890012,
+            227.10760516666667
+          ],
+          "heroku_median_of_cluster_medians_ns_per_evaluation": 227.10760516666667,
+          "local_cluster_medians_ns_per_evaluation": [
+            79.879375,
+            80.85591666666667,
+            79.94742366666667
+          ],
+          "local_median_of_cluster_medians_ns_per_evaluation": 79.94742366666667,
+          "ratio_heroku_over_local": 2.840711992341
+        }
+      },
+      "s1_input_to_hidden2": {
+        "process_cpu": {
+          "delta_heroku_minus_local_ns_per_evaluation": 114.68074999999999,
+          "heroku_cluster_medians_ns_per_evaluation": [
+            175.45325,
+            177.40449999999998,
+            176.096375
+          ],
+          "heroku_median_of_cluster_medians_ns_per_evaluation": 176.096375,
+          "local_cluster_medians_ns_per_evaluation": [
+            61.337,
+            61.567499999999995,
+            61.415625
+          ],
+          "local_median_of_cluster_medians_ns_per_evaluation": 61.415625,
+          "ratio_heroku_over_local": 2.867289472345189
+        },
+        "wall": {
+          "delta_heroku_minus_local_ns_per_evaluation": 114.55550637500001,
+          "heroku_cluster_medians_ns_per_evaluation": [
+            175.50857587500002,
+            177.432752375,
+            176.139568875
+          ],
+          "heroku_median_of_cluster_medians_ns_per_evaluation": 176.139568875,
+          "local_cluster_medians_ns_per_evaluation": [
+            61.483208250000004,
+            61.750276,
+            61.5840625
+          ],
+          "local_median_of_cluster_medians_ns_per_evaluation": 61.5840625,
+          "ratio_heroku_over_local": 2.8601485794315695
+        }
+      },
+      "s2_hidden2_to_hidden3": {
+        "process_cpu": {
+          "delta_heroku_minus_local_ns_per_evaluation": 23.336375000000004,
+          "heroku_cluster_medians_ns_per_evaluation": [
+            34.773475000000005,
+            34.410250000000005,
+            34.948049999999995
+          ],
+          "heroku_median_of_cluster_medians_ns_per_evaluation": 34.773475000000005,
+          "local_cluster_medians_ns_per_evaluation": [
+            11.437100000000001,
+            11.417975,
+            11.448125
+          ],
+          "local_median_of_cluster_medians_ns_per_evaluation": 11.437100000000001,
+          "ratio_heroku_over_local": 3.040410156420771
+        },
+        "wall": {
+          "delta_heroku_minus_local_ns_per_evaluation": 23.325957099999997,
+          "heroku_cluster_medians_ns_per_evaluation": [
+            34.7878925,
+            34.417121225,
+            34.95753225
+          ],
+          "heroku_median_of_cluster_medians_ns_per_evaluation": 34.7878925,
+          "local_cluster_medians_ns_per_evaluation": [
+            11.461935400000002,
+            11.45359895,
+            11.477741675
+          ],
+          "local_median_of_cluster_medians_ns_per_evaluation": 11.461935400000002,
+          "ratio_heroku_over_local": 3.0350801401306096
+        }
+      },
+      "s3_hidden3_to_output": {
+        "process_cpu": {
+          "delta_heroku_minus_local_ns_per_evaluation": 6.90329,
+          "heroku_cluster_medians_ns_per_evaluation": [
+            9.02758,
+            9.035195,
+            9.053605000000001
+          ],
+          "heroku_median_of_cluster_medians_ns_per_evaluation": 9.035195,
+          "local_cluster_medians_ns_per_evaluation": [
+            2.126225,
+            2.1319049999999997,
+            2.1356349999999997
+          ],
+          "local_median_of_cluster_medians_ns_per_evaluation": 2.1319049999999997,
+          "ratio_heroku_over_local": 4.238085186722674
+        },
+        "wall": {
+          "delta_heroku_minus_local_ns_per_evaluation": 6.898029825,
+          "heroku_cluster_medians_ns_per_evaluation": [
+            9.030142115,
+            9.037516905,
+            9.05570096
+          ],
+          "heroku_median_of_cluster_medians_ns_per_evaluation": 9.037516905,
+          "local_cluster_medians_ns_per_evaluation": [
+            2.1311370849999998,
+            2.1394870800000003,
+            2.1423058299999997
+          ],
+          "local_median_of_cluster_medians_ns_per_evaluation": 2.1394870800000003,
+          "ratio_heroku_over_local": 4.22415119468728
+        }
+      }
+    }
+  },
+  "protocol": "phase_nnue_forward_stage_crosshost_analysis_v1",
+  "schema_version": 1,
+  "status": "valid"
+}

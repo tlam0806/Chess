@@ -4,12 +4,19 @@
 #include <algorithm>
 #include <array>
 #include <cassert>
+#if defined(CHESS_ENABLE_NNUE_STAGE_BENCHMARK)
+#include <chrono>
+#include <ctime>
+#endif
 #include <climits>
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
 #include <limits>
 #include <memory>
+#if defined(CHESS_ENABLE_NNUE_STAGE_BENCHMARK)
+#include <vector>
+#endif
 
 #if defined(__ARM_NEON) \
     && defined(__ARM_FEATURE_DOTPROD) \
@@ -321,6 +328,9 @@ private:
     }
 
 public:
+    using Hidden2 = std::array<std::uint16_t, H2>;
+    using Hidden3 = std::array<std::uint16_t, H3>;
+
     Candidate() = default;
 
     void load(
@@ -345,10 +355,11 @@ public:
         pack_weights<H2, H3>(hidden3_weight, hidden3_weight_);
     }
 
-    [[gnu::always_inline]] std::int64_t evaluate(
+    [[gnu::always_inline]] void input_to_hidden2(
         const std::int32_t* stm_accumulator,
         const std::int32_t* opponent_accumulator,
-        const std::int16_t* combined_aux_row
+        const std::int16_t* combined_aux_row,
+        Hidden2& hidden2
     ) const {
         std::array<int32x4_t, 8> hidden2_accumulators{};
         for (std::size_t output = 0; output < H2; output += 4) {
@@ -386,7 +397,6 @@ public:
         }
         assert(weights == hidden2_weight_.data() + hidden2_weight_.size());
 
-        alignas(64) std::array<std::uint16_t, H2> hidden2{};
         for (std::size_t block = 0;
              block < hidden2_accumulators.size();
              block += 2) {
@@ -396,7 +406,12 @@ public:
                     hidden2_accumulators[block],
                     hidden2_accumulators[block + 1]));
         }
+    }
 
+    [[gnu::always_inline]] void hidden2_to_hidden3(
+        const Hidden2& hidden2,
+        Hidden3& hidden3
+    ) const {
         std::array<int32x4_t, 8> hidden3_low{};
         std::array<int32x4_t, 8> hidden3_high{};
         for (std::size_t output = 0; output < H3; output += 4) {
@@ -404,7 +419,7 @@ public:
                 vld1q_s32(hidden3_bias_.data() + output);
         }
 
-        weights = hidden3_weight_.data();
+        const std::int8_t* weights = hidden3_weight_.data();
         for (std::size_t input = 0; input < H2; input += 16) {
             const uint16x8_t activation0 =
                 vld1q_u16(hidden2.data() + input);
@@ -424,7 +439,6 @@ public:
         }
         assert(weights == hidden3_weight_.data() + hidden3_weight_.size());
 
-        alignas(64) std::array<std::uint16_t, H3> hidden3{};
         for (std::size_t block = 0; block < hidden3_low.size(); block += 2) {
             const int32x4_t first = vaddq_s32(
                 hidden3_low[block],
@@ -436,7 +450,11 @@ public:
                 hidden3.data() + block * 4,
                 clipped_relu16<Hidden3Scale>(first, second));
         }
+    }
 
+    [[gnu::always_inline, nodiscard]] std::int64_t hidden3_to_output(
+        const Hidden3& hidden3
+    ) const {
         int64x2_t output_sum0 = vdupq_n_s64(0);
         int64x2_t output_sum1 = vdupq_n_s64(0);
         for (std::size_t input = 0; input < H3; input += 8) {
@@ -460,6 +478,22 @@ public:
             output_sum0, output_sum1);
         const std::int64_t raw = output_bias_ + vaddvq_s64(output_sum);
         return raw / OutputScale;
+    }
+
+    [[gnu::always_inline]] std::int64_t evaluate(
+        const std::int32_t* stm_accumulator,
+        const std::int32_t* opponent_accumulator,
+        const std::int16_t* combined_aux_row
+    ) const {
+        alignas(64) Hidden2 hidden2{};
+        input_to_hidden2(
+            stm_accumulator,
+            opponent_accumulator,
+            combined_aux_row,
+            hidden2);
+        alignas(64) Hidden3 hidden3{};
+        hidden2_to_hidden3(hidden2, hidden3);
+        return hidden3_to_output(hidden3);
     }
 };
 
@@ -570,6 +604,144 @@ public:
     [[nodiscard]] std::string_view name() const override {
         return "arm_neon_dotprod_i8mm";
     }
+
+#if defined(CHESS_ENABLE_NNUE_STAGE_BENCHMARK)
+    [[nodiscard]] PhaseForwardBenchmarkBatch benchmark_stage(
+        PhaseForwardBenchmarkStage stage,
+        const std::vector<PhaseForwardBenchmarkSample>& samples,
+        std::size_t evaluations
+    ) const override {
+        if (samples.empty() || evaluations == 0) {
+            return {};
+        }
+        using Hidden2 = typename Network::Hidden2;
+        using Hidden3 = typename Network::Hidden3;
+        struct Prepared {
+            alignas(64) Hidden2 hidden2{};
+            alignas(64) Hidden3 hidden3{};
+        };
+        std::vector<Prepared> prepared(samples.size());
+        const auto aux_row = [&](const PhaseForwardBenchmarkSample& sample) {
+            return sample.aux_state == 0
+                ? static_cast<const std::int16_t*>(nullptr)
+                : combined_aux_rows_.data()
+                    + sample.aux_state
+                        * PhaseQuantizedNnueModel::DenseInputSize;
+        };
+        for (std::size_t index = 0; index < samples.size(); ++index) {
+            const auto& sample = samples[index];
+            const Network& network = phases_[sample.phase_index];
+            network.input_to_hidden2(
+                sample.stm.data(),
+                sample.opponent.data(),
+                aux_row(sample),
+                prepared[index].hidden2);
+            network.hidden2_to_hidden3(
+                prepared[index].hidden2,
+                prepared[index].hidden3);
+        }
+
+        std::uint64_t checksum = 0xcbf29ce484222325ULL;
+        for (std::size_t index = 0; index < samples.size(); ++index) {
+            const Network& network = phases_[samples[index].phase_index];
+            if (stage == PhaseForwardBenchmarkStage::InputToHidden2) {
+                for (std::uint16_t value : prepared[index].hidden2) {
+                    checksum = phase_nnue_detail::phase_benchmark_mix(
+                        checksum, value);
+                }
+            } else if (stage == PhaseForwardBenchmarkStage::Hidden2ToHidden3) {
+                for (std::uint16_t value : prepared[index].hidden3) {
+                    checksum = phase_nnue_detail::phase_benchmark_mix(
+                        checksum, value);
+                }
+            } else if (
+                stage == PhaseForwardBenchmarkStage::Hidden3ToOutput) {
+                checksum = phase_nnue_detail::phase_benchmark_mix(
+                    checksum,
+                    static_cast<std::uint64_t>(network.hidden3_to_output(
+                        prepared[index].hidden3)));
+            } else {
+                const auto& sample = samples[index];
+                checksum = phase_nnue_detail::phase_benchmark_mix(
+                    checksum,
+                    static_cast<std::uint64_t>(network.evaluate(
+                        sample.stm.data(),
+                        sample.opponent.data(),
+                        aux_row(sample))));
+            }
+        }
+
+        std::uint64_t sink = 0;
+        const std::clock_t cpu_start = std::clock();
+        const auto start = std::chrono::steady_clock::now();
+        if (stage == PhaseForwardBenchmarkStage::InputToHidden2) {
+            alignas(64) Hidden2 output{};
+            std::size_t sample_index = 0;
+            for (std::size_t iteration = 0; iteration < evaluations; ++iteration) {
+                const auto& sample = samples[sample_index];
+                phases_[sample.phase_index].input_to_hidden2(
+                    sample.stm.data(),
+                    sample.opponent.data(),
+                    aux_row(sample),
+                    output);
+                phase_nnue_detail::phase_benchmark_consume_all(output);
+                sink += output[iteration & (output.size() - 1)];
+                if (++sample_index == samples.size()) {
+                    sample_index = 0;
+                }
+            }
+        } else if (stage == PhaseForwardBenchmarkStage::Hidden2ToHidden3) {
+            alignas(64) Hidden3 output{};
+            std::size_t sample_index = 0;
+            for (std::size_t iteration = 0; iteration < evaluations; ++iteration) {
+                phases_[samples[sample_index].phase_index]
+                    .hidden2_to_hidden3(
+                        prepared[sample_index].hidden2, output);
+                phase_nnue_detail::phase_benchmark_consume_all(output);
+                sink += output[iteration & (output.size() - 1)];
+                if (++sample_index == samples.size()) {
+                    sample_index = 0;
+                }
+            }
+        } else if (stage == PhaseForwardBenchmarkStage::Hidden3ToOutput) {
+            std::size_t sample_index = 0;
+            for (std::size_t iteration = 0; iteration < evaluations; ++iteration) {
+                sink += static_cast<std::uint64_t>(
+                    phases_[samples[sample_index].phase_index]
+                        .hidden3_to_output(prepared[sample_index].hidden3));
+                if (++sample_index == samples.size()) {
+                    sample_index = 0;
+                }
+            }
+        } else {
+            std::size_t sample_index = 0;
+            for (std::size_t iteration = 0; iteration < evaluations; ++iteration) {
+                const auto& sample = samples[sample_index];
+                sink += static_cast<std::uint64_t>(
+                    phases_[sample.phase_index].evaluate(
+                        sample.stm.data(),
+                        sample.opponent.data(),
+                        aux_row(sample)));
+                if (++sample_index == samples.size()) {
+                    sample_index = 0;
+                }
+            }
+        }
+        const auto stop = std::chrono::steady_clock::now();
+        const std::clock_t cpu_stop = std::clock();
+        return {
+            true,
+            static_cast<std::uint64_t>(
+                std::chrono::duration_cast<std::chrono::nanoseconds>(
+                    stop - start).count()),
+            static_cast<std::uint64_t>(
+                static_cast<long double>(cpu_stop - cpu_start)
+                * 1'000'000'000.0L / CLOCKS_PER_SEC),
+            checksum,
+            sink,
+        };
+    }
+#endif
 };
 
 #endif

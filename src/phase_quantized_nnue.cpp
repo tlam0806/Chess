@@ -3,6 +3,10 @@
 #include "attacks.hpp"
 #include "bitboard.hpp"
 #include "board_encoder.hpp"
+#if defined(CHESS_ENABLE_NNUE_STAGE_BENCHMARK)
+#include "phase_quantized_nnue_forward_backend.hpp"
+#include "phase_quantized_nnue_stage_benchmark.hpp"
+#endif
 
 #include <algorithm>
 #include <array>
@@ -791,5 +795,273 @@ bool PhaseQuantizedNnueAccumulator::matches_full_recompute(
         && state.king_row_bases == rebuilt_state.king_row_bases
         && state.piece_count == rebuilt_state.piece_count;
 }
+
+#if defined(CHESS_ENABLE_NNUE_STAGE_BENCHMARK)
+
+PhaseNnueStageBenchmarkResult benchmark_phase_nnue_forward_stages(
+    const PhaseQuantizedNnueModel& model,
+    const std::vector<Position>& positions,
+    std::size_t warmup_evaluations,
+    const std::array<std::size_t, 4>& evaluations_per_stage,
+    std::size_t repeats
+) {
+    if (!model.loaded() || !model.uses_accelerated_kernel()) {
+        throw std::runtime_error(
+            "stage benchmark requires a loaded accelerated NNUE kernel");
+    }
+    if (positions.empty()
+        || std::ranges::any_of(evaluations_per_stage, [](std::size_t value) {
+            return value == 0;
+        })
+        || repeats == 0) {
+        throw std::runtime_error("stage benchmark counts must be positive");
+    }
+
+    constexpr std::uint64_t ChecksumSeed = 0xcbf29ce484222325ULL;
+    std::array<std::uint64_t, 4> expected{
+        ChecksumSeed, ChecksumSeed, ChecksumSeed, ChecksumSeed};
+    struct ReferenceSample {
+        std::array<std::uint16_t, PhaseQuantizedNnueModel::Hidden2Size>
+            hidden2{};
+        std::array<std::uint16_t, PhaseQuantizedNnueModel::Hidden3Size>
+            hidden3{};
+        std::int64_t output = 0;
+    };
+    std::vector<PhaseForwardBenchmarkSample> samples;
+    samples.reserve(positions.size());
+    std::vector<ReferenceSample> reference_samples;
+    reference_samples.reserve(positions.size());
+    std::uint64_t corpus_checksum = ChecksumSeed;
+
+    for (const Position& pos : positions) {
+        PhaseQuantizedNnueAccumulator accumulator;
+        accumulator.reset(model, pos);
+        const auto& positional = accumulator.positional_accumulators();
+        const std::size_t stm = color_index(pos.side_to_move);
+        const std::size_t opponent = 1 - stm;
+        const std::uint8_t horizontal_mask =
+            model.horizontal_mirror_
+                && file_of(pos.king_squares[stm]) >= 4
+            ? 7U
+            : 0U;
+        const auto aux = aux_features(
+            pos, pos.side_to_move, horizontal_mask);
+
+        PhaseForwardBenchmarkSample sample;
+        sample.stm = positional[stm];
+        sample.opponent = positional[opponent];
+        std::size_t castling_state = 0;
+        for (std::size_t feature = 0; feature < 4; ++feature) {
+            castling_state |= static_cast<std::size_t>(aux[feature]) << feature;
+        }
+        std::size_t en_passant_state = 0;
+        for (std::size_t file = 0; file < 8; ++file) {
+            if (aux[EnPassantFileA + file] != 0) {
+                en_passant_state = file + 1;
+            }
+        }
+        sample.aux_state = castling_state * 9 + en_passant_state;
+        sample.phase_index = std::min<std::size_t>(
+            (accumulator.piece_count() - 1) / 4,
+            PhaseQuantizedNnueModel::PhaseCount - 1);
+        samples.push_back(sample);
+
+        for (std::int32_t value : sample.stm) {
+            corpus_checksum = phase_nnue_detail::phase_benchmark_mix(
+                corpus_checksum, static_cast<std::uint32_t>(value));
+        }
+        for (std::int32_t value : sample.opponent) {
+            corpus_checksum = phase_nnue_detail::phase_benchmark_mix(
+                corpus_checksum, static_cast<std::uint32_t>(value));
+        }
+        corpus_checksum = phase_nnue_detail::phase_benchmark_mix(
+            corpus_checksum, sample.aux_state);
+        corpus_checksum = phase_nnue_detail::phase_benchmark_mix(
+            corpus_checksum, sample.phase_index);
+
+        alignas(64) std::array<
+            std::int32_t,
+            PhaseQuantizedNnueModel::DenseInputSize> dense{};
+        std::copy(sample.stm.begin(), sample.stm.end(), dense.begin());
+        std::copy(
+            sample.opponent.begin(),
+            sample.opponent.end(),
+            dense.begin() + PhaseQuantizedNnueModel::PerspectiveAccumulatorSize);
+        for (std::size_t feature = 0;
+             feature < PhaseQuantizedNnueModel::AuxFeatureCount;
+             ++feature) {
+            if (aux[feature] != 0) {
+                add_aux_weight_row(
+                    dense,
+                    model.aux_weights_.data()
+                        + feature * PhaseQuantizedNnueModel::DenseInputSize);
+            }
+        }
+
+        const auto& phase = model.phases_[sample.phase_index];
+        std::array<std::int32_t, PhaseQuantizedNnueModel::DenseInputSize>
+            hidden1{};
+        for (std::size_t input = 0; input < hidden1.size(); ++input) {
+            const std::int64_t clipped = std::clamp<std::int64_t>(
+                dense[input], 0, model.hidden_clip_);
+            hidden1[input] = static_cast<std::int32_t>(
+                clipped * clipped / model.screlu_divisor_);
+        }
+        std::array<std::uint16_t, PhaseQuantizedNnueModel::Hidden2Size>
+            hidden2{};
+        for (std::size_t output = 0; output < hidden2.size(); ++output) {
+            std::int64_t sum = phase.hidden2_bias[output];
+            for (std::size_t input = 0; input < hidden1.size(); ++input) {
+                sum += static_cast<std::int64_t>(hidden1[input])
+                    * phase.hidden2_weight[output * hidden1.size() + input];
+            }
+            hidden2[output] = static_cast<std::uint16_t>(
+                std::clamp<std::int64_t>(
+                    sum / model.hidden2_scale_, 0, 65535));
+            expected[0] = phase_nnue_detail::phase_benchmark_mix(
+                expected[0], hidden2[output]);
+        }
+        std::array<std::uint16_t, PhaseQuantizedNnueModel::Hidden3Size>
+            hidden3{};
+        for (std::size_t output = 0; output < hidden3.size(); ++output) {
+            std::int64_t sum = phase.hidden3_bias[output];
+            for (std::size_t input = 0; input < hidden2.size(); ++input) {
+                sum += static_cast<std::int64_t>(hidden2[input])
+                    * phase.hidden3_weight[output * hidden2.size() + input];
+            }
+            hidden3[output] = static_cast<std::uint16_t>(
+                std::clamp<std::int64_t>(
+                    sum / model.hidden3_scale_, 0, 65535));
+            expected[1] = phase_nnue_detail::phase_benchmark_mix(
+                expected[1], hidden3[output]);
+        }
+        std::int64_t output = phase.output_bias;
+        for (std::size_t input = 0; input < hidden3.size(); ++input) {
+            output += static_cast<std::int64_t>(hidden3[input])
+                * phase.output_weight[input];
+        }
+        output /= model.output_scale_;
+        expected[2] = phase_nnue_detail::phase_benchmark_mix(
+            expected[2], static_cast<std::uint64_t>(output));
+        expected[3] = phase_nnue_detail::phase_benchmark_mix(
+            expected[3], static_cast<std::uint64_t>(output));
+        reference_samples.push_back({hidden2, hidden3, output});
+    }
+
+    const auto expected_timed_sink = [&reference_samples](
+        PhaseForwardBenchmarkStage stage,
+        std::size_t evaluations
+    ) {
+        std::uint64_t sink = 0;
+        std::size_t sample_index = 0;
+        for (std::size_t iteration = 0; iteration < evaluations; ++iteration) {
+            const auto& sample = reference_samples[sample_index];
+            if (stage == PhaseForwardBenchmarkStage::InputToHidden2) {
+                sink += sample.hidden2[
+                    iteration & (sample.hidden2.size() - 1)];
+            } else if (
+                stage == PhaseForwardBenchmarkStage::Hidden2ToHidden3) {
+                sink += sample.hidden3[
+                    iteration & (sample.hidden3.size() - 1)];
+            } else {
+                sink += static_cast<std::uint64_t>(sample.output);
+            }
+            if (++sample_index == reference_samples.size()) {
+                sample_index = 0;
+            }
+        }
+        return sink;
+    };
+
+    constexpr std::array<PhaseForwardBenchmarkStage, 4> StageIds{
+        PhaseForwardBenchmarkStage::InputToHidden2,
+        PhaseForwardBenchmarkStage::Hidden2ToHidden3,
+        PhaseForwardBenchmarkStage::Hidden3ToOutput,
+        PhaseForwardBenchmarkStage::Full,
+    };
+    std::array<std::uint64_t, StageIds.size()> expected_warmup_sinks{};
+    std::array<std::uint64_t, StageIds.size()> expected_repeat_sinks{};
+    for (std::size_t index = 0; index < StageIds.size(); ++index) {
+        expected_warmup_sinks[index] = expected_timed_sink(
+            StageIds[index], warmup_evaluations);
+        expected_repeat_sinks[index] = expected_timed_sink(
+            StageIds[index], evaluations_per_stage[index]);
+    }
+    PhaseNnueStageBenchmarkResult result;
+    result.kernel = std::string(model.forward_kernel_name());
+    result.sample_count = samples.size();
+    result.corpus_checksum = corpus_checksum;
+    for (const auto& sample : samples) {
+        ++result.phase_counts[sample.phase_index];
+        result.nonzero_aux_samples += sample.aux_state != 0;
+    }
+    result.scalar_parity = true;
+    result.stage_parity = true;
+    result.timed_sink_parity = true;
+    result.stages = {
+        {"s1_input_to_hidden2", evaluations_per_stage[0], {}, {}, 0, 0},
+        {"s2_hidden2_to_hidden3", evaluations_per_stage[1], {}, {}, 0, 0},
+        {"s3_hidden3_to_output", evaluations_per_stage[2], {}, {}, 0, 0},
+        {"full", evaluations_per_stage[3], {}, {}, 0, 0},
+    };
+
+    for (std::size_t index = 0; index < StageIds.size(); ++index) {
+        const PhaseForwardBenchmarkStage stage = StageIds[index];
+        if (warmup_evaluations != 0) {
+            const auto warmup = model.candidate_kernel_->benchmark_stage(
+                stage, samples, warmup_evaluations);
+            if (!warmup.supported) {
+                throw std::runtime_error(
+                    "selected NNUE kernel does not expose stage benchmarking");
+            }
+            result.timed_sink_parity = result.timed_sink_parity
+                && warmup.timed_sink
+                    == expected_warmup_sinks[index];
+        }
+    }
+    for (std::size_t repeat = 0; repeat < repeats; ++repeat) {
+        // Rotate the four stages so no stage consistently receives the same
+        // thermal/order position across repeats.
+        for (std::size_t offset = 0; offset < StageIds.size(); ++offset) {
+            const std::size_t index = (repeat + offset) % StageIds.size();
+            const auto batch = model.candidate_kernel_->benchmark_stage(
+                StageIds[index], samples, evaluations_per_stage[index]);
+            if (!batch.supported) {
+                throw std::runtime_error(
+                    "selected NNUE kernel does not expose stage benchmarking");
+            }
+            auto& stage = result.stages[index];
+            const bool first_batch = stage.elapsed_ns.empty();
+            stage.elapsed_ns.push_back(batch.elapsed_ns);
+            stage.cpu_ns.push_back(batch.cpu_ns);
+            result.batches.push_back({
+                repeat,
+                offset,
+                stage.name,
+                evaluations_per_stage[index],
+                batch.elapsed_ns,
+                batch.cpu_ns,
+            });
+            if (first_batch) {
+                stage.checksum = batch.checksum;
+                stage.timed_sink = batch.timed_sink;
+            }
+            result.stage_parity = result.stage_parity
+                && batch.checksum == expected[index]
+                && stage.checksum == batch.checksum;
+            result.timed_sink_parity = result.timed_sink_parity
+                && batch.timed_sink
+                    == expected_repeat_sinks[index]
+                && stage.timed_sink == batch.timed_sink;
+            if (index == 3) {
+                result.scalar_parity = result.scalar_parity
+                    && batch.checksum == expected[3];
+            }
+        }
+    }
+    return result;
+}
+
+#endif
 
 } // namespace chess

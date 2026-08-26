@@ -101,7 +101,9 @@ void set_position(
         return;
     }
 
+#if !defined(CHESS_UCI_NNUE_V41)
     searcher.clear_tt();
+#endif
     if (token == "moves") {
         while (input >> token) {
             bool irreversible = false;
@@ -343,6 +345,7 @@ int main(int argc, char** argv) {
             pos.set_startpos();
             history = {pos.zobrist_key};
             searcher.clear_tt();
+            searcher.clear_search_heuristics();
         } else if (command == "position") {
             set_position(pos, history, searcher, input);
         } else if (command == "go") {

@@ -8,6 +8,11 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 option(CHESS_ENABLE_TT_STATS "Enable transposition-table counters in hot paths" OFF)
 option(CHESS_ENABLE_LTO "Enable link-time optimization for release builds" OFF)
+option(
+    CHESS_ENABLE_NNUE_STAGE_BENCHMARK
+    "Compile the non-production phase NNUE stage benchmark hooks"
+    OFF
+)
 
 if(CHESS_ENABLE_LTO)
     include(CheckIPOSupported)
@@ -192,6 +197,11 @@ target_include_directories(chess_core PUBLIC
     include/searchers/strict
 )
 
+if(CHESS_ENABLE_NNUE_STAGE_BENCHMARK)
+    target_compile_definitions(
+        chess_core PRIVATE CHESS_ENABLE_NNUE_STAGE_BENCHMARK=1)
+endif()
+
 if (CHESS_ENABLE_TT_STATS)
     target_compile_definitions(chess_core PRIVATE CHESS_ENABLE_TT_STATS=1)
 endif()
@@ -231,6 +241,7 @@ target_link_libraries(legal_move_dataset_view PRIVATE chess_core)
 
 add_executable(robotmoon_binpack_to_cbin tools/robotmoon_binpack_to_cbin.cpp)
 add_executable(validate_robotmoon_cbin tools/validate_robotmoon_cbin.cpp)
+add_executable(audit_nnue_mirror_split tools/audit_nnue_mirror_split.cpp)
 add_executable(robotmoon_binpack_fixture tests/robotmoon_binpack_fixture.cpp)
 
 add_executable(evaluate_heuristic_on_cbin tools/evaluate_heuristic_on_cbin.cpp)
@@ -296,6 +307,20 @@ target_link_libraries(benchmark_nnue_v36_vs_heuristic_v35 PRIVATE chess_core)
 
 add_executable(benchmark_nnue_v36_vs_v37 tools/profile/benchmark_nnue_v36_vs_v37.cpp)
 target_link_libraries(benchmark_nnue_v36_vs_v37 PRIVATE chess_core)
+
+if(CHESS_ENABLE_NNUE_STAGE_BENCHMARK)
+    add_executable(
+        benchmark_phase_nnue_forward_stages
+        tools/profile/benchmark_phase_nnue_forward_stages.cpp
+    )
+    target_link_libraries(benchmark_phase_nnue_forward_stages PRIVATE chess_core)
+endif()
+
+add_executable(
+    benchmark_nnue_horizontal_mirror
+    tools/profile/benchmark_nnue_horizontal_mirror.cpp
+)
+target_link_libraries(benchmark_nnue_horizontal_mirror PRIVATE chess_core)
 
 add_executable(
     benchmark_nnue_v40_repetition

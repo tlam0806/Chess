@@ -1,6 +1,6 @@
 # Chess NNUE optimization context
 
-Updated: 2026-07-26
+Updated: 2026-08-25
 
 This file is a handoff for continuing the current NNUE optimization work in a
 new Codex tab. The relevant repository is:
@@ -8,6 +8,10 @@ new Codex tab. The relevant repository is:
 ```text
 /Users/tunglamnguyen/Chess
 ```
+
+The authoritative chronological status and benchmark limitations now live in
+`docs/milestones/README.md` and `docs/benchmarks/README.md`. This file keeps the
+lower-level optimization history.
 
 ## User intent and constraints
 
@@ -813,7 +817,7 @@ excluding every previous V38/V39 tune, selection, and holdout split.
 
 ## Current strongest V39 baseline: Fast
 
-As of 2026-08-16, **Fast is the strongest validated V39 selective-search
+As of 2026-08-16, **Fast is the historically promoted V39 selective-search
 baseline** and is the default `NnueSearcherV39::SelectiveConfig`. Use this
 profile as the parent/control for future pruning experiments:
 
@@ -837,10 +841,12 @@ Fast vs all-four winner:  21W 59D 10L, 56.11%, CI95 [50.05%, 62.17%]
 ```
 
 The last row is the reciprocal of the recorded `all4_winner` score (43.89%).
-These are sequential early-stop confidence intervals, so treat them as the
-project's promotion rule rather than as a fixed-sample Elo proof. Nevertheless,
-all completed head-to-head promotion tests favor Fast. The newer offline
-four-prune winner must not replace Fast: it lost their direct match.
+The matches repeatedly inspected an ordinary interval and stopped when it first
+excluded 50%; the gauntlet also retained history/killer/counter heuristics
+between games. Treat the intervals as the historical project promotion rule,
+not sequentially valid confidence intervals or a fixed-sample Elo proof. All
+recorded direct scores favor Fast, but the evidence is directional. The newer
+offline four-prune winner must not replace Fast: it lost their direct match.
 
 Relevant result files:
 
@@ -854,9 +860,9 @@ but its strict-V36 seed and hard-gate policy are not the current runtime
 baseline. New V39 tuning should start from Fast, keep it as an explicit control,
 and require a direct paired-opening self-play win before changing the default.
 
-## Experimental V40: QSEE pruning
+## V40 QSEE: adopted in V41, strength inconclusive
 
-V40 is the first experimental child of the validated V39/Fast baseline. It
+V40 is the first experimental child of the historically promoted V39/Fast baseline. It
 keeps all Fast parameters unchanged and enables quiescence static-exchange
 evaluation pruning. The completed 2026-08-17 threshold tune selected
 `qsearch_see_threshold = -75cp` as the balanced self-play candidate. On the
@@ -881,8 +887,15 @@ OFF, -600, -500, -400, -350, -300, -250, -225, -200,
 ```
 
 Use `evaluate_nnue_v40_selective` for fixed-depth/fixed-time evaluation and
-`nnue_v40_time_gauntlet` for paired-opening self-play. Promotion to the default
-still requires a direct win over V39/Fast; V40 is not yet a validated baseline.
+`nnue_v40_time_gauntlet` for paired-opening self-play. The direct V40/V39 match
+finished 116W-392D-92L for V40, 52.0%, nominal CI [49.71%, 54.29%], so it did
+not prove a playing-strength win. QSEE `-75cp` was nevertheless adopted in V41
+on its measured efficiency evidence.
+
+The retained V40 tune and match summaries do not include a complete
+Git/binary/model/suite/harness identity set. Under the current milestone
+vocabulary this is historical efficiency evidence with provenance caveats,
+not a fully reproducible validated-performance artifact.
 
 Relevant tune result:
 
@@ -909,17 +922,23 @@ single-square pawn push uses `MoveFlag::Quiet`, but must reset
 `halfmove_clock` to zero rather than incrementing it. Make/unmake regression
 coverage now verifies the reset and restoration explicitly.
 
-Paired V40/V41 benchmarks with the production NNUE model measured:
+The clean-snapshot 2026-08-25 paired V40/V41 rerun with the production NNUE
+model measured:
 
 ```text
-depth 7: node ratio 97.15%, median paired NPS ratio 98.47%, time ratio 98.66%
-depth 8: node ratio 94.50%, median paired NPS ratio 99.20%, time ratio 95.27%
+depth 7: node ratio 97.1458%, aggregate NPS ratio 98.6937%, time ratio 98.4316%
+depth 8: node ratio 94.5019%, aggregate NPS ratio 99.7464%, time ratio 94.7422%
 ```
 
-The production Lichess deployment uses `uci_nnue_v41`, the strongest existing
-200M Huber model, and no external `AvoidDraw` options. Heroku release v11 was
-deployed to `stormy-garden-92984` on 2026-08-25 from commit `803aeb5`. Its
-post-release gate reported `x86_avx512vnni_256` and reproduced the canonical
-start-position depth-7 signature (`25cp`, 33,514 nodes, `e2e4`). The Basic
-worker then passed engine configuration and connected as `TrumCoVuaa` awaiting
-challenges. Release v10 remains the explicit rollback target.
+See `docs/benchmarks/nnue_v41_draw_rules_20260825.md` for the protocol,
+bootstrap intervals and limitations.
+
+The production Lichess deployment uses `uci_nnue_v41`, the current F2 Huber
+model, and no external `AvoidDraw` options. Release v11 first deployed the x86
+SIMD engine from commit `803aeb5`. Release v12 then enabled LTO from commit
+`634b2d4`; its retained smoke engine SHA-256 is
+`2b9bedd073bc6d15464567cc9a716a1b7e0b3f7227ed7b293b9f9bb2b7ba8128`.
+The smoke reported `x86_avx512vnni_256` and reproduced the canonical
+start-position depth-7 signature (`25cp`, 33,514 nodes, `e2e4`). The full
+four-dyno paired A/B measured +6.15% at depth 7 and +6.77% at depth 8, with
+both ratio intervals above 1.0. Release v11 is the previous non-LTO runtime.

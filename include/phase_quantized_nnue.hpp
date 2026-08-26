@@ -23,6 +23,9 @@ inline constexpr std::string_view DefaultPhaseQuantizedNnueModelPath =
     "best/phase_quantized_nnue.bin";
 
 class PhaseQuantizedNnueAccumulator;
+#if defined(CHESS_ENABLE_NNUE_STAGE_BENCHMARK)
+struct PhaseNnueStageBenchmarkResult;
+#endif
 
 class PhaseQuantizedNnueModel {
 public:
@@ -88,6 +91,15 @@ public:
     }
 
 private:
+#if defined(CHESS_ENABLE_NNUE_STAGE_BENCHMARK)
+    friend PhaseNnueStageBenchmarkResult benchmark_phase_nnue_forward_stages(
+        const PhaseQuantizedNnueModel&,
+        const std::vector<Position>&,
+        std::size_t,
+        const std::array<std::size_t, 4>&,
+        std::size_t
+    );
+#endif
     friend class PhaseQuantizedNnueAccumulator;
     template<int Hidden2Scale, int Hidden3Scale, int OutputScale>
     friend class PhaseCandidateKernel;

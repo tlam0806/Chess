@@ -166,3 +166,43 @@ tools/collect_stockfish_static_nnue_200m.sh
 ```
 
 The final label manifest pins both the Stockfish commit and NNUE SHA-256.
+
+## F2M Horizontal-Mirror Architecture
+
+`F2M` is the production-compatible F2 phase architecture with HalfKP-style
+file canonicalization. Each accumulator is oriented independently: if its own
+king is on files e-h, both the king and every piece square use `square ^ 7`.
+The king is therefore always encoded on files a-d. This reduces the shared
+feature table from 49,152 to 24,576 rows without changing the 256-32-32 dense
+network, eight phase stacks, PSQT buckets, or quantized arithmetic.
+
+Castling kingside/queenside features and en-passant files are mirrored with
+the side-to-move accumulator. Training/validation/test split keys use the same
+canonical board and aux state, so horizontal twins cannot leak across splits.
+The C++ accumulator stores a precomputed square XOR mask and king-row base per
+perspective. Incremental updates never construct or mirror a `Position`.
+
+An F2 checkpoint can initialize F2M by averaging horizontal weight pairs. The
+optional symmetric F2 reference is useful for exact regression tests:
+
+```sh
+.venv/bin/python tools/convert_f2_to_f2m_checkpoint.py \
+  --source SOURCE_F2.pt \
+  --output F2M_INIT.pt \
+  --symmetric-reference-output F2_SYMMETRIC_REFERENCE.pt
+```
+
+Train the phase model with the existing trainer, changing `--arch` to `F2M`.
+Pass the converted checkpoint through `--resume-checkpoint` without
+`--resume-optimizer` to warm-start with a fresh optimizer. Export uses the
+same command as F2 and writes binary format version 2 automatically:
+
+```sh
+.venv/bin/python tools/export_phase_quantized_nnue.py \
+  --checkpoint F2M_CHECKPOINT.pt \
+  --output phase_quantized_nnue_f2m.bin
+```
+
+The runtime loader remains backward-compatible with F2 version-1 binaries.
+Use `benchmark_nnue_horizontal_mirror` with a symmetric F2 binary and its F2M
+fold to verify identical moves/scores/nodes and compare full-search NPS.

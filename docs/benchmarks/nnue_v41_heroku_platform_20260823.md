@@ -5,6 +5,9 @@
 Status: **validated Heroku baseline**. This is not yet a Heroku/local speed
 comparison; the matching local run must wait for an idle machine.
 
+Follow-up: the matching canonical local run is now documented in
+[V41 canonical local Mac versus Heroku](nnue_v41_local_vs_heroku_20260825.md).
+
 The production V41 image was measured on three independent Heroku Basic
 one-off dynos. All 1,080 observations completed, all fixed-depth search
 signatures matched across rounds and dynos, and no timeout or movetime warning

@@ -311,7 +311,13 @@ public:
             throw std::runtime_error("dedup filter exceeds addressable memory");
         }
         const std::size_t requested = static_cast<std::size_t>(requested_blocks);
-        const std::size_t block_count = std::max<std::size_t>(requested, 1);
+        std::size_t block_count = 1;
+        while (block_count < requested) {
+            if (block_count > std::numeric_limits<std::size_t>::max() / 2) {
+                throw std::runtime_error("dedup filter block count overflow");
+            }
+            block_count *= 2;
+        }
         blocks_.resize(block_count);
     }
 

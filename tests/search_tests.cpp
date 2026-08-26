@@ -2,6 +2,7 @@
 
 #include "attacks.hpp"
 #include "evaluate.hpp"
+#include "lower_move_range_bucket_transposition_table.hpp"
 
 #include <algorithm>
 #include <cassert>
@@ -66,6 +67,68 @@ bool contains_move(const std::vector<Move>& moves, Move target) {
 } // namespace
 
 int main() {
+    {
+        LowerMoveRangeBucketTranspositionTable tt(1, 4);
+        constexpr HashKey key = 0x123456789abcdef0ULL;
+        const Move old_hint = make_move(
+            make_square(4, 1), make_square(4, 3), MoveFlag::DoublePawnPush);
+        const Move new_hint = make_move(
+            make_square(3, 1), make_square(3, 3), MoveFlag::DoublePawnPush);
+
+        tt.advance_generation();
+        tt.store(key, 3, ScoreRange{42, 42}, MoveRange{old_hint, old_hint});
+
+        ScoreRange window{-100, 100};
+        ScoreRange stored_score;
+        MoveRange stored_move;
+        bool score_available = false;
+        assert(tt.probe(
+            key, 3, window, stored_score, stored_move, 0, score_available,
+            TTDepthPolicy::Exact));
+        assert(score_available);
+        assert(stored_score.lower == 42 && stored_score.upper == 42);
+        assert(stored_move.lower == old_hint);
+
+        // A new root history starts a new score generation.  The previous
+        // move remains useful for ordering, but its path-dependent score must
+        // not narrow the new search window or produce a cutoff.
+        tt.advance_generation();
+        window = ScoreRange{-100, 100};
+        stored_score = {};
+        stored_move = {};
+        score_available = false;
+        assert(!tt.probe(
+            key, 3, window, stored_score, stored_move, 0, score_available,
+            TTDepthPolicy::Exact));
+        assert(!score_available);
+        assert(window.lower == -100 && window.upper == 100);
+        assert(stored_move.lower == old_hint);
+
+        // Writing the same key in the current generation replaces, rather
+        // than merges with, the stale score.
+        tt.store(key, 1, ScoreRange{-7, -7}, MoveRange{new_hint, new_hint});
+        window = ScoreRange{-100, 100};
+        stored_score = {};
+        stored_move = {};
+        score_available = false;
+        assert(tt.probe(
+            key, 1, window, stored_score, stored_move, 0, score_available,
+            TTDepthPolicy::Exact));
+        assert(score_available);
+        assert(stored_score.lower == -7 && stored_score.upper == -7);
+        assert(stored_move.lower == new_hint);
+
+        tt.clear();
+        tt.advance_generation();
+        window = ScoreRange{-100, 100};
+        stored_move = {};
+        score_available = false;
+        assert(!tt.probe(
+            key, 1, window, stored_score, stored_move, 0, score_available,
+            TTDepthPolicy::Exact));
+        assert(stored_move.lower.value == 0);
+    }
+
     {
         Position pos;
         pos.set_piece(Color::White, PieceType::King, make_square(4, 0));

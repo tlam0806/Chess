@@ -12,8 +12,11 @@ COPY src ./src
 COPY tools ./tools
 COPY tests ./tests
 RUN cmake -S . -B build-release -DCMAKE_BUILD_TYPE=Release \
+        -DCHESS_ENABLE_LTO=ON \
+        -DCHESS_ENABLE_NNUE_STAGE_BENCHMARK=ON \
     && cmake --build build-release \
-       --target phase_quantized_nnue_tests uci_nnue_v41 -j 2
+       --target phase_quantized_nnue_tests uci_nnue_v41 \
+                benchmark_phase_nnue_forward_stages -j 2
 
 FROM ubuntu:24.04
 
@@ -27,6 +30,8 @@ COPY --from=engine-build /src/build-release/phase_quantized_nnue_tests \
     ./build-release/phase_quantized_nnue_tests
 COPY --from=engine-build /src/build-release/uci_nnue_v41 \
     ./build-release/uci_nnue_v41
+COPY --from=engine-build /src/build-release/benchmark_phase_nnue_forward_stages \
+    ./build-release/benchmark_phase_nnue_forward_stages
 COPY models ./models
 COPY benchmarks/uci_platform_v1.json ./benchmarks/uci_platform_v1.json
 COPY deploy/heroku/benchmark-config-v41.yml \
@@ -34,11 +39,15 @@ COPY deploy/heroku/benchmark-config-v41.yml \
 COPY tools/benchmark_uci_platform.py ./tools/benchmark_uci_platform.py
 COPY tools/run_nnue_backend_matrix_remote.py \
     ./tools/run_nnue_backend_matrix_remote.py
+COPY tools/run_nnue_forward_stages_remote.py \
+    ./tools/run_nnue_forward_stages_remote.py
 RUN chmod +x \
       ./build-release/phase_quantized_nnue_tests \
       ./build-release/uci_nnue_v41 \
+      ./build-release/benchmark_phase_nnue_forward_stages \
       ./tools/benchmark_uci_platform.py \
-      ./tools/run_nnue_backend_matrix_remote.py
+      ./tools/run_nnue_backend_matrix_remote.py \
+      ./tools/run_nnue_forward_stages_remote.py
 
 # This image is only a source for explicitly requested one-off dynos.  The
 # corresponding process formation is kept at zero by the staging script.

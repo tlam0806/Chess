@@ -12,6 +12,7 @@ from .nnue_architectures import (
     ARCHITECTURES as FLOAT_ARCHITECTURES,
     KING_BUCKET_COUNT,
     NnueArchitectureConfig,
+    is_dual_accumulator_transform,
     transform_features,
 )
 from .value_net import AUX_FEATURE_COUNT
@@ -100,7 +101,9 @@ QUANTIZED_ARCHITECTURES: dict[str, QuantizedNnueArchitectureConfig] = {
         hidden_sizes=config.hidden_sizes,
     )
     for name, config in _QUANTIZED_FLOAT_ARCHITECTURES.items()
-    if name in {"A", "B", "C", "D", "E", "F", "G", "H", "E2", "F2", "F2_64"}
+    if name in {
+        "A", "B", "C", "D", "E", "F", "G", "H", "E2", "F2", "F2M", "F2_64"
+    }
 }
 
 
@@ -410,7 +413,7 @@ class QuantizedSparseNnueArchitecture(nn.Module):
         self.psqt_master_scale_to_cp = float(psqt_master_scale_to_cp)
         self.default_hidden_scales = [linear_weight_scale] * max(0, len(config.hidden_sizes) - 1)
         self.default_output_scale = output_weight_scale
-        self.dual_accumulator = self.transform == "dual_full_king_square_concat"
+        self.dual_accumulator = is_dual_accumulator_transform(self.transform)
         if self.dual_accumulator:
             if self.board_feature_count % 2 != 0 or self.hidden1_size % 2 != 0:
                 raise ValueError("dual accumulator feature and hidden sizes must be even")
@@ -591,7 +594,7 @@ class QuantizedSparseNnueArchitecture(nn.Module):
         elif self.transform == "full_king_square":
             value = torch.div(indices, 64 * 64, rounding_mode="floor")
             primary = board_mask & (torch.remainder(value, 2) == 0)
-        elif self.transform == "dual_full_king_square_concat":
+        elif is_dual_accumulator_transform(self.transform):
             primary = board_mask & (indices < self.board_feature_count // 2)
         else:
             raise ValueError(f"unknown feature transform: {self.transform}")
@@ -1113,16 +1116,32 @@ class PhaseStackQuantizedNnueArchitecture(QuantizedSparseNnueArchitecture):
     ``clamp((piece_count - 1) // 4, 0, 7)``.
     """
 
-    def __init__(self, config: QuantizedNnueArchitectureConfig, **kwargs: Any) -> None:
+    def __init__(
+        self,
+        config: QuantizedNnueArchitectureConfig,
+        phase_layout: str = "independent",
+        **kwargs: Any,
+    ) -> None:
+        if phase_layout not in ("independent", "shared_first"):
+            raise ValueError(f"unknown phase layout: {phase_layout}")
         kwargs["use_psqt"] = True
         super().__init__(config, **kwargs)
         template_layers = self.hidden_layers
         template_output = self.output
         del self.hidden_layers
         del self.output
+        self.phase_layout = phase_layout
+        if phase_layout == "shared_first":
+            if len(template_layers) < 2:
+                raise ValueError("shared_first requires at least two dense hidden layers")
+            self.shared_hidden_layers = nn.ModuleList([template_layers[0]])
+            phase_template = nn.ModuleList(list(template_layers[1:]))
+        else:
+            self.shared_hidden_layers = nn.ModuleList()
+            phase_template = template_layers
         self.phase_hidden_layers = nn.ModuleList(
-            [template_layers]
-            + [copy.deepcopy(template_layers) for _ in range(PSQT_BUCKET_COUNT - 1)]
+            [phase_template]
+            + [copy.deepcopy(phase_template) for _ in range(PSQT_BUCKET_COUNT - 1)]
         )
         self.phase_outputs = nn.ModuleList(
             [template_output]
@@ -1131,7 +1150,20 @@ class PhaseStackQuantizedNnueArchitecture(QuantizedSparseNnueArchitecture):
 
     @property
     def dense_layer_count(self) -> int:
-        return len(self.phase_hidden_layers[0])
+        return len(self.shared_hidden_layers) + len(self.phase_hidden_layers[0])
+
+    def layers_for_phase(self, phase: int) -> tuple[nn.Linear, ...]:
+        if not 0 <= phase < len(self.phase_hidden_layers):
+            raise IndexError(f"phase outside 0..7: {phase}")
+        return tuple(self.shared_hidden_layers) + tuple(self.phase_hidden_layers[phase])
+
+    def unique_layers_at_depth(self, layer_index: int) -> tuple[nn.Linear, ...]:
+        if not 0 <= layer_index < self.dense_layer_count:
+            raise IndexError(f"dense layer outside model: {layer_index}")
+        if layer_index < len(self.shared_hidden_layers):
+            return (self.shared_hidden_layers[layer_index],)
+        phase_index = layer_index - len(self.shared_hidden_layers)
+        return tuple(layers[phase_index] for layers in self.phase_hidden_layers)
 
     def _quantized_output_weight_for(self, output: nn.Linear) -> torch.Tensor:
         return fake_quantized_int(
@@ -1182,9 +1214,7 @@ class PhaseStackQuantizedNnueArchitecture(QuantizedSparseNnueArchitecture):
             offsets.numel(), dtype=first_hidden.dtype, device=first_hidden.device
         )
 
-        for phase, (layers, output) in enumerate(
-            zip(self.phase_hidden_layers, self.phase_outputs)
-        ):
+        for phase, output in enumerate(self.phase_outputs):
             selected = torch.nonzero(buckets == phase, as_tuple=False).squeeze(1)
             if selected.numel() == 0:
                 continue
@@ -1198,7 +1228,7 @@ class PhaseStackQuantizedNnueArchitecture(QuantizedSparseNnueArchitecture):
                 quantization_convention,
             )
             for layer_index, (scale, layer) in enumerate(
-                zip(hidden_scales, layers), 1
+                zip(hidden_scales, self.layers_for_phase(phase)), 1
             ):
                 accumulator_scale = activation_scale * float(self.linear_weight_scale)
                 bias_scale = (
@@ -1291,6 +1321,11 @@ class PhaseStackQuantizedNnueArchitecture(QuantizedSparseNnueArchitecture):
             self.aux_feature_weights.clamp_(
                 INT8_MIN / float(self.feature_weight_scale),
                 INT8_MAX / float(self.feature_weight_scale),
+            )
+        for layer in self.shared_hidden_layers:
+            layer.weight.clamp_(
+                INT8_MIN / float(self.linear_weight_scale),
+                INT8_MAX / float(self.linear_weight_scale),
             )
         for layers in self.phase_hidden_layers:
             for layer in layers:

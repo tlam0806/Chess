@@ -14,6 +14,19 @@ KING_BUCKET_FEATURE_COUNT = 6 * 2 * 2 * KING_BUCKET_COUNT * 64
 FULL_KING_FEATURE_COUNT = 6 * 2 * 2 * 64 * 64
 DUAL_ACCUMULATOR_FEATURE_COUNT = 6 * 2 * 64 * 64
 DUAL_FULL_KING_FEATURE_COUNT = 2 * DUAL_ACCUMULATOR_FEATURE_COUNT
+HORIZONTAL_MIRROR_KING_SQUARE_COUNT = 8 * 4
+HORIZONTAL_MIRROR_DUAL_ACCUMULATOR_FEATURE_COUNT = (
+    6 * 2 * HORIZONTAL_MIRROR_KING_SQUARE_COUNT * 64
+)
+HORIZONTAL_MIRROR_DUAL_FULL_KING_FEATURE_COUNT = (
+    2 * HORIZONTAL_MIRROR_DUAL_ACCUMULATOR_FEATURE_COUNT
+)
+DUAL_ACCUMULATOR_TRANSFORMS = frozenset(
+    {
+        "dual_full_king_square_concat",
+        "dual_full_king_square_concat_horizontal_mirror",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -43,6 +56,12 @@ ARCHITECTURES: dict[str, NnueArchitectureConfig] = {
     "H": NnueArchitectureConfig("H", "full_king_square", FULL_KING_FEATURE_COUNT, (128, 32)),
     "E2": NnueArchitectureConfig("E2", "dual_full_king_square_concat", DUAL_FULL_KING_FEATURE_COUNT, (256, 32)),
     "F2": NnueArchitectureConfig("F2", "dual_full_king_square_concat", DUAL_FULL_KING_FEATURE_COUNT, (256, 32, 32)),
+    "F2M": NnueArchitectureConfig(
+        "F2M",
+        "dual_full_king_square_concat_horizontal_mirror",
+        HORIZONTAL_MIRROR_DUAL_FULL_KING_FEATURE_COUNT,
+        (256, 32, 32),
+    ),
 }
 
 
@@ -69,10 +88,30 @@ def flip_relative_square(square: int) -> int:
     return square ^ 56
 
 
-def dual_accumulator_feature(piece: int, piece_side: int, king_square: int, piece_square: int) -> int:
+def horizontal_mirror_mask(king_square: int) -> int:
+    """Return the branch-free square XOR mask that puts a king on files a-d."""
+    return 7 if (king_square & 7) >= 4 else 0
+
+
+def horizontal_mirror_king_index(king_square: int, mirror_mask: int) -> int:
+    canonical = king_square ^ mirror_mask
+    return (canonical >> 3) * 4 + (canonical & 7)
+
+
+def is_dual_accumulator_transform(transform: str) -> bool:
+    return transform in DUAL_ACCUMULATOR_TRANSFORMS
+
+
+def dual_accumulator_feature(
+    piece: int,
+    piece_side: int,
+    king_square: int,
+    piece_square: int,
+    king_square_count: int = 64,
+) -> int:
     index = piece
     index = index * 2 + piece_side
-    index = index * 64 + king_square
+    index = index * king_square_count + king_square
     index = index * 64 + piece_square
     return index
 
@@ -127,6 +166,39 @@ def transform_features(raw_features: list[int], transform: str) -> list[int]:
                 )
         return features
 
+    if transform == "dual_full_king_square_concat_horizontal_mirror":
+        features = []
+        for raw in raw_features:
+            piece, piece_side, king_context, king_square, piece_square = decode_feature(int(raw))
+            if king_context == 0:
+                mirror_mask = horizontal_mirror_mask(king_square)
+                features.append(
+                    dual_accumulator_feature(
+                        piece,
+                        piece_side,
+                        horizontal_mirror_king_index(king_square, mirror_mask),
+                        piece_square ^ mirror_mask,
+                        HORIZONTAL_MIRROR_KING_SQUARE_COUNT,
+                    )
+                )
+            else:
+                relative_king_square = flip_relative_square(king_square)
+                relative_piece_square = flip_relative_square(piece_square)
+                mirror_mask = horizontal_mirror_mask(relative_king_square)
+                features.append(
+                    HORIZONTAL_MIRROR_DUAL_ACCUMULATOR_FEATURE_COUNT
+                    + dual_accumulator_feature(
+                        piece,
+                        1 - piece_side,
+                        horizontal_mirror_king_index(
+                            relative_king_square, mirror_mask
+                        ),
+                        relative_piece_square ^ mirror_mask,
+                        HORIZONTAL_MIRROR_KING_SQUARE_COUNT,
+                    )
+                )
+        return features
+
     raise ValueError(f"unknown feature transform: {transform}")
 
 
@@ -145,7 +217,7 @@ class SparseNnueArchitecture(nn.Module):
         self.hidden1_size = config.hidden1_size
         self.hidden2_size = config.hidden2_size
         self.hidden_sizes = config.hidden_sizes
-        self.dual_accumulator = self.transform == "dual_full_king_square_concat"
+        self.dual_accumulator = is_dual_accumulator_transform(self.transform)
         if self.dual_accumulator:
             if config.feature_count % 2 != 0 or config.hidden1_size % 2 != 0:
                 raise ValueError("dual accumulator feature and hidden sizes must be even")
@@ -233,12 +305,19 @@ class SparseNnueArchitecture(nn.Module):
 
 __all__ = [
     "ARCHITECTURES",
+    "DUAL_ACCUMULATOR_TRANSFORMS",
     "DUAL_ACCUMULATOR_FEATURE_COUNT",
     "DUAL_FULL_KING_FEATURE_COUNT",
     "FULL_KING_FEATURE_COUNT",
+    "HORIZONTAL_MIRROR_DUAL_ACCUMULATOR_FEATURE_COUNT",
+    "HORIZONTAL_MIRROR_DUAL_FULL_KING_FEATURE_COUNT",
+    "HORIZONTAL_MIRROR_KING_SQUARE_COUNT",
     "NnueArchitectureConfig",
     "SparseNnueArchitecture",
     "dual_accumulator_feature",
     "flip_relative_square",
+    "horizontal_mirror_king_index",
+    "horizontal_mirror_mask",
+    "is_dual_accumulator_transform",
     "transform_features",
 ]

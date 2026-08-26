@@ -16,5 +16,7 @@ while [[ ! -s "${HOME}/.runpod/config.toml" ]]; do
     sleep "${poll_seconds}"
 done
 
-echo "terminating_pod=${pod_id} at=$(date -Is)"
-runpodctl remove pod "${pod_id}"
+echo "stopping_pod=${pod_id} at=$(date -Is)"
+# Stop compute billing while preserving the Pod definition and its independent
+# network volume. Deleting the Pod is unnecessary and makes recovery harder.
+runpodctl stop pod "${pod_id}"

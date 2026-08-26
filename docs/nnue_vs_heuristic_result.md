@@ -1,4 +1,6 @@
-# Verified NNUE vs heuristic result
+# NNUE vs heuristic historical result
+
+Status: **historical directional win with a stopping-rule caveat**
 
 ## Conclusion
 
@@ -12,7 +14,11 @@ nominal ply less:
 | NNUE depth 3 | Heuristic V35 depth 4 | 200 | 46-132-22 | 112/200 | **56.0%** | **52.75%-59.25%** |
 
 The match stopped after 100 opening pairs when the reported confidence interval
-separated from 50%. Its raw decision was:
+separated from 50%. Because an ordinary paired-bootstrap interval was inspected
+every five pairs and used as the stopping rule, the reported 95% interval is not
+sequentially valid. It records the project's historical promotion decision but
+should not be treated as a fixed-sample confirmatory interval. Its raw decision
+was:
 
 ```text
 ci model=new_huber200_200m_hs2x8_os128 pairs=100 games=200 score_rate=0.56 bootstrap95_lower=0.5275 bootstrap95_upper=0.5925
@@ -106,10 +112,11 @@ SHA-256: 8e74543127634383d4b3e214be5ad68371d6b36024303b037c952ab762646634
 
 ## Scope of the claim
 
-This result supports the precise statement:
+This result supports the historically scoped statement:
 
-> The project trained a quantized NNUE that beat the hand-written heuristic
-> searcher in the documented paired fixed-depth match.
+> The project trained a quantized NNUE that scored 56.0% against the
+> hand-written heuristic searcher in the documented paired fixed-depth match,
+> under the project's declared early-stop rule.
 
 It does not establish that NNUE wins at every depth, opening distribution, time
 control, pruning configuration, or hardware setting. New engine defaults should

@@ -152,6 +152,26 @@ def scheduled_learning_rate(
     return min_lr + 0.5 * (peak_lr - min_lr) * (1.0 + math.cos(math.pi * progress))
 
 
+def validate_epoch_learning_rates(
+    peak_lrs: list[float] | None,
+    min_lrs: list[float] | None,
+    epochs: int,
+) -> None:
+    if (peak_lrs is None) != (min_lrs is None):
+        raise ValueError("--epoch-peak-lrs and --epoch-min-lrs must be used together")
+    if peak_lrs is None or min_lrs is None:
+        return
+    if len(peak_lrs) != epochs or len(min_lrs) != epochs:
+        raise ValueError("per-epoch learning-rate lists must contain exactly --epochs values")
+    if any(value <= 0.0 for value in [*peak_lrs, *min_lrs]):
+        raise ValueError("per-epoch learning rates must be positive")
+    for epoch, (peak_lr, min_lr) in enumerate(zip(peak_lrs, min_lrs), 1):
+        if min_lr > peak_lr:
+            raise ValueError(
+                f"epoch {epoch} minimum learning rate cannot exceed its peak"
+            )
+
+
 def sampled_quantile(
     values: torch.Tensor,
     quantile: float,
@@ -626,13 +646,15 @@ def run_train_epoch(
     forward_mode: str = "quantized",
     loss_type: str = "cp_huber",
     mse_mix_weight: float = 0.75,
+    peak_lr: float | None = None,
 ) -> tuple[float, float, int, int]:
     model.train()
     total_loss = 0.0
     total_abs_cp = 0.0
     total_samples = 0
     completed_batches = 0
-    peak_lr = float(optimizer.defaults["lr"])
+    if peak_lr is None:
+        peak_lr = float(optimizer.param_groups[0]["lr"])
     for batch_index, samples in enumerate(loader, 1):
         learning_rate = scheduled_learning_rate(
             lr_schedule,
@@ -1055,6 +1077,26 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--lr-schedule", choices=["constant", "cosine"], default="constant")
     parser.add_argument("--lr-warmup-steps", type=int, default=0)
+    parser.add_argument(
+        "--epoch-peak-lrs",
+        type=float,
+        nargs="+",
+        default=None,
+        help="optional peak LR for each epoch; enables an independent per-epoch schedule",
+    )
+    parser.add_argument(
+        "--epoch-min-lrs",
+        type=float,
+        nargs="+",
+        default=None,
+        help="optional ending LR for each epoch; must pair with --epoch-peak-lrs",
+    )
+    parser.add_argument(
+        "--lr-steps-per-epoch",
+        type=int,
+        default=None,
+        help="override scheduler steps per epoch when a hash split changes the sample count",
+    )
     parser.add_argument("--warmup-epochs", type=int, default=0)
     parser.add_argument("--lr-after-warmup", type=float, default=None)
     parser.add_argument("--lr-drop-patience", type=int, default=0)
@@ -1158,6 +1200,15 @@ def main() -> None:
         raise ValueError("--lr-drop-factor must be in (0, 1] and --min-lr must be positive")
     if args.lr_schedule == "cosine" and args.min_lr > args.lr:
         raise ValueError("--min-lr cannot exceed --lr for cosine scheduling")
+    validate_epoch_learning_rates(
+        args.epoch_peak_lrs,
+        args.epoch_min_lrs,
+        args.epochs,
+    )
+    if args.epoch_peak_lrs is not None and args.lr_schedule != "cosine":
+        raise ValueError("per-epoch learning rates require --lr-schedule cosine")
+    if args.lr_steps_per_epoch is not None and args.lr_steps_per_epoch <= 0:
+        raise ValueError("--lr-steps-per-epoch must be positive")
     for name in ("train_max_samples", "val_max_samples", "test_max_samples"):
         value = getattr(args, name)
         if value is not None and value <= 0:
@@ -1439,6 +1490,9 @@ def main() -> None:
                 ) if args.use_psqt else None,
                 "lr_schedule": args.lr_schedule,
                 "lr_warmup_steps": args.lr_warmup_steps,
+                "epoch_peak_lrs": args.epoch_peak_lrs,
+                "epoch_min_lrs": args.epoch_min_lrs,
+                "lr_steps_per_epoch": args.lr_steps_per_epoch,
                 "warmup_epochs": args.warmup_epochs,
                 "lr_after_warmup": args.lr_after_warmup,
                 "lr_drop_patience": args.lr_drop_patience,
@@ -1605,7 +1659,9 @@ def main() -> None:
         best_output_scale = model.default_output_scale
     epochs_without_improvement = 0
     last_scale_audit_key: tuple[tuple[int, ...], int] | None = None
-    if args.train_max_batches is not None:
+    if args.lr_steps_per_epoch is not None:
+        steps_per_epoch = args.lr_steps_per_epoch
+    elif args.train_max_batches is not None:
         steps_per_epoch = args.train_max_batches
     elif args.train_max_samples is not None:
         steps_per_epoch = math.ceil(args.train_max_samples / args.batch_size)
@@ -1613,12 +1669,17 @@ def main() -> None:
         if args.lr_schedule != "constant":
             raise ValueError("a finite train limit is required for cosine scheduling")
         steps_per_epoch = 1
-    lr_total_steps = steps_per_epoch * args.epochs
+    per_epoch_lr_schedule = args.epoch_peak_lrs is not None
+    lr_total_steps = (
+        steps_per_epoch if per_epoch_lr_schedule else steps_per_epoch * args.epochs
+    )
     if args.lr_schedule == "cosine" and args.lr_warmup_steps >= lr_total_steps:
         raise ValueError("--lr-warmup-steps must be smaller than total optimizer steps")
     lr_steps_completed = (
-        int(resume_checkpoint["epoch"]) if resume_checkpoint is not None else 0
-    ) * steps_per_epoch
+        0 if per_epoch_lr_schedule else (
+            int(resume_checkpoint["epoch"]) if resume_checkpoint is not None else 0
+        ) * steps_per_epoch
+    )
 
     completed_epoch = int(resume_checkpoint["epoch"]) if resume_checkpoint is not None else 0
     for epoch in range(completed_epoch + 1, args.epochs + 1):
@@ -1658,6 +1719,22 @@ def main() -> None:
         )
         model.default_hidden_scales = train_hidden_scales
         model.default_output_scale = train_output_scale
+        if per_epoch_lr_schedule:
+            assert args.epoch_peak_lrs is not None
+            assert args.epoch_min_lrs is not None
+            epoch_peak_lr = args.epoch_peak_lrs[epoch - 1]
+            epoch_min_lr = args.epoch_min_lrs[epoch - 1]
+            epoch_warmup_steps = args.lr_warmup_steps if epoch == 1 else 0
+            epoch_lr_step_offset = 0
+        else:
+            epoch_peak_lr = (
+                args.lr
+                if args.lr_schedule == "cosine"
+                else float(optimizer.param_groups[0]["lr"])
+            )
+            epoch_min_lr = args.min_lr
+            epoch_warmup_steps = args.lr_warmup_steps
+            epoch_lr_step_offset = lr_steps_completed
         train_loss, train_cp, train_samples, epoch_batches = run_train_epoch(
             args.arch,
             model,
@@ -1678,15 +1755,17 @@ def main() -> None:
             args.quantization_convention,
             args.cp_huber_delta,
             args.lr_schedule,
-            args.min_lr,
-            args.lr_warmup_steps,
+            epoch_min_lr,
+            epoch_warmup_steps,
             lr_total_steps,
-            lr_steps_completed,
+            epoch_lr_step_offset,
             args.forward_mode,
             args.loss_type,
             args.mse_mix_weight,
+            epoch_peak_lr,
         )
-        lr_steps_completed += epoch_batches
+        if not per_epoch_lr_schedule:
+            lr_steps_completed += epoch_batches
         if fixed_hidden_scales is not None:
             hidden_scales = fixed_hidden_scales
             hidden_scale_stats = measure_hidden_saturation(

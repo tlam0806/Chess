@@ -1,0 +1,152 @@
+{
+  "schema_version": 1,
+  "status": "validated_isolated_stage_diagnostic",
+  "date": "2026-08-25",
+  "protocol": {
+    "name": "phase_nnue_forward_stages_v2",
+    "samples": 256,
+    "seed": 20260825,
+    "warmup_evaluations": 10000,
+    "repeats_per_stage_per_cluster": 12,
+    "clusters_per_host": 3,
+    "stage_order": "balanced_rotating",
+    "iterations": {
+      "s1_input_to_hidden2": 4000000,
+      "s2_hidden2_to_hidden3": 20000000,
+      "s3_hidden3_to_output": 100000000,
+      "full": 3000000
+    },
+    "wall_clock": "std::chrono::steady_clock",
+    "process_cpu_clock": "std::clock",
+    "subtraction": "none",
+    "bootstrap": {
+      "method": "independent_hierarchical_percentile",
+      "replicates": 10000,
+      "seed": 20260825,
+      "cluster_count_per_host": 3,
+      "within_cluster_batches": 12,
+      "within_cluster_resampling": "stratified_by_four_rotating_order_positions",
+      "scope": "conditional_on_fixed_hosts_runs_and_corpus"
+    }
+  },
+  "identity": {
+    "production_base_commit": "634b2d481925abc4b5ebf6da9129ade2edf3a24f",
+    "benchmark_source_commit": "d9648da134c52198715167ae2b20aeb411608f59",
+    "benchmark_source_tree": "a015461078ce682caae0755198d01c8511196890",
+    "heroku_staged_commit": "cb0f0eebb622b0dd2991382539cee83c4abdd0b3",
+    "heroku_staged_tree": "0567b97440b44269d12d2bad53195643ea8baa30",
+    "model_sha256": "a1a52891f95db9a1bacc48557325b0c5904da4b3c9f8a333eb2ec090b1bb9c02",
+    "corpus_checksum": "0xf5399956b2fa9ea8",
+    "local_binary_sha256": "f8221a2a49e3e6da273d04c51da1adb12bb032fb5529359b8015b3b0f26cb383",
+    "heroku_binary_sha256": "7d8cc433ecd1109585c1d6bd597546fbcf10e26f8abf9cb8a589ec4aff918bc8",
+    "heroku_image_digest": "sha256:634e1bb0b0f26815c2b4385bc1288710b3d2a8225bf547bb30c0bd60ff443e92"
+  },
+  "hosts": {
+    "local": {
+      "machine": "MacBook Air Mac16,12",
+      "cpu": "Apple M4, 4 performance plus 6 efficiency cores",
+      "memory_gib": 16,
+      "os": "macOS 26.5.1 (25F80)",
+      "compiler": "Apple Clang 21",
+      "kernel": "arm_neon_dotprod_i8mm",
+      "independent_processes": 3,
+      "physical_hosts": 1
+    },
+    "heroku": {
+      "app": "chess-nnue-stage-0825-1323",
+      "release": "v3",
+      "region": "us",
+      "dyno_type": "Basic",
+      "cpu": "Intel Xeon Platinum 8375C CPU @ 2.90GHz",
+      "kernel": "x86_avx512vnni_256",
+      "independent_one_off_dynos": 3,
+      "cpu_wall_ratio_range": [0.999585559832, 0.999840771365],
+      "formation_outside_runs": 0,
+      "destroyed_after_artifact_retention": true
+    }
+  },
+  "correctness": {
+    "status": "pass",
+    "scalar_parity": true,
+    "stage_parity": true,
+    "timed_sink_parity": true,
+    "phase_parity_positions_local": 8192,
+    "phase_histogram": [32, 32, 16, 16, 16, 32, 32, 80],
+    "nonzero_aux_samples": 112,
+    "stage_checksums": {
+      "s1_input_to_hidden2": "0xd264620b4b94ba37",
+      "s2_hidden2_to_hidden3": "0x89dbdb9bf3a1ddde",
+      "s3_hidden3_to_output": "0x61bbf9ec6191a24b",
+      "full": "0x61bbf9ec6191a24b"
+    }
+  },
+  "results": {
+    "s1_input_to_hidden2": {
+      "wall_ns_per_evaluation": {"local": 61.5840625, "heroku": 176.139568875},
+      "wall_heroku_over_local": 2.86014858,
+      "wall_ratio_ci95": [2.8390265324294663, 2.885876691858762],
+      "wall_delta_ns": 114.555506375,
+      "wall_delta_ci95_ns": [113.645286815625, 115.9906695],
+      "cpu_ns_per_evaluation": {"local": 61.415625, "heroku": 176.096375},
+      "cpu_heroku_over_local": 2.86728947,
+      "cpu_ratio_ci95": [2.8473242931681244, 2.8925924038765296]
+    },
+    "s2_hidden2_to_hidden3": {
+      "wall_ns_per_evaluation": {"local": 11.4619354, "heroku": 34.7878925},
+      "wall_heroku_over_local": 3.03508014,
+      "wall_ratio_ci95": [2.998596953960458, 3.0661957060770146],
+      "wall_delta_ns": 23.3259571,
+      "wall_delta_ci95_ns": [22.92446178, 23.644253825000007],
+      "cpu_ns_per_evaluation": {"local": 11.4371, "heroku": 34.773475},
+      "cpu_heroku_over_local": 3.04041016,
+      "cpu_ratio_ci95": [3.0061007598079934, 3.0731918752736846]
+    },
+    "s3_hidden3_to_output": {
+      "wall_ns_per_evaluation": {"local": 2.13948708, "heroku": 9.037516905},
+      "wall_heroku_over_local": 4.22415119,
+      "wall_ratio_ci95": [4.1930126614141345, 4.259629405027811],
+      "wall_delta_ns": 6.898029825,
+      "wall_delta_ci95_ns": [6.870581809999999, 6.95754394025],
+      "cpu_ns_per_evaluation": {"local": 2.131905, "heroku": 9.035195},
+      "cpu_heroku_over_local": 4.23808519,
+      "cpu_ratio_ci95": [4.206103791968523, 4.269953921807842]
+    },
+    "full": {
+      "wall_ns_per_evaluation": {"local": 79.9474236667, "heroku": 227.107605167},
+      "wall_heroku_over_local": 2.84071199,
+      "wall_ratio_ci95": [2.7561644458554433, 2.857730106178659],
+      "wall_delta_ns": 147.1601815,
+      "wall_delta_ci95_ns": [144.65107018749998, 148.44404616666668],
+      "cpu_ns_per_evaluation": {"local": 79.7333333333, "heroku": 227.0345},
+      "cpu_heroku_over_local": 2.84742266,
+      "cpu_ratio_ci95": [2.8034504346398186, 2.8647513128148714]
+    }
+  },
+  "interpretation": {
+    "largest_isolated_absolute_gap": "s1_input_to_hidden2",
+    "largest_ratio_but_small_absolute_cost": "s3_hidden3_to_output",
+    "production_relevant_kernel_core_ratio": 2.84071199,
+    "stages_are_additive": false,
+    "pure_heroku_overhead_measurement": false,
+    "remote_pmu_status": "not_probed_in_this_run; prior Basic dyno recorded perf_event_paranoid=4",
+    "remote_binary_disassembly_retained": false
+  },
+  "artifacts": {
+    "analysis": {"path": "docs/benchmarks/evidence/nnue_v41_forward_stage_arm_vs_x86_20260825.analysis.json", "sha256": "f0b4e24151146d2eb3a18676999afe8b3dbe1c06f5378f4ede321c87f78a38ae"},
+    "compact_bundle": {"path": "docs/benchmarks/evidence/nnue_v41_forward_stage_arm_vs_x86_20260825.tar.gz", "sha256": "0f6d2f1bd180dfd3693208b0675d5cb88f9179dd45a881356806b77b32dfca44"},
+    "local_summary": {"path": "logs/nnue_forward_stages_m4_v2_clean_20260825/summary.json", "sha256": "ca9f7106be91863505e62016f45b15ec2bbf56ebf26eef5d4c54a5abfd6fe810"},
+    "heroku_summary": {"path": "logs/nnue_forward_stages_heroku_full_v2_20260825T1358Z/summary.json", "sha256": "b378afc8961f8f82b16375f51de08545cd4949982e02a57d3a3a3fd18b92c72b"},
+    "local_source_archive": {"path": "logs/nnue_forward_stages_m4_v2_clean_20260825/staged-source-d9648da.tar.gz", "sha256": "e328cef959c6de1441a49a7a431495d1b335c2a2edab0bf6a6ac37f2a2ca73f9"},
+    "heroku_staged_source_archive": {"path": "logs/nnue_forward_stages_heroku_full_v2_20260825T1358Z/deploy-provenance/staged-source.tar.gz", "sha256": "8669a73b693cbae92242a5a0ce50ff055dea594e81b65fd018b50f7df5c7c1ed"},
+    "local_raw_sha256": [
+      "1841e0e00fce0cd9f4764b6517370b6fbe9808a2a0e633074b15fdcf4ef7d1f5",
+      "6bdbf3947de7785c03db3f652287f7df7199f02142840a5bc220aa9439f9772d",
+      "0efccecb444236609a18cd8bc5769fb932c30fa5eac36f0235fa8d8806140b0b"
+    ],
+    "heroku_raw_sha256": [
+      "ec99894b8ec5d5b3ff0bd41eaf401ecf98b264393526126695fd471aa85e0670",
+      "e10f81153dc414fab5742040e4e6df1b6b4dc78e5624f07eb1a8784ba33dbc37",
+      "d0e96d935a2a741e548a3f726d701d81674b6bea295d2d66aa806d5cb98e09a6"
+    ]
+  }
+}

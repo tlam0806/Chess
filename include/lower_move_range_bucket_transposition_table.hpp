@@ -13,6 +13,7 @@ public:
     LowerMoveRangeBucketTranspositionTable(std::size_t megabytes, std::size_t bucket_size);
 
     void clear();
+    void advance_generation();
     void clear_stats();
 
     std::size_t entry_count() const;
@@ -51,9 +52,11 @@ private:
 
     std::vector<HashKey> keys_;
     std::vector<TTValue> values_;
+    std::vector<std::uint8_t> generations_;
     std::size_t bucket_size_ = 1;
     std::size_t bucket_count_ = 1;
     std::size_t bucket_mask_ = 0;
+    std::uint8_t generation_ = 0;
     mutable RangeTranspositionTableStats stats_{};
 };
 

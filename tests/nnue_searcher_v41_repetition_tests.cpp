@@ -136,6 +136,34 @@ int main(int argc, char** argv) {
     (void)v41.search_best_move(clock_99, 0, clock_99_history);
     assert(v41.repetition_stats().fifty_move_draws == 0);
 
+    // Scores from a previous root must not cross game-history generations.
+    // Zobrist intentionally excludes halfmove_clock, so these positions have
+    // the same key even though a depth-one search at clock 99 reaches an
+    // immediate 50-move draw while clock 0 does not.
+    chess::Position clock_0_same_board;
+    assert(clock_0_same_board.set_fen("7k/8/8/8/8/8/8/KR6 w - - 0 1"));
+    assert(clock_0_same_board.zobrist_key == clock_99.zobrist_key);
+    const std::array<chess::HashKey, 1> clock_0_history{
+        clock_0_same_board.zobrist_key};
+    v41.clear_tt();
+    const chess::SearchResult clock_0_result =
+        v41.search_best_move(clock_0_same_board, 1, clock_0_history);
+    assert(clock_0_result.score != 0);
+    const chess::SearchResult clock_99_after_retained_tt =
+        v41.search_best_move(clock_99, 1, clock_99_history);
+    chess::NnueSearcherV41 fresh_v41(model);
+    const chess::SearchResult clock_99_fresh =
+        fresh_v41.search_best_move(clock_99, 1, clock_99_history);
+    assert(clock_99_fresh.score == 0);
+    assert(clock_99_after_retained_tt.score == clock_99_fresh.score);
+    const std::vector<chess::Move> clock_99_legal_moves =
+        chess::generate_legal_moves(clock_99);
+    assert(std::find(
+        clock_99_legal_moves.begin(),
+        clock_99_legal_moves.end(),
+        clock_99_after_retained_tt.best_move) != clock_99_legal_moves.end());
+    assert(clock_99_after_retained_tt.nodes > 1);
+
     // At 100 halfmoves a normal legal position is an immediate claimable
     // draw, including with a warm TT, while retaining a legal fallback move.
     chess::Position clock_100;

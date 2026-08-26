@@ -194,24 +194,44 @@ def duration_seconds(value: str, unit: str) -> float:
     return float(value) * scales[unit]
 
 
-def parse_forward_share(report: str) -> dict[str, float]:
+FORWARD_FUNCTION_PATTERNS = (
+    re.compile(r"PhaseQuantizedNnueModel::forward_positional_scalar$"),
+    re.compile(r"::VnniNetwork::evaluate$"),
+    re.compile(r"::Avx2Network::evaluate$"),
+    re.compile(r"::PhaseCandidateKernel<.*>::evaluate$"),
+)
+
+
+def parse_forward_share(report: str) -> dict[str, Any]:
     total_match = re.search(
         r"\bof ([0-9.]+)(ns|us|ms|s) total$", report, re.MULTILINE
     )
-    forward_match = re.search(
-        r"^\s*([0-9.]+)(ns|us|ms|s)\s+[0-9.]+%.*"
-        r"PhaseQuantizedNnueModel::forward_positional_scalar$",
-        report,
-        re.MULTILINE,
-    )
-    if total_match is None or forward_match is None:
-        raise RuntimeError("cannot parse scalar-forward share from pprof output")
+    forward_matches: list[tuple[str, str, str]] = []
+    for line in report.splitlines():
+        row_match = re.match(
+            r"^\s*([0-9.]+)(ns|us|ms|s)\s+[0-9.]+%\s+[0-9.]+%"
+            r"\s+[0-9.]+(?:ns|us|ms|s)\s+[0-9.]+%\s{2,}(.+)$",
+            line,
+        )
+        if row_match is None:
+            continue
+        symbol = row_match.group(3)
+        if any(pattern.search(symbol) for pattern in FORWARD_FUNCTION_PATTERNS):
+            forward_matches.append(row_match.groups())
+    if total_match is None:
+        raise RuntimeError("cannot parse total sampled time from pprof output")
     total = duration_seconds(*total_match.groups())
-    forward = duration_seconds(*forward_match.groups())
+    forward = sum(
+        duration_seconds(value, unit)
+        for value, unit, _symbol in forward_matches
+    )
     return {
         "total_seconds": total,
         "forward_seconds": forward,
         "forward_share": forward / total,
+        "forward_symbols": sorted(
+            {symbol for _value, _unit, symbol in forward_matches}
+        ),
     }
 
 
@@ -367,9 +387,14 @@ def run(args: argparse.Namespace) -> Path:
         round_profiles.setdefault(int(match.group(1)), []).append(profile)
     round_analysis = []
     round_warnings = []
+    round_report_dir = output_dir / "pprof-rounds"
+    round_report_dir.mkdir(exist_ok=True)
     for round_index, current_profiles in sorted(round_profiles.items()):
         report, warning = pprof_report(
             pprof, engine, current_profiles, "functions", all_nodes=True
+        )
+        (round_report_dir / f"profile-r{round_index:02d}-functions.txt").write_text(
+            report, encoding="utf-8"
         )
         round_analysis.append(
             {"round": round_index, **parse_forward_share(report)}

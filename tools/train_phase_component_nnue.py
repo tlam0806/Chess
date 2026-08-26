@@ -4,11 +4,12 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import os
 import random
 import sys
 import time
 from pathlib import Path
-from typing import Any, Iterable, Union
+from typing import Any, Callable, Iterable, Union
 
 import torch
 from torch import nn
@@ -20,10 +21,9 @@ sys.path.insert(0, str(REPO_ROOT))
 from nn.compact_board_data import (  # noqa: E402
     HEADER_SIZE,
     RECORD_SIZE,
-    architecture_features_from_board,
+    canonical_architecture_input,
     compact_paths,
     open_reader,
-    unpack_aux,
     unpack_record,
     validate_header,
 )
@@ -167,11 +167,17 @@ class AlignedComponentDataset(IterableDataset):
                             continue
                         psqt_sample = unpack_record(psqt_record)
                         positional_sample = unpack_record(positional_record)
+                        canonical_board, _canonical_aux_bits, features, aux = (
+                            canonical_architecture_input(
+                                psqt_sample.board,
+                                psqt_sample.aux_bits,
+                                self.architecture,
+                            )
+                        )
                         yield {
-                            "features": architecture_features_from_board(
-                                psqt_sample.board, self.architecture
-                            ),
-                            "aux": unpack_aux(psqt_sample.aux_bits),
+                            "board": canonical_board,
+                            "features": features,
+                            "aux": aux,
                             "psqt_score": psqt_sample.score,
                             "positional_score": positional_sample.score,
                         }
@@ -252,12 +258,17 @@ class TotalLabelDataset(IterableDataset):
                             seen += 1
                             continue
                         sample = unpack_record(data[offset : offset + RECORD_SIZE])
+                        canonical_board, _canonical_aux_bits, features, aux = (
+                            canonical_architecture_input(
+                                sample.board,
+                                sample.aux_bits,
+                                self.architecture,
+                            )
+                        )
                         yield {
-                            "board": sample.board,
-                            "features": architecture_features_from_board(
-                                sample.board, self.architecture
-                            ),
-                            "aux": unpack_aux(sample.aux_bits),
+                            "board": canonical_board,
+                            "features": features,
+                            "aux": aux,
                             # Reuse the positional slot so the existing collator stays
                             # allocation-compatible. In total-label mode this value is
                             # never interpreted as positional supervision.
@@ -352,8 +363,15 @@ def collate(
         row.sort()
         features.extend(row)
         cursor += len(row)
-        psqt_scores.append(int(sample["psqt_score"]))
-        positional_scores.append(int(sample["positional_score"]))
+        if "score" in sample:
+            # Split-aware loaders expose the original total-score field.  Keep
+            # this path allocation-compatible with the pre-split total-label
+            # loader used by the paired 50M experiment.
+            psqt_scores.append(0)
+            positional_scores.append(int(sample["score"]))
+        else:
+            psqt_scores.append(int(sample["psqt_score"]))
+            positional_scores.append(int(sample["positional_score"]))
     return (
         torch.tensor(features, dtype=torch.long, device=device),
         torch.tensor(offsets, dtype=torch.long, device=device),
@@ -508,12 +526,14 @@ def initialize_biases(
             accumulator_scale = activation_scale * model.linear_weight_scale
             bias_value = target_code * scale / accumulator_scale
             stacks = (
-                model.phase_hidden_layers
+                tuple(
+                    model.unique_layers_at_depth(layer_index - 1)
+                )
                 if isinstance(model, PhaseStackQuantizedNnueArchitecture)
-                else (model.hidden_layers,)
+                else (model.hidden_layers[layer_index - 1],)
             )
-            for layers in stacks:
-                layers[layer_index - 1].bias.fill_(bias_value)
+            for layer in stacks:
+                layer.bias.fill_(bias_value)
             activation_scale = activation_output_scale(
                 accumulator_scale / scale,
                 activation,
@@ -548,20 +568,25 @@ def train_epoch(
     hidden_scales: list[int],
     output_scale: int,
     args: argparse.Namespace,
+    resume_progress: dict[str, Any] | None = None,
+    checkpoint_callback: Callable[[dict[str, Any]], None] | None = None,
 ) -> dict[str, Any]:
     model.train()
     start = time.monotonic()
-    samples_total = 0
-    loss_total = 0.0
-    psqt_abs = 0.0
-    positional_abs = 0.0
+    progress = resume_progress or {}
+    samples_total = int(progress.get("samples_completed", 0))
+    batches_completed = int(progress.get("batches_completed", 0))
+    loss_total = float(progress.get("loss_sum", 0.0))
+    psqt_abs = float(progress.get("psqt_abs_sum", 0.0))
+    positional_abs = float(progress.get("positional_abs_sum", 0.0))
+    prior_elapsed = float(progress.get("elapsed_sec", 0.0))
     expected_steps = math.ceil(args.train_samples / args.batch_size)
     for batch_index, samples in enumerate(loader):
         feature_indices, offsets, psqt_target, positional_target = collate(
             samples, model.board_feature_count, device
         )
         lr = scheduled_lr(
-            batch_index,
+            batches_completed + batch_index,
             expected_steps,
             args.lr,
             args.min_lr,
@@ -651,24 +676,42 @@ def train_epoch(
             positional_abs += float(
                 (positional_prediction.detach() - positional_target).abs().sum()
             )
-        if args.progress_batches and (batch_index + 1) % args.progress_batches == 0:
-            elapsed = time.monotonic() - start
-            progress = {
+        absolute_batch = batches_completed + batch_index + 1
+        elapsed = prior_elapsed + time.monotonic() - start
+        if args.progress_batches and absolute_batch % args.progress_batches == 0:
+            progress_event = {
                 "event": "train_progress",
-                "batch": batch_index + 1,
+                "batch": absolute_batch,
                 "samples": samples_total,
                 "loss": loss_total / samples_total,
                 "lr": lr,
                 "samples_per_sec": samples_total / elapsed,
             }
             if args.label_mode == "components":
-                progress.update(
+                progress_event.update(
                     {
                         "psqt_cp_mae": psqt_abs / samples_total,
                         "positional_cp_mae": positional_abs / samples_total,
                     }
                 )
-            print(json.dumps(progress, separators=(",", ":")), flush=True)
+            print(json.dumps(progress_event, separators=(",", ":")), flush=True)
+        if (
+            checkpoint_callback is not None
+            and args.checkpoint_samples > 0
+            and samples_total < args.train_samples
+            and samples_total // args.checkpoint_samples
+            > (samples_total - count) // args.checkpoint_samples
+        ):
+            checkpoint_callback(
+                {
+                    "samples_completed": samples_total,
+                    "batches_completed": absolute_batch,
+                    "loss_sum": loss_total,
+                    "psqt_abs_sum": psqt_abs,
+                    "positional_abs_sum": positional_abs,
+                    "elapsed_sec": elapsed,
+                }
+            )
     if samples_total != args.train_samples:
         raise RuntimeError(
             f"expected {args.train_samples} training samples, got {samples_total}"
@@ -676,7 +719,7 @@ def train_epoch(
     metrics: dict[str, Any] = {
         "loss": loss_total / samples_total,
         "samples": float(samples_total),
-        "elapsed_sec": time.monotonic() - start,
+        "elapsed_sec": prior_elapsed + time.monotonic() - start,
     }
     if args.label_mode == "components":
         metrics.update(
@@ -900,7 +943,7 @@ def saturation(
                 QUANTIZATION_CONVENTION_SCALE_CLEAN,
             )
             layers = (
-                model.phase_hidden_layers[phase]
+                model.layers_for_phase(phase)
                 if isinstance(model, PhaseStackQuantizedNnueArchitecture)
                 else model.hidden_layers
             )
@@ -967,6 +1010,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--arch", default="F2", choices=sorted(QUANTIZED_ARCHITECTURES))
     parser.add_argument("--activation", default=ACTIVATION_SCRELU_RELU16_ALL)
     parser.add_argument("--phase-stacks", type=int, choices=(1, 8), default=8)
+    parser.add_argument(
+        "--phase-layout",
+        choices=("independent", "shared_first"),
+        default="independent",
+    )
     parser.add_argument("--objective", choices=("total", "separate"), default="separate")
     parser.add_argument("--loss-type", choices=("huber", "mse", "wdl"), default="huber")
     parser.add_argument("--hidden-scales", required=True, type=int, nargs="+")
@@ -992,6 +1040,22 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--warmup-start-lr", type=float, default=0.0)
     parser.add_argument("--resume-checkpoint", type=Path)
     parser.add_argument("--resume-optimizer", action="store_true")
+    parser.add_argument(
+        "--checkpoint-samples",
+        type=int,
+        default=0,
+        help="atomically save resumable in-epoch state after this many samples",
+    )
+    parser.add_argument(
+        "--auto-resume",
+        action="store_true",
+        help="resume output-dir/phase_component_in_progress.pt when present",
+    )
+    parser.add_argument(
+        "--stop-after-checkpoint",
+        action="store_true",
+        help=argparse.SUPPRESS,
+    )
     parser.add_argument("--evaluate-only", action="store_true")
     parser.add_argument("--weight-decay", type=float, default=0.0)
     parser.add_argument("--huber-delta", type=float, default=200.0)
@@ -1009,8 +1073,112 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+class PlannedCheckpointStop(RuntimeError):
+    """Test-only clean stop immediately after an atomic progress checkpoint."""
+
+
+def training_resume_signature(args: argparse.Namespace) -> dict[str, Any]:
+    if args.label_mode == "total":
+        sources = [str(args.total_data.resolve())]
+    else:
+        sources = [
+            str(args.psqt_data.resolve()),
+            str(args.positional_data.resolve()),
+        ]
+    return {
+        "sources": sources,
+        "train_samples": args.train_samples,
+        "batch_size": args.batch_size,
+        "workers": args.workers,
+        "torch_threads": args.torch_threads,
+        "shuffle_block_size": args.shuffle_block_size,
+        "seed": args.seed,
+        "device": args.device,
+        "lr": args.lr,
+        "psqt_lr": args.psqt_lr,
+        "min_lr": args.min_lr,
+        "lr_warmup_steps": args.lr_warmup_steps,
+        "warmup_start_lr": args.warmup_start_lr,
+        "weight_decay": args.weight_decay,
+    }
+
+
+def build_checkpoint(
+    model: NnueModel,
+    optimizer: torch.optim.Optimizer,
+    config: Any,
+    args: argparse.Namespace,
+    metrics: dict[str, Any] | None = None,
+    training_progress: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    checkpoint = {
+        "model_state": model.state_dict(),
+        "optimizer_state": optimizer.state_dict(),
+        "architecture": args.arch,
+        "phase_stacks": args.phase_stacks,
+        "phase_layout": args.phase_layout,
+        "component_supervision": args.objective,
+        "label_mode": args.label_mode,
+        "loss_type": args.loss_type,
+        "huber_delta": args.huber_delta if args.loss_type == "huber" else None,
+        "wdl_exponent": args.wdl_exponent,
+        "wdl_input_offset": args.wdl_input_offset,
+        "wdl_output_offset": args.wdl_output_offset,
+        "wdl_input_scaling": args.wdl_input_scaling,
+        "wdl_output_scaling": args.wdl_output_scaling,
+        "hidden_sizes": config.hidden_sizes,
+        "hidden_scales": args.hidden_scales,
+        "output_scale": args.output_scale,
+        "activation": args.activation,
+        "quantization_convention": QUANTIZATION_CONVENTION_SCALE_CLEAN,
+        "hidden_clip": args.hidden_clip,
+        "screlu_divisor": args.screlu_divisor,
+        "feature_weight_scale": args.feature_weight_scale,
+        "linear_weight_scale": args.linear_weight_scale,
+        "output_weight_scale": args.output_weight_scale,
+        "psqt_weight_scale": args.psqt_weight_scale,
+        "target_scale": args.target_scale,
+        "metrics": metrics or {},
+        "args": vars(args),
+    }
+    if training_progress is not None:
+        checkpoint["training_progress"] = {
+            **training_progress,
+            "resume_signature": training_resume_signature(args),
+        }
+    return checkpoint
+
+
+def atomic_torch_save(value: object, path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(path.name + ".tmp")
+    with temporary.open("wb") as stream:
+        torch.save(value, stream)
+        stream.flush()
+        os.fsync(stream.fileno())
+    os.replace(temporary, path)
+
+
+def atomic_write_text(path: Path, value: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(path.name + ".tmp")
+    with temporary.open("w", encoding="utf-8") as stream:
+        stream.write(value)
+        stream.flush()
+        os.fsync(stream.fileno())
+    os.replace(temporary, path)
+
+
 def main() -> None:
     args = parse_args()
+    progress_checkpoint_path = args.output_dir / "phase_component_in_progress.pt"
+    if args.auto_resume and progress_checkpoint_path.is_file():
+        if args.resume_checkpoint is not None:
+            raise ValueError(
+                "--auto-resume cannot be combined with an explicit resume checkpoint"
+            )
+        args.resume_checkpoint = progress_checkpoint_path
+        args.resume_optimizer = True
     total_paths = (args.total_data, args.eval_total_data)
     component_paths = (
         args.psqt_data,
@@ -1046,6 +1214,12 @@ def main() -> None:
         raise ValueError("learning rates must be non-negative")
     if args.min_lr > args.lr or args.warmup_start_lr > args.lr:
         raise ValueError("minimum and warmup-start learning rates must not exceed peak LR")
+    if args.checkpoint_samples < 0:
+        raise ValueError("--checkpoint-samples must be non-negative")
+    if args.checkpoint_samples and args.workers != 0:
+        raise ValueError("in-epoch checkpoint/resume requires --workers 0")
+    if args.stop_after_checkpoint and args.checkpoint_samples <= 0:
+        raise ValueError("--stop-after-checkpoint requires --checkpoint-samples")
     if args.resume_optimizer and args.resume_checkpoint is None:
         raise ValueError("--resume-optimizer requires --resume-checkpoint")
     if args.evaluate_only and args.resume_checkpoint is None:
@@ -1054,6 +1228,8 @@ def main() -> None:
         args.label_mode != "total" or args.objective != "total"
     ):
         raise ValueError("WDL score-only loss requires total-label/total-objective mode")
+    if args.phase_layout != "independent" and args.phase_stacks != 8:
+        raise ValueError("non-independent phase layouts require --phase-stacks 8")
     for path in paths:
         assert path is not None
         if not path.exists():
@@ -1070,6 +1246,11 @@ def main() -> None:
     )
     model = model_class(
         config,
+        **(
+            {"phase_layout": args.phase_layout}
+            if model_class is PhaseStackQuantizedNnueArchitecture
+            else {}
+        ),
         hidden_clip=args.hidden_clip,
         feature_weight_scale=args.feature_weight_scale,
         linear_weight_scale=args.linear_weight_scale,
@@ -1091,6 +1272,7 @@ def main() -> None:
         args.first_bias_fraction,
     )
     resume_checkpoint: dict[str, Any] | None = None
+    resume_progress: dict[str, Any] | None = None
     if args.resume_checkpoint is not None:
         if not args.resume_checkpoint.is_file():
             raise FileNotFoundError(args.resume_checkpoint)
@@ -1100,6 +1282,7 @@ def main() -> None:
         expected_metadata = {
             "architecture": args.arch,
             "phase_stacks": args.phase_stacks,
+            "phase_layout": args.phase_layout,
             "component_supervision": args.objective,
             "label_mode": args.label_mode,
             "loss_type": args.loss_type,
@@ -1115,7 +1298,9 @@ def main() -> None:
             "target_scale": args.target_scale,
         }
         for key, expected in expected_metadata.items():
-            actual = resume_checkpoint.get(key)
+            actual = resume_checkpoint.get(
+                key, "independent" if key == "phase_layout" else None
+            )
             if actual != expected:
                 raise ValueError(
                     f"resume checkpoint {key} mismatch: "
@@ -1123,6 +1308,30 @@ def main() -> None:
                 )
         if args.loss_type == "huber" and resume_checkpoint.get("huber_delta") != args.huber_delta:
             raise ValueError("resume checkpoint Huber delta mismatch")
+        stored_progress = resume_checkpoint.get("training_progress")
+        if stored_progress is not None:
+            if not isinstance(stored_progress, dict):
+                raise ValueError("invalid in-progress checkpoint metadata")
+            if args.evaluate_only:
+                raise ValueError("cannot evaluate an incomplete training checkpoint")
+            if not args.resume_optimizer:
+                raise ValueError("in-progress resume requires optimizer state")
+            expected_signature = training_resume_signature(args)
+            if stored_progress.get("resume_signature") != expected_signature:
+                raise ValueError(
+                    "in-progress resume signature mismatch: "
+                    f"expected={expected_signature!r} "
+                    f"actual={stored_progress.get('resume_signature')!r}"
+                )
+            samples_completed = int(stored_progress.get("samples_completed", -1))
+            batches_completed = int(stored_progress.get("batches_completed", -1))
+            if not 0 < samples_completed < args.train_samples:
+                raise ValueError("invalid in-progress completed sample count")
+            if samples_completed % args.batch_size != 0:
+                raise ValueError("in-progress checkpoint is not on a batch boundary")
+            if batches_completed * args.batch_size != samples_completed:
+                raise ValueError("in-progress batch/sample counters disagree")
+            resume_progress = stored_progress
         model.load_state_dict(resume_checkpoint["model_state"])
     assert model.psqt is not None
     psqt_ids = {id(parameter) for parameter in model.psqt.parameters()}
@@ -1148,11 +1357,18 @@ def main() -> None:
             group["lr_multiplier"] = multiplier
             group["weight_decay"] = args.weight_decay
 
+    completed_samples = (
+        int(resume_progress["samples_completed"])
+        if resume_progress is not None
+        else 0
+    )
+    remaining_train_samples = args.train_samples - completed_samples
     loader_factory = make_total_loader if args.label_mode == "total" else make_loader
     if args.label_mode == "total":
         assert args.total_data is not None and args.eval_total_data is not None
         train_loader = loader_factory(
-            args.total_data, config.transform, args.train_samples, 0, args.seed,
+            args.total_data, config.transform, remaining_train_samples,
+            completed_samples, args.seed,
             args.shuffle_block_size, args.batch_size, args.workers,
         )
         selection_loader = loader_factory(
@@ -1172,7 +1388,8 @@ def main() -> None:
         assert all(path is not None for path in component_paths)
         train_loader = loader_factory(
             args.psqt_data, args.positional_data, config.transform,
-            args.train_samples, 0, args.seed, args.shuffle_block_size,
+            remaining_train_samples, completed_samples, args.seed,
+            args.shuffle_block_size,
             args.batch_size, args.workers,
         )
         selection_loader = loader_factory(
@@ -1196,6 +1413,7 @@ def main() -> None:
             {
                 "event": "start",
                 "architecture": f"shared_transformer_{args.phase_stacks}_phase_stacks",
+                "phase_layout": args.phase_layout,
                 "objective": args.objective,
                 "label_mode": args.label_mode,
                 "loss_type": args.loss_type,
@@ -1217,6 +1435,8 @@ def main() -> None:
                     else None
                 ),
                 "resume_optimizer": args.resume_optimizer,
+                "resume_progress_samples": completed_samples,
+                "checkpoint_samples": args.checkpoint_samples,
                 "phase_formula": "clamp((piece_count - 1) // 4, 0, 7)",
             },
             separators=(",", ":"),
@@ -1230,15 +1450,54 @@ def main() -> None:
             "elapsed_sec": 0.0,
         }
     else:
-        train_metrics = train_epoch(
-            model,
-            train_loader,
-            optimizer,
-            device,
-            args.hidden_scales,
-            args.output_scale,
-            args,
-        )
+        def save_progress(progress: dict[str, Any]) -> None:
+            checkpoint = build_checkpoint(
+                model,
+                optimizer,
+                config,
+                args,
+                training_progress=progress,
+            )
+            atomic_torch_save(checkpoint, progress_checkpoint_path)
+            print(
+                json.dumps(
+                    {
+                        "event": "progress_checkpoint",
+                        "path": str(progress_checkpoint_path),
+                        "samples": progress["samples_completed"],
+                        "batch": progress["batches_completed"],
+                    },
+                    separators=(",", ":"),
+                ),
+                flush=True,
+            )
+            if args.stop_after_checkpoint:
+                raise PlannedCheckpointStop
+
+        try:
+            train_metrics = train_epoch(
+                model,
+                train_loader,
+                optimizer,
+                device,
+                args.hidden_scales,
+                args.output_scale,
+                args,
+                resume_progress,
+                save_progress if args.checkpoint_samples > 0 else None,
+            )
+        except PlannedCheckpointStop:
+            print(
+                json.dumps(
+                    {
+                        "event": "training_paused_after_checkpoint",
+                        "path": str(progress_checkpoint_path),
+                    },
+                    separators=(",", ":"),
+                ),
+                flush=True,
+            )
+            return
     selection_metrics = evaluate(
         model,
         selection_loader,
@@ -1266,43 +1525,22 @@ def main() -> None:
         args.saturation_batches,
     )
     ranking_errors = ranking_metrics.pop("absolute_errors_cp")
-    checkpoint = {
-        "model_state": model.state_dict(),
-        "optimizer_state": optimizer.state_dict(),
-        "architecture": args.arch,
-        "phase_stacks": args.phase_stacks,
-        "component_supervision": args.objective,
-        "label_mode": args.label_mode,
-        "loss_type": args.loss_type,
-        "huber_delta": args.huber_delta if args.loss_type == "huber" else None,
-        "wdl_exponent": args.wdl_exponent,
-        "wdl_input_offset": args.wdl_input_offset,
-        "wdl_output_offset": args.wdl_output_offset,
-        "wdl_input_scaling": args.wdl_input_scaling,
-        "wdl_output_scaling": args.wdl_output_scaling,
-        "hidden_sizes": config.hidden_sizes,
-        "hidden_scales": args.hidden_scales,
-        "output_scale": args.output_scale,
-        "activation": args.activation,
-        "quantization_convention": QUANTIZATION_CONVENTION_SCALE_CLEAN,
-        "hidden_clip": args.hidden_clip,
-        "screlu_divisor": args.screlu_divisor,
-        "feature_weight_scale": args.feature_weight_scale,
-        "linear_weight_scale": args.linear_weight_scale,
-        "output_weight_scale": args.output_weight_scale,
-        "psqt_weight_scale": args.psqt_weight_scale,
-        "target_scale": args.target_scale,
-        "metrics": {
+    checkpoint = build_checkpoint(
+        model,
+        optimizer,
+        config,
+        args,
+        metrics={
             "train": train_metrics,
             "selection": selection_metrics,
             "ranking": ranking_metrics,
             "saturation": saturation_metrics,
         },
-        "args": vars(args),
-    }
-    torch.save(checkpoint, args.output_dir / "phase_component_best.pt")
-    (args.output_dir / "ranking_errors.json").write_text(
-        json.dumps(ranking_errors, separators=(",", ":")), encoding="utf-8"
+    )
+    atomic_torch_save(checkpoint, args.output_dir / "phase_component_best.pt")
+    atomic_write_text(
+        args.output_dir / "ranking_errors.json",
+        json.dumps(ranking_errors, separators=(",", ":")),
     )
     summary = {
         "event": "training_complete",
@@ -1312,9 +1550,11 @@ def main() -> None:
         "saturation": saturation_metrics,
         "checkpoint": str(args.output_dir / "phase_component_best.pt"),
     }
-    (args.output_dir / "summary.json").write_text(
-        json.dumps(summary, indent=2) + "\n", encoding="utf-8"
+    atomic_write_text(
+        args.output_dir / "summary.json",
+        json.dumps(summary, indent=2) + "\n",
     )
+    progress_checkpoint_path.unlink(missing_ok=True)
     print(json.dumps(summary, separators=(",", ":")), flush=True)
 
 

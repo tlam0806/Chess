@@ -29,6 +29,7 @@ from tools.train_quantized_nnue_architecture import (
     initialize_scale_clean_screlu_biases,
     sampled_quantile,
     scheduled_learning_rate,
+    validate_epoch_learning_rates,
 )
 
 
@@ -365,6 +366,15 @@ class QuantizedNnueArchitectureTests(unittest.TestCase):
             7e-4,
         )
 
+    def test_per_epoch_learning_rate_validation(self) -> None:
+        validate_epoch_learning_rates([5e-4, 1e-4], [5e-5, 6e-5], 2)
+        with self.assertRaisesRegex(ValueError, "used together"):
+            validate_epoch_learning_rates([5e-4], None, 1)
+        with self.assertRaisesRegex(ValueError, "exactly"):
+            validate_epoch_learning_rates([5e-4], [5e-5], 2)
+        with self.assertRaisesRegex(ValueError, "epoch 1"):
+            validate_epoch_learning_rates([5e-5], [5e-4], 1)
+
     def test_screlu_divisor_256_matches_shift_semantics(self) -> None:
         config = QuantizedNnueArchitectureConfig("TDiv", "base768", 8, 8, (4,))
         model = QuantizedSparseNnueArchitecture(config, screlu_divisor=256)
@@ -505,13 +515,18 @@ class QuantizedNnueArchitectureTests(unittest.TestCase):
     def test_architectures_a_to_h_exist(self) -> None:
         self.assertEqual(
             sorted(QUANTIZED_ARCHITECTURES),
-            ["A", "B", "C", "D", "E", "E2", "F", "F2", "F2_64", "G", "H"],
+            ["A", "B", "C", "D", "E", "E2", "F", "F2", "F2M", "F2_64", "G", "H"],
         )
         self.assertEqual(QUANTIZED_ARCHITECTURES["A"].hidden_sizes, (256, 32, 32))
         self.assertEqual(QUANTIZED_ARCHITECTURES["B"].hidden_sizes, (128, 32, 32))
         self.assertEqual(QUANTIZED_ARCHITECTURES["F"].hidden_sizes, (256, 32, 32))
         self.assertEqual(QUANTIZED_ARCHITECTURES["E2"].hidden_sizes, (256, 32))
         self.assertEqual(QUANTIZED_ARCHITECTURES["F2"].hidden_sizes, (256, 32, 32))
+        self.assertEqual(QUANTIZED_ARCHITECTURES["F2M"].hidden_sizes, (256, 32, 32))
+        self.assertEqual(
+            QUANTIZED_ARCHITECTURES["F2M"].board_feature_count,
+            QUANTIZED_ARCHITECTURES["F2"].board_feature_count // 2,
+        )
         self.assertEqual(QUANTIZED_ARCHITECTURES["G"].hidden_sizes, (128, 32, 32))
         self.assertEqual(QUANTIZED_ARCHITECTURES["H"].hidden_sizes, (128, 32))
 

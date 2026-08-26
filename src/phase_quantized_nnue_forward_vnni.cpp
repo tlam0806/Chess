@@ -112,6 +112,9 @@ private:
     }
 
 public:
+    using Hidden2 = std::array<std::uint16_t, H2>;
+    using Hidden3 = std::array<std::uint16_t, H3>;
+
     void load(
         const PhaseKernelPhaseView& source,
         std::uint32_t hidden2_scale,
@@ -134,10 +137,11 @@ public:
         pack_weights<H2, H3>(source.hidden3_weight, hidden3_weight_);
     }
 
-    [[nodiscard]] std::int64_t evaluate(
+    [[gnu::always_inline]] void input_to_hidden2(
         const std::int32_t* stm_accumulator,
         const std::int32_t* opponent_accumulator,
-        const std::int16_t* combined_aux_row
+        const std::int16_t* combined_aux_row,
+        Hidden2& hidden2
     ) const {
         alignas(32) std::array<std::uint8_t, H1> hidden1{};
         build_first_activation(
@@ -149,14 +153,18 @@ public:
         alignas(32) std::array<std::int32_t, H2> hidden2_dot{};
         dot_packed<H1, H2>(
             hidden1.data(), hidden2_weight_, hidden2_dot.data());
-        alignas(32) std::array<std::uint16_t, H2> hidden2{};
         for (std::size_t output = 0; output < H2; ++output) {
             const std::int64_t sum = hidden2_bias_[output]
                 + static_cast<std::int64_t>(hidden2_dot[output]);
             hidden2[output] = scaled_clipped_relu(
                 sum, hidden2_scale_shift_);
         }
+    }
 
+    [[gnu::always_inline]] void hidden2_to_hidden3(
+        const Hidden2& hidden2,
+        Hidden3& hidden3
+    ) const {
         // VPDPBUSD consumes u8 activations, while hidden2 is u16.  Splitting
         // into low and high bytes is exact because
         // u16 = low + 256 * high.  Keep the two dot products separate until
@@ -180,7 +188,6 @@ public:
             hidden3_weight_,
             hidden3_dot_high.data());
 
-        alignas(32) std::array<std::uint16_t, H3> hidden3{};
         for (std::size_t output = 0; output < H3; ++output) {
             const std::int64_t sum = hidden3_bias_[output]
                 + static_cast<std::int64_t>(hidden3_dot_low[output])
@@ -189,7 +196,11 @@ public:
             hidden3[output] = scaled_clipped_relu(
                 sum, hidden3_scale_shift_);
         }
+    }
 
+    [[gnu::always_inline, nodiscard]] std::int64_t hidden3_to_output(
+        const Hidden3& hidden3
+    ) const {
         std::int64_t raw = output_bias_;
         for (std::size_t input = 0; input < H3; ++input) {
             raw += static_cast<std::int64_t>(hidden3[input])
@@ -198,6 +209,22 @@ public:
         // Signed division is deliberate: right shift rounds negative values
         // differently from C++ truncation toward zero.
         return raw / static_cast<std::int64_t>(output_scale_);
+    }
+
+    [[nodiscard]] std::int64_t evaluate(
+        const std::int32_t* stm_accumulator,
+        const std::int32_t* opponent_accumulator,
+        const std::int16_t* combined_aux_row
+    ) const {
+        alignas(32) Hidden2 hidden2{};
+        input_to_hidden2(
+            stm_accumulator,
+            opponent_accumulator,
+            combined_aux_row,
+            hidden2);
+        alignas(32) Hidden3 hidden3{};
+        hidden2_to_hidden3(hidden2, hidden3);
+        return hidden3_to_output(hidden3);
     }
 };
 

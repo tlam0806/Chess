@@ -21,7 +21,7 @@ sys.path.insert(0, str(REPO_ROOT))
 from nn.compact_board_data import (
     HEADER_SIZE,
     RECORD_SIZE,
-    architecture_features_from_board,
+    canonical_architecture_input,
     compact_paths,
     iter_compact_samples,
     open_reader,
@@ -29,11 +29,10 @@ from nn.compact_board_data import (
     pack_board_from_raw_features,
     position_split_bucket,
     unpack_record,
-    unpack_aux,
     validate_compact_dataset,
     validate_header,
 )
-from nn.nnue_architectures import ARCHITECTURES, SparseNnueArchitecture, transform_features
+from nn.nnue_architectures import ARCHITECTURES, SparseNnueArchitecture
 from nn.training_targets import (
     DEFAULT_SCORE_LAMBDA,
     DEFAULT_WDL_LOSS_EXPONENT,
@@ -122,7 +121,12 @@ class JsonlSplitDataset(IterableDataset):
                     continue
                 board = pack_board_from_raw_features([int(value) for value in raw_features])
                 aux_bits = pack_aux([int(value) for value in aux])
-                bucket = position_split_bucket(board, aux_bits, self.split_mod)
+                canonical_board, canonical_aux_bits, features, canonical_aux = (
+                    canonical_architecture_input(board, aux_bits, self.architecture)
+                )
+                bucket = position_split_bucket(
+                    canonical_board, canonical_aux_bits, self.split_mod
+                )
                 if not self._bucket_belongs_to_split(bucket):
                     continue
                 score_value = int(score)
@@ -134,8 +138,8 @@ class JsonlSplitDataset(IterableDataset):
                     continue
 
                 yield {
-                    "features": transform_features(raw_features, self.architecture),
-                    "aux": aux,
+                    "features": features,
+                    "aux": canonical_aux,
                     "score": score_value,
                     "ply": ply_value,
                     "result": result_value,
@@ -157,6 +161,7 @@ class CompactSplitDataset(IterableDataset):
         max_samples: int | None,
         seed: int,
         shuffle_block_size: int,
+        cache_unshuffled: bool = False,
     ) -> None:
         super().__init__()
         self.path = path
@@ -168,7 +173,13 @@ class CompactSplitDataset(IterableDataset):
         self.max_samples = max_samples
         self.seed = seed
         self.shuffle_block_size = shuffle_block_size
+        self.cache_unshuffled = cache_unshuffled
         self.iteration = 0
+        # Evaluation splits are deterministic and revisited after every epoch.
+        # Keep only the compact 40-byte samples in each persistent DataLoader
+        # worker after its first scan. Caching expanded Python feature lists
+        # would use an order of magnitude more RAM.
+        self._cached_unshuffled_samples: list[Any] | None = None
 
     def _bucket_belongs_to_split(self, bucket: int) -> bool:
         if self.split == "all":
@@ -181,20 +192,29 @@ class CompactSplitDataset(IterableDataset):
             return bucket != self.test_mod and bucket != self.val_mod
         raise ValueError(f"unknown split: {self.split}")
 
-    def _sample_from_record(self, record: bytes) -> dict[str, Any] | None:
-        sample = unpack_record(record)
+    def _sample_from_compact(self, sample: Any) -> dict[str, Any] | None:
         if is_value_none_target(sample.score):
             return None
-        bucket = position_split_bucket(sample.board, sample.aux_bits, self.split_mod)
+        canonical_board, canonical_aux_bits, features, aux = (
+            canonical_architecture_input(
+                sample.board, sample.aux_bits, self.architecture
+            )
+        )
+        bucket = position_split_bucket(
+            canonical_board, canonical_aux_bits, self.split_mod
+        )
         if not self._bucket_belongs_to_split(bucket):
             return None
         return {
-            "features": architecture_features_from_board(sample.board, self.architecture),
-            "aux": unpack_aux(sample.aux_bits),
+            "features": features,
+            "aux": aux,
             "score": sample.score,
             "ply": sample.ply,
             "result": sample.result,
         }
+
+    def _sample_from_record(self, record: bytes) -> dict[str, Any] | None:
+        return self._sample_from_compact(unpack_record(record))
 
     def _compact_paths(self) -> list[Path]:
         return compact_paths(self.path)
@@ -238,6 +258,33 @@ class CompactSplitDataset(IterableDataset):
             # every epoch sees the corpus in identical on-disk order.
             if self.split in {"train", "all"}:
                 shard_rng.shuffle(shard_ids)
+
+            # Assign complete compressed shards whenever there are enough of
+            # them. The old block-level assignment made every DataLoader worker
+            # open and decompress every shard, only to discard blocks assigned
+            # to another worker. With 32 workers that multiplied decompression
+            # and network-volume traffic by roughly 32x. Whole-shard ownership
+            # keeps the streams disjoint while retaining deterministic shuffles.
+            if len(shard_paths) >= num_workers:
+                for shard_id in shard_ids[worker_id::num_workers]:
+                    path = shard_paths[shard_id]
+                    base_index = shard_id * block_size
+                    for block_base, block_data in self._iter_stream_blocks(
+                        path, base_index, block_size
+                    ):
+                        offsets = list(range(0, len(block_data), RECORD_SIZE))
+                        if self.split in {"train", "all"}:
+                            worker_rng.shuffle(offsets)
+                        for offset in offsets:
+                            yield (
+                                block_base + offset // RECORD_SIZE,
+                                block_data[offset : offset + RECORD_SIZE],
+                            )
+                return
+
+            # Tiny test/single-shard corpora still need multiple workers to
+            # contribute to a global sample cap, so retain block partitioning
+            # for that narrow case even though compressed streams overlap.
             global_block_id = 0
             for shard_id in shard_ids:
                 path = shard_paths[shard_id]
@@ -284,21 +331,46 @@ class CompactSplitDataset(IterableDataset):
                     break
             return
 
-        for path_index, path in enumerate(self._compact_paths()):
+        if self.cache_unshuffled and self._cached_unshuffled_samples is not None:
+            for sample in self._cached_unshuffled_samples:
+                converted = self._sample_from_compact(sample)
+                if converted is None:
+                    raise RuntimeError("cached compact sample no longer belongs to its split")
+                yield converted
+            return
+
+        paths = self._compact_paths()
+        cached_samples: list[Any] | None = [] if self.cache_unshuffled else None
+        shard_partition = self.path.is_dir() and len(paths) >= num_workers
+        for path_index, path in enumerate(paths):
+            # As in the shuffled path, give complete compressed shards to one
+            # worker. Record-level modulo partitioning made every eval worker
+            # decompress every shard, multiplying validation I/O by num_workers.
+            if shard_partition and path_index % num_workers != worker_id:
+                continue
             base_index = path_index * max(1, self.shuffle_block_size or 1_000_000)
             for local_index, sample in enumerate(iter_compact_samples(path)):
                 record_index = base_index + local_index
-                if record_index % num_workers != worker_id:
+                if not shard_partition and record_index % num_workers != worker_id:
                     continue
                 if is_value_none_target(sample.score):
                     continue
-                bucket = position_split_bucket(sample.board, sample.aux_bits, self.split_mod)
+                canonical_board, canonical_aux_bits, features, aux = (
+                    canonical_architecture_input(
+                        sample.board, sample.aux_bits, self.architecture
+                    )
+                )
+                bucket = position_split_bucket(
+                    canonical_board, canonical_aux_bits, self.split_mod
+                )
                 if not self._bucket_belongs_to_split(bucket):
                     continue
 
+                if cached_samples is not None:
+                    cached_samples.append(sample)
                 yield {
-                    "features": architecture_features_from_board(sample.board, self.architecture),
-                    "aux": unpack_aux(sample.aux_bits),
+                    "features": features,
+                    "aux": aux,
                     "score": sample.score,
                     "ply": sample.ply,
                     "result": sample.result,
@@ -308,6 +380,8 @@ class CompactSplitDataset(IterableDataset):
                     break
             if max_samples is not None and yielded >= max_samples:
                 break
+        if cached_samples is not None:
+            self._cached_unshuffled_samples = cached_samples
 
 
 def collate_sparse_batch(
@@ -348,6 +422,7 @@ def make_loader(
     batch_size: int,
     workers: int,
     shuffle_block_size: int,
+    cache_unshuffled: bool = False,
 ) -> DataLoader:
     if data_format == "auto":
         data_format = "cbin" if path.is_dir() or path.name.endswith(".cbin") or path.name.endswith(".cbin.zst") else "jsonl"
@@ -373,6 +448,7 @@ def make_loader(
             max_samples=max_samples,
             seed=seed,
             shuffle_block_size=shuffle_block_size,
+            cache_unshuffled=cache_unshuffled,
         )
     else:
         raise ValueError(f"unknown data format: {data_format}")

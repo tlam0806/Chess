@@ -6,6 +6,9 @@ import torch
 
 from nn.compact_board_data import (
     architecture_features_from_board,
+    canonical_architecture_input,
+    horizontal_mirror_aux,
+    horizontal_mirror_board,
     pack_aux,
     pack_board_from_raw_features,
     pack_record,
@@ -19,6 +22,7 @@ from nn.nnue_architectures import (
     DUAL_ACCUMULATOR_FEATURE_COUNT,
     DUAL_FULL_KING_FEATURE_COUNT,
     FULL_KING_FEATURE_COUNT,
+    HORIZONTAL_MIRROR_DUAL_FULL_KING_FEATURE_COUNT,
     KING_BUCKET_COUNT,
     KING_BUCKET_FEATURE_COUNT,
     SparseNnueArchitecture,
@@ -116,6 +120,41 @@ class NnueArchitectureEncodingTests(unittest.TestCase):
 
         self.assertEqual(ARCHITECTURES["F2"].feature_count, DUAL_FULL_KING_FEATURE_COUNT)
         self.assertEqual(ARCHITECTURES["F2"].hidden_sizes, (256, 32, 32))
+
+        self.assertEqual(
+            ARCHITECTURES["F2M"].feature_count,
+            HORIZONTAL_MIRROR_DUAL_FULL_KING_FEATURE_COUNT,
+        )
+        self.assertEqual(ARCHITECTURES["F2M"].hidden_sizes, (256, 32, 32))
+
+    def test_f2m_horizontal_mirror_canonicalizes_board_aux_and_features(self):
+        raw_features = [
+            raw_feature(5, 0, 0, 6, 6),
+            raw_feature(5, 0, 1, 59, 6),
+            raw_feature(5, 1, 0, 6, 59),
+            raw_feature(5, 1, 1, 59, 59),
+            raw_feature(0, 0, 0, 6, 14),
+            raw_feature(0, 0, 1, 59, 14),
+            raw_feature(1, 1, 0, 6, 45),
+            raw_feature(1, 1, 1, 59, 45),
+        ]
+        board = pack_board_from_raw_features(raw_features)
+        aux = [1, 0, 0, 1, 1, 0, 1, 0, 0, 0, 0, 0, 0]
+        mirrored_board = horizontal_mirror_board(board)
+        mirrored_aux = horizontal_mirror_aux(aux)
+        transform = ARCHITECTURES["F2M"].transform
+
+        first = canonical_architecture_input(board, pack_aux(aux), transform)
+        second = canonical_architecture_input(
+            mirrored_board, pack_aux(mirrored_aux), transform
+        )
+        self.assertEqual(first, second)
+        self.assertTrue(
+            all(
+                0 <= feature < HORIZONTAL_MIRROR_DUAL_FULL_KING_FEATURE_COUNT
+                for feature in first[2]
+            )
+        )
 
     def test_decode_feature_roundtrip_for_entire_raw_space(self):
         for piece in range(PIECES):

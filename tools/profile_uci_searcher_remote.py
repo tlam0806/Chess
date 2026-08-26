@@ -391,9 +391,16 @@ class EngineSession:
     def search(self, fen: str, depth: int, profile: bool) -> dict[str, Any]:
         self.send("ucinewgame")
         self.send(f"position fen {fen}")
+        # UCI commands are consumed asynchronously.  Do not let TT clearing
+        # and position setup leak into either the wall-time measurement or the
+        # CPU profile, and keep the pre-search delay identical in both arms.
+        self.send("isready")
+        ready_deadline = time.monotonic() + self.timeout_seconds
+        while self.read_line(ready_deadline) != "readyok":
+            pass
         if profile:
             os.kill(self.process.pid, signal.SIGUSR2)
-            time.sleep(0.02)
+        time.sleep(0.02)
         cpu_started = process_cpu_seconds(self.process.pid)
         wall_started_ns = time.perf_counter_ns()
         self.send(f"go depth {depth}")

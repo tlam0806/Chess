@@ -21,6 +21,7 @@ from nn.compact_board_data import HEADER_SIZE, RECORD_SIZE, open_reader, validat
 CONVERSION_SUMMARY = re.compile(
     r"done converted=(?P<converted>\d+) read=(?P<read>\d+) "
     r"value_none_filtered=(?P<value_none>\d+) "
+    r"(?:in_check_filtered=\d+ )?"
     r"duplicate_or_bloom_filtered=(?P<duplicates>\d+) bytes=(?P<bytes>\d+)"
 )
 DEDUP_BYTES = re.compile(r"dedup_filter_bytes=(?P<bytes>\d+)")

@@ -1,0 +1,67 @@
+{
+  "audit_id": "nnue_v41_cross_host_memmove_caller_audit_20260825",
+  "status": "verified_from_two_retained_native_traces",
+  "purpose": "Preserve the evidence behind the caller-informed sensitivity that reassigns local _platform_memmove flat leaves from runtime to NNUE accumulator work.",
+  "method": {
+    "export_command_template": "xcrun xctrace export --input TRACE --xpath /trace-toc/run[@number=\"1\"]/data/table[@schema=\"time-profile\"] --output XML",
+    "filter": "row PID must be in the batch target PID set and the fully resolved stack must contain chess::NnueSearcherV38::search_best_move_impl(",
+    "leaf": "_platform_memmove",
+    "caller": "the second resolved frame, immediately above the exclusive leaf",
+    "time_profile_xpath": "/trace-toc/run[@number=\"1\"]/data/table[@schema=\"time-profile\"]"
+  },
+  "tool_identity": {
+    "exact_run_harness_sha256": "828289cbb74f291abb5b738f2eaf0c113ffb8a8e830e55fce03d810007b10d72",
+    "xcrun_sha256": "a439970aea2b4e435eac6518ff62c97fd1c57d8c731974027ad211b515c7a7b8",
+    "xctrace_sha256": "fd06ae7423492f221ae9527b13dc5c963a8281ed5740b0f939958735ea00b5b4"
+  },
+  "traces": [
+    {
+      "batch": 0,
+      "rounds": [1, 2],
+      "trace_path_local_ignored": "logs/v41_lto_crosshost_20260825/local-xctrace-batch-full/raw/b00-r01-r02.trace",
+      "trace_tree_sha256": "702abf1b2daca6bb7a5b560520285bb9f2158b61247ed3f7e4219ee07861de35",
+      "trace_regular_file_bytes": 24404061,
+      "exported_xml_sha256": "6827695647f7e656266a0ba93766069cf6958528e128d46744bb66d8143b3480",
+      "compact_export_sha256": "40dc20ae871401ae26cdc02249303558fa5684605771f03a6d1fa92cc03e3a20",
+      "memmove_leaf_samples": 19,
+      "immediate_callers": [
+        {
+          "samples": 18,
+          "symbol": "chess::PhaseQuantizedNnueAccumulator::make_move_with_undo(chess::Move, chess::Color, chess::PieceType, chess::PieceType, chess::Position const&)"
+        },
+        {
+          "samples": 1,
+          "symbol": "chess::NnueSearcherV38::negamax(chess::Position&, int, int, chess::Move, chess::PieceType, int, int, chess::NnueSearcherV38::SearchState&)"
+        }
+      ],
+      "additional_memcpy_leaf": {
+        "symbol": "DYLD-STUB$$memcpy",
+        "samples": 1,
+        "immediate_caller": "chess::PhaseQuantizedNnueAccumulator::make_move_with_undo(chess::Move, chess::Color, chess::PieceType, chess::PieceType, chess::Position const&)"
+      }
+    },
+    {
+      "batch": 1,
+      "rounds": [5, 6],
+      "trace_path_local_ignored": "logs/v41_lto_crosshost_20260825/local-xctrace-batch-full/raw/b01-r05-r06.trace",
+      "trace_tree_sha256": "3b04dbcfe374dc81613f9ae21b26812cb1c5ac98b16f47ad4e8e81eaf17622e3",
+      "trace_regular_file_bytes": 31392985,
+      "exported_xml_sha256": "27125a46a579a1cc31637754f75f70e5cff25086d96cb20aba67bf0322410d3d",
+      "compact_export_sha256": "40df1a7ab4c4451198d42959f51132636f0f83b5e721cea6d26ac48d1b07a23e",
+      "memmove_leaf_samples": 25,
+      "immediate_callers": [
+        {
+          "samples": 25,
+          "symbol": "chess::PhaseQuantizedNnueAccumulator::make_move_with_undo(chess::Move, chess::Color, chess::PieceType, chess::PieceType, chess::Position const&)"
+        }
+      ]
+    }
+  ],
+  "combined": {
+    "memmove_leaf_samples": 44,
+    "accumulator_immediate_caller_samples": 43,
+    "accumulator_immediate_caller_share": 0.9772727272727273,
+    "other_immediate_caller_samples": 1
+  },
+  "limitation": "The two native .trace bundles and exported XML files are local ignored artifacts and are not embedded in the compact evidence bundle. Their deterministic hashes and this caller summary preserve audit identity but cannot recover deleted source bytes. The remaining 14 sessions retain compact flat-leaf exports without ancestor stacks."
+}

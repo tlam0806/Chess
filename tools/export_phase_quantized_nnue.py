@@ -23,8 +23,12 @@ from tools.train_phase_component_nnue import collate, make_total_loader  # noqa:
 
 
 MAGIC = b"QPHNUE1\0"
-VERSION = 1
-FEATURE_ROWS = 6 * 2 * 64 * 64
+LEGACY_VERSION = 1
+HORIZONTAL_MIRROR_VERSION = 2
+FEATURE_ROWS_BY_ARCHITECTURE = {
+    "F2": 6 * 2 * 64 * 64,
+    "F2M": 6 * 2 * 32 * 64,
+}
 PERSPECTIVE_SIZE = 128
 DENSE_INPUT_SIZE = 256
 HIDDEN2_SIZE = 32
@@ -129,8 +133,9 @@ def compact_board_fen(board: bytes, aux: list[int], side_to_move: str) -> str:
 def main() -> None:
     args = parse_args()
     checkpoint = torch.load(args.checkpoint, map_location="cpu", weights_only=False)
-    if checkpoint.get("architecture") != "F2":
-        raise ValueError("C++ phase evaluator requires architecture F2")
+    architecture = str(checkpoint.get("architecture"))
+    if architecture not in FEATURE_ROWS_BY_ARCHITECTURE:
+        raise ValueError("C++ phase evaluator requires architecture F2 or F2M")
     if int(checkpoint.get("phase_stacks", -1)) != PHASES:
         raise ValueError("C++ phase evaluator requires exactly eight phase stacks")
     if tuple(checkpoint.get("hidden_sizes", ())) != (256, 32, 32):
@@ -146,9 +151,11 @@ def main() -> None:
     if output_scale <= 0:
         raise ValueError("output scale must be positive")
 
-    config = QUANTIZED_ARCHITECTURES["F2"]
+    config = QUANTIZED_ARCHITECTURES[architecture]
+    phase_layout = str(checkpoint.get("phase_layout", "independent"))
     model = PhaseStackQuantizedNnueArchitecture(
         config,
+        phase_layout=phase_layout,
         hidden_clip=int(checkpoint["hidden_clip"]),
         feature_weight_scale=int(checkpoint["feature_weight_scale"]),
         linear_weight_scale=int(checkpoint["linear_weight_scale"]),
@@ -160,8 +167,9 @@ def main() -> None:
     model.load_state_dict(checkpoint["model_state"], strict=True)
     model.eval()
 
-    if model.feature_weights.num_embeddings != FEATURE_ROWS:
-        raise ValueError("unexpected F2 feature-row count")
+    feature_rows = FEATURE_ROWS_BY_ARCHITECTURE[architecture]
+    if model.feature_weights.num_embeddings != feature_rows:
+        raise ValueError(f"unexpected {architecture} feature-row count")
     if model.feature_weights.embedding_dim != PERSPECTIVE_SIZE:
         raise ValueError("unexpected F2 perspective accumulator size")
     if model.feature_weight_scale != model.hidden_clip:
@@ -187,10 +195,12 @@ def main() -> None:
         str(checkpoint["quantization_convention"]),
     )
     dense_tensors: list[tuple[torch.Tensor, ...]] = []
-    for layers, output in zip(model.phase_hidden_layers, model.phase_outputs):
+    for phase, output in enumerate(model.phase_outputs):
         phase_values: list[torch.Tensor] = []
         phase_activation_scale = activation_scale
-        for layer_index, (scale, layer) in enumerate(zip(hidden_scales, layers), 1):
+        for layer_index, (scale, layer) in enumerate(
+            zip(hidden_scales, model.layers_for_phase(phase)), 1
+        ):
             accumulator_scale = phase_activation_scale * model.linear_weight_scale
             bias = model.quantized_layer_bias(layer, accumulator_scale)
             weight = model.quantized_layer_weight(layer)
@@ -218,8 +228,8 @@ def main() -> None:
         dense_tensors.append(tuple(phase_values))
 
     header = (
-        VERSION,
-        FEATURE_ROWS,
+        HORIZONTAL_MIRROR_VERSION if architecture == "F2M" else LEGACY_VERSION,
+        feature_rows,
         PERSPECTIVE_SIZE,
         DENSE_INPUT_SIZE,
         HIDDEN2_SIZE,
@@ -296,8 +306,9 @@ def main() -> None:
 
     print(
         f"wrote={args.output} bytes={args.output.stat().st_size} "
-        f"architecture=F2 phases=8 activation={checkpoint['activation']} "
-        f"hs={hidden_scales} os={output_scale} loss={checkpoint.get('loss_type')}"
+        f"architecture={architecture} phases=8 activation={checkpoint['activation']} "
+        f"layout={phase_layout} hs={hidden_scales} os={output_scale} "
+        f"loss={checkpoint.get('loss_type')}"
     )
 
 

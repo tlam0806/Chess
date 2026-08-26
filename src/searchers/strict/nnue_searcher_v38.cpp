@@ -1464,6 +1464,9 @@ SearchResult NnueSearcherV38::search_best_move_impl(
     std::span<const HashKey> game_history,
     bool enable_repetition
 ) {
+    if (enable_repetition) {
+        tt_.advance_generation();
+    }
     killer_table_.clear();
     counter_move_table_.clear();
     SearchState state;
@@ -1507,6 +1510,9 @@ SearchResult NnueSearcherV38::search_best_move_impl(
 ) {
     assert(limits.max_depth >= 0);
 
+    if (enable_repetition) {
+        tt_.advance_generation();
+    }
     killer_table_.clear();
     counter_move_table_.clear();
     SearchResult best = make_fallback_result(pos);

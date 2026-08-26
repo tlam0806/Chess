@@ -4,6 +4,10 @@
 
 Status: **validated and deployed to production as Heroku release v11**.
 
+Historical scope: this report covers the non-LTO v11 release. LTO was later
+validated and deployed as v12; see the
+[post-SIMD and LTO report](nnue_v41_post_simd_and_lto_20260825.md).
+
 V41 now has x86 SIMD implementations for its quantized NNUE forward pass. A
 single engine binary chooses the fastest supported backend when the model is
 loaded. On every sampled Heroku Basic dyno, `auto` selected the 256-bit
@@ -247,4 +251,5 @@ model, options and fixed-depth signatures.
 
 The candidate passed correctness and performance promotion gates, then passed
 the independent production provenance, VNNI handshake and fixed-depth smoke
-gates documented above. Release v11 is now the active production release.
+gates documented above. Release v11 became active at the time of this report
+and was later superseded by the LTO v12 release.
