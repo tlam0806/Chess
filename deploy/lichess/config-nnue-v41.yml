@@ -41,7 +41,12 @@ engine:
     lichess_opening_explorer:
       enabled: false
     online_egtb:
-      enabled: false
+      enabled: true
+      source: "lichess"
+      min_time: 20
+      max_time: 10800
+      max_pieces: 5
+      move_quality: "best"
 
   lichess_bot_tbs:
     syzygy:
