@@ -311,6 +311,9 @@ int main(int argc, char** argv) {
                       << "id author TungLamNguyen\n"
                       << "info string nnue_kernel="
                       << model.forward_kernel_name()
+                      << '\n'
+                      << "info string nnue_accumulator_kernel="
+                      << model.accumulator_kernel_name()
                       << '\n';
 #if !defined(CHESS_UCI_NNUE_V41)
             std::cout

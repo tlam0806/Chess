@@ -162,11 +162,16 @@ if (
     AND CHESS_TARGETS_X86_64
 )
     target_sources(chess_core PRIVATE
+        src/phase_quantized_nnue_accumulator_avx2.cpp
         src/phase_quantized_nnue_forward_avx2.cpp
         src/phase_quantized_nnue_forward_vnni.cpp
     )
     target_compile_definitions(
         chess_core PRIVATE CHESS_PHASE_NNUE_X86_BACKENDS=1)
+    set_source_files_properties(
+        src/phase_quantized_nnue_accumulator_avx2.cpp
+        PROPERTIES COMPILE_OPTIONS "-mavx2"
+    )
     set_source_files_properties(
         src/phase_quantized_nnue_forward_avx2.cpp
         PROPERTIES COMPILE_OPTIONS "-mavx2"
@@ -736,3 +741,23 @@ add_test(
         ${CMAKE_SOURCE_DIR}/models/quantized_scale_grid/old_score_huber200_lr_sweep_then_5ep_20260724_142758/best/phase_quantized_nnue.bin
         ${CMAKE_SOURCE_DIR}/models/quantized_scale_grid/old_score_huber200_lr_sweep_then_5ep_20260724_142758/best/phase_quantized_nnue_parity.tsv
 )
+
+if (
+    CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU"
+    AND CHESS_TARGETS_X86_64
+)
+    add_executable(
+        phase_quantized_nnue_accumulator_avx2_tests
+        tests/phase_quantized_nnue_accumulator_avx2_tests.cpp
+    )
+    target_include_directories(
+        phase_quantized_nnue_accumulator_avx2_tests PRIVATE src)
+    target_link_libraries(
+        phase_quantized_nnue_accumulator_avx2_tests PRIVATE chess_core)
+    target_compile_options(
+        phase_quantized_nnue_accumulator_avx2_tests PRIVATE -UNDEBUG)
+    add_test(
+        NAME phase_quantized_nnue_accumulator_avx2_tests
+        COMMAND phase_quantized_nnue_accumulator_avx2_tests
+    )
+endif()

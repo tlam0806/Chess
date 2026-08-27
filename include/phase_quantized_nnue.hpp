@@ -79,6 +79,9 @@ public:
     }
     [[nodiscard]] bool uses_accelerated_kernel() const;
     [[nodiscard]] std::string_view forward_kernel_name() const;
+    [[nodiscard]] std::string_view accumulator_kernel_name() const {
+        return accumulator_avx2_enabled_ ? "x86_avx2" : "portable";
+    }
     void set_accelerated_kernel_enabled(bool enabled) {
         accelerated_kernel_enabled_ = enabled;
     }
@@ -136,6 +139,7 @@ private:
     ) const;
 
     [[nodiscard]] bool initialize_candidate_kernel();
+    [[nodiscard]] bool initialize_accumulator_kernel();
 
     [[nodiscard]] int evaluate(
         const Position& pos,
@@ -157,6 +161,7 @@ private:
     std::uint32_t output_weight_scale_ = 0;
     std::uint32_t psqt_scale_ = 0;
     bool accelerated_kernel_enabled_ = true;
+    bool accumulator_avx2_enabled_ = false;
     bool horizontal_mirror_ = false;
     std::size_t feature_row_count_ = 0;
 

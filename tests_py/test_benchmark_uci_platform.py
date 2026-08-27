@@ -1,3 +1,4 @@
+import argparse
 import sys
 import tempfile
 import unittest
@@ -14,10 +15,38 @@ from tools.benchmark_uci_platform import (
     scheduled_positions,
     summarize_observations,
 )
-from tools.run_heroku_uci_platform_benchmark import cross_run_integrity
+from tools.run_heroku_uci_platform_benchmark import (
+    cross_run_integrity,
+    remote_command,
+)
 
 
 class UciPlatformBenchmarkTests(unittest.TestCase):
+    def test_remote_command_combines_heroku_environment_flag(self) -> None:
+        args = argparse.Namespace(
+            app="staging-app",
+            process_type="benchmark",
+            size="basic",
+            backend="vnni",
+            accumulator_backend="avx2",
+            remote_engine="/app/engine",
+            remote_model="/app/model",
+            remote_config="/app/config",
+            remote_engine_cwd="/app",
+            source_label="test",
+            harness_sha256="harness",
+            runner_sha256="runner",
+            profile="smoke",
+        )
+        command = remote_command(args, "spec", 1)
+        self.assertEqual(command.count("--env"), 1)
+        environment = command[command.index("--env") + 1]
+        self.assertEqual(
+            environment,
+            "CHESS_NNUE_BACKEND=vnni;"
+            "CHESS_NNUE_ACCUMULATOR_BACKEND=avx2",
+        )
+
     def test_parse_info_accepts_token_reordering(self) -> None:
         parsed = parse_info_line("info nodes 123 score cp -17 depth 8")
         self.assertIsNotNone(parsed)
@@ -192,6 +221,8 @@ for raw in sys.stdin:
     line = raw.strip()
     if line == "uci":
         print("id name FakeBench", flush=True)
+        print("info string nnue_kernel=x86_avx2_exact", flush=True)
+        print("info string nnue_accumulator_kernel=x86_avx2", flush=True)
         print("uciok", flush=True)
     elif line == "isready":
         print("readyok", flush=True)
@@ -216,6 +247,10 @@ for raw in sys.stdin:
                     "8/8/8/8/8/8/4P3/4K2k w - - 0 1", "fixed_depth", 4
                 )
         self.assertEqual(handshake["engine_name"], "FakeBench")
+        self.assertEqual(handshake["nnue_kernel"], "x86_avx2_exact")
+        self.assertEqual(
+            handshake["nnue_accumulator_kernel"], "x86_avx2"
+        )
         self.assertEqual(result["reported_depth"], 4)
         self.assertEqual(result["nodes"], 400)
         self.assertEqual(result["bestmove"], "e2e4")

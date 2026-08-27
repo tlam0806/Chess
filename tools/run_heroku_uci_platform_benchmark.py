@@ -31,6 +31,10 @@ EXPECTED_KERNEL_BY_BACKEND = {
     "avx2": "x86_avx2_exact",
     "vnni": "x86_avx512vnni_256",
 }
+EXPECTED_ACCUMULATOR_KERNEL_BY_BACKEND = {
+    "portable": "portable",
+    "avx2": "x86_avx2",
+}
 
 
 def sha256_file(path: Path) -> str:
@@ -81,8 +85,18 @@ def remote_command(
         "--no-launcher",
         "--exit-code",
     ]
+    remote_environment: list[str] = []
     if args.backend != "auto":
-        command.extend(["--env", f"CHESS_NNUE_BACKEND={args.backend}"])
+        remote_environment.append(f"CHESS_NNUE_BACKEND={args.backend}")
+    if args.accumulator_backend != "auto":
+        remote_environment.append(
+            "CHESS_NNUE_ACCUMULATOR_BACKEND="
+            f"{args.accumulator_backend}"
+        )
+    if remote_environment:
+        # Heroku CLI accepts a semicolon-separated environment list, but
+        # rejects repeated --env flags. Keep all selectors in one flag.
+        command.extend(["--env", ";".join(remote_environment)])
     command.extend(
         [
             "--",
@@ -209,6 +223,7 @@ def run_one(
         "process_type": args.process_type,
         "profile": args.profile,
         "backend": args.backend,
+        "accumulator_backend": args.accumulator_backend,
         "ordinal": ordinal,
     }
     result_path = output_dir / f"heroku-run-{ordinal}.json"
@@ -225,6 +240,20 @@ def run_one(
         if actual_kernel != expected_kernel:
             raise RuntimeError(
                 f"forced backend {args.backend!r} reported kernel "
+                f"{actual_kernel!r}, expected {expected_kernel!r}; "
+                f"see {result_path}"
+            )
+    if args.accumulator_backend in EXPECTED_ACCUMULATOR_KERNEL_BY_BACKEND:
+        expected_kernel = EXPECTED_ACCUMULATOR_KERNEL_BY_BACKEND[
+            args.accumulator_backend
+        ]
+        actual_kernel = result.get("uci", {}).get("handshake", {}).get(
+            "nnue_accumulator_kernel"
+        )
+        if actual_kernel != expected_kernel:
+            raise RuntimeError(
+                "forced accumulator backend "
+                f"{args.accumulator_backend!r} reported kernel "
                 f"{actual_kernel!r}, expected {expected_kernel!r}; "
                 f"see {result_path}"
             )
@@ -425,7 +454,9 @@ def markdown_report(
         "",
         f"- Status: **{aggregate['status']}**",
         f"- App/dyno: `{args.app}` / `{args.size}` one-off",
-        f"- Process/backend: `{args.process_type}` / `{args.backend}`",
+        "- Process/forward/accumulator: "
+        f"`{args.process_type}` / `{args.backend}` / "
+        f"`{args.accumulator_backend}`",
         f"- Profile: `{args.profile}`",
         f"- Independent dynos: {aggregate['runs']}",
         f"- Source label: `{args.source_label}`",
@@ -478,6 +509,15 @@ def build_parser() -> argparse.ArgumentParser:
         choices=("auto", "scalar", "avx2", "vnni"),
         default="auto",
         help="force CHESS_NNUE_BACKEND and verify the reported UCI kernel",
+    )
+    parser.add_argument(
+        "--accumulator-backend",
+        choices=("auto", "portable", "avx2"),
+        default="auto",
+        help=(
+            "force CHESS_NNUE_ACCUMULATOR_BACKEND and verify the reported "
+            "UCI kernel"
+        ),
     )
     parser.add_argument("--profile", choices=("smoke", "full"), default="smoke")
     parser.add_argument("--runs", type=int)
@@ -533,6 +573,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "process_type": args.process_type,
         "profile": args.profile,
         "backend": args.backend,
+        "accumulator_backend": args.accumulator_backend,
         "runs": runs,
         "source_label": args.source_label,
         "harness": str(args.harness),

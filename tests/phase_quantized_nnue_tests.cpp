@@ -151,6 +151,49 @@ void assert_failed_backend_request_leaves_model_unloaded(
 #endif
 }
 
+void set_accumulator_backend_environment(const char* value) {
+#if defined(_WIN32)
+    assert(_putenv_s(
+        "CHESS_NNUE_ACCUMULATOR_BACKEND",
+        value == nullptr ? "" : value) == 0);
+#else
+    if (value == nullptr) {
+        assert(unsetenv("CHESS_NNUE_ACCUMULATOR_BACKEND") == 0);
+    } else {
+        assert(setenv("CHESS_NNUE_ACCUMULATOR_BACKEND", value, 1) == 0);
+    }
+#endif
+}
+
+void assert_accumulator_backend_dispatch(
+    const std::filesystem::path& model_path
+) {
+    const char* previous_value =
+        std::getenv("CHESS_NNUE_ACCUMULATOR_BACKEND");
+    const bool had_previous_value = previous_value != nullptr;
+    const std::string previous = had_previous_value
+        ? std::string(previous_value)
+        : std::string{};
+
+    set_accumulator_backend_environment("portable");
+    chess::PhaseQuantizedNnueModel portable_model;
+    assert(portable_model.load(model_path.string()));
+    assert(portable_model.accumulator_kernel_name() == "portable");
+    run_sequence(
+        portable_model,
+        "r3k2r/8/8/3pP3/8/8/8/R3K2R w KQkq d6 0 1",
+        {"e5d6", "e8c8"});
+
+    set_accumulator_backend_environment("not-a-kernel");
+    chess::PhaseQuantizedNnueModel failed_model;
+    assert(!failed_model.load(model_path.string()));
+    assert(!failed_model.loaded());
+    assert(failed_model.accumulator_kernel_name() == "portable");
+
+    set_accumulator_backend_environment(
+        had_previous_value ? previous.c_str() : nullptr);
+}
+
 void overwrite_header_value(
     const std::filesystem::path& model_path,
     std::size_t header_index,
@@ -348,6 +391,7 @@ int main(int argc, char** argv) {
             : chess::PhaseQuantizedNnueModel::FeatureRowCount));
     assert_unsafe_accumulator_bias_is_rejected(argv[1]);
     assert_failed_backend_request_leaves_model_unloaded(argv[1]);
+    assert_accumulator_backend_dispatch(argv[1]);
     assert_neon_scale_dispatch_parity(argv[1]);
     assert_all_aux_state_parity(model);
     assert_horizontal_mirror_invariance(model);
@@ -417,5 +461,7 @@ int main(int argc, char** argv) {
         std::cout << "python_cpp_parity_positions=" << checked << '\n';
     }
 
-    std::cout << "phase quantized NNUE incremental parity passed\n";
+    std::cout << "accumulator_kernel="
+              << model.accumulator_kernel_name() << '\n'
+              << "phase quantized NNUE incremental parity passed\n";
 }

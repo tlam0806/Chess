@@ -3,6 +3,9 @@
 #include "attacks.hpp"
 #include "bitboard.hpp"
 #include "board_encoder.hpp"
+#if defined(CHESS_PHASE_NNUE_X86_BACKENDS)
+#include "phase_quantized_nnue_accumulator_backend.hpp"
+#endif
 #if defined(CHESS_ENABLE_NNUE_STAGE_BENCHMARK)
 #include "phase_quantized_nnue_forward_backend.hpp"
 #include "phase_quantized_nnue_stage_benchmark.hpp"
@@ -15,6 +18,7 @@
 #include <climits>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <fstream>
 #include <limits>
 #include <stdexcept>
@@ -128,6 +132,13 @@ bool has_runtime_accumulator_headroom(std::int32_t bias) {
         && value <= static_cast<std::int64_t>(
                         std::numeric_limits<std::int32_t>::max())
             - TotalAccumulatorHeadroom;
+}
+
+std::string_view requested_accumulator_backend() {
+    const char* value = std::getenv("CHESS_NNUE_ACCUMULATOR_BACKEND");
+    return value == nullptr || *value == '\0'
+        ? std::string_view{"auto"}
+        : std::string_view{value};
 }
 
 [[maybe_unused]] inline void add_bounded_int32(
@@ -314,16 +325,50 @@ bool PhaseQuantizedNnueModel::load(std::string_view path) {
     feature_rows_ = std::move(feature_rows);
     aux_weights_ = aux_weights;
     phases_ = phases;
-    if (!initialize_candidate_kernel()) {
+    if (!initialize_accumulator_kernel() || !initialize_candidate_kernel()) {
         // Backend selection is part of loading when the caller explicitly
         // requests one.  Do not leave an object that reports loaded()==true
         // after load() has returned false.
         feature_rows_.clear();
         feature_row_count_ = 0;
         horizontal_mirror_ = false;
+        accumulator_avx2_enabled_ = false;
         return false;
     }
     return true;
+}
+
+bool PhaseQuantizedNnueModel::initialize_accumulator_kernel() {
+    accumulator_avx2_enabled_ = false;
+    const std::string_view requested = requested_accumulator_backend();
+    if (requested != "auto"
+        && requested != "portable"
+        && requested != "avx2") {
+        return false;
+    }
+    if (requested == "portable") {
+        return true;
+    }
+
+#if defined(CHESS_PHASE_NNUE_TEST_ASSUME_AVX2)
+    // Test-only escape hatch for x86 execution environments such as Rosetta
+    // that execute AVX2 but deliberately hide it from CPUID. Production builds
+    // never define this macro and always retain the runtime feature gate.
+    if (requested == "avx2") {
+        accumulator_avx2_enabled_ = true;
+        return true;
+    }
+#endif
+
+#if defined(CHESS_PHASE_NNUE_X86_BACKENDS)
+    __builtin_cpu_init();
+    if (__builtin_cpu_supports("avx2")) {
+        accumulator_avx2_enabled_ = true;
+        return true;
+    }
+#endif
+
+    return requested == "auto";
 }
 
 int PhaseQuantizedNnueModel::evaluate(
@@ -492,6 +537,28 @@ void PhaseQuantizedNnueAccumulator::rebuild_perspective(
         }
     }
 
+#if defined(CHESS_PHASE_NNUE_X86_BACKENDS)
+    if (model_->accumulator_avx2_enabled_) {
+        std::array<phase_nnue_detail::AccumulatorRowView, 64> active_views;
+        for (std::size_t row_index = 0;
+             row_index < active_count;
+             ++row_index) {
+            const auto& row = model_->feature_rows_[active_rows[row_index]];
+            active_views[row_index] = {
+                row.positional.data(),
+                row.psqt.data(),
+            };
+        }
+        phase_nnue_detail::rebuild_accumulator_avx2(
+            state.accumulators[index].data(),
+            state.psqt[index].data(),
+            model_->accumulator_bias_.data(),
+            active_views.data(),
+            active_count);
+        return;
+    }
+#endif
+
     constexpr std::size_t LaneBlock = 16;
     PerspectiveAccumulator& accumulator = state.accumulators[index];
     for (std::size_t block = 0;
@@ -565,6 +632,43 @@ void PhaseQuantizedNnueAccumulator::update_features(
         model_->feature_rows_.data();
     PerspectiveAccumulator& accumulator =
         current_state().accumulators[perspective_index];
+
+#if defined(CHESS_PHASE_NNUE_X86_BACKENDS)
+    if (model_->accumulator_avx2_enabled_) {
+        const auto row_view = [feature_rows](std::size_t row) {
+            return phase_nnue_detail::AccumulatorRowView{
+                feature_rows[row].positional.data(),
+                feature_rows[row].psqt.data(),
+            };
+        };
+        PsqtAccumulator& psqt = current_state().psqt[perspective_index];
+        if constexpr (AddedCount == 1 && RemovedCount == 1) {
+            phase_nnue_detail::update_accumulator_avx2_1_1(
+                accumulator.data(),
+                psqt.data(),
+                row_view(added[0]),
+                row_view(removed[0]));
+            return;
+        } else if constexpr (AddedCount == 1 && RemovedCount == 2) {
+            phase_nnue_detail::update_accumulator_avx2_1_2(
+                accumulator.data(),
+                psqt.data(),
+                row_view(added[0]),
+                row_view(removed[0]),
+                row_view(removed[1]));
+            return;
+        } else if constexpr (AddedCount == 2 && RemovedCount == 2) {
+            phase_nnue_detail::update_accumulator_avx2_2_2(
+                accumulator.data(),
+                psqt.data(),
+                row_view(added[0]),
+                row_view(added[1]),
+                row_view(removed[0]),
+                row_view(removed[1]));
+            return;
+        }
+    }
+#endif
 
     for (std::size_t lane = 0;
          lane < PhaseQuantizedNnueModel::PerspectiveAccumulatorSize;

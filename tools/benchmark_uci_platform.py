@@ -339,13 +339,17 @@ class EngineSession:
                 "engine rejected UCI options: " + "; ".join(rejected_options)
             )
         kernel = None
+        accumulator_kernel = None
         for value in info_strings:
             if value.startswith("nnue_kernel="):
                 kernel = value.split("=", 1)[1]
+            elif value.startswith("nnue_accumulator_kernel="):
+                accumulator_kernel = value.split("=", 1)[1]
         return {
             "engine_name": engine_name,
             "advertised_options": sorted(advertised),
             "nnue_kernel": kernel,
+            "nnue_accumulator_kernel": accumulator_kernel,
         }
 
     def search(
