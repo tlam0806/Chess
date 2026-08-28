@@ -931,6 +931,10 @@ HeuristicSearcherV23::SearchValue HeuristicSearcherV23::negamax(
             if (node_range.lower >= beta) {
                 reward_quiet_cutoff(pos.side_to_move, depth, ply, scored_move, prev_move, prev_moved_piece);
                 node_range.upper = Infinity;
+                if (tt_probe.has_score) {
+                    node_range = intersect_ranges(node_range, tt_probe.range);
+                }
+                assert(node_range.lower <= node_range.upper);
                 store_tt_if_needed(pos.zobrist_key, depth, ply, node_range, best_lower_move, best_upper_move, fallback_best_move);
                 return SearchValue{node_range};
             }

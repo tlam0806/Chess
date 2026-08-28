@@ -965,11 +965,15 @@ void generate_legal_pawn_non_capture_moves_with_context(
 
         const Square to = make_square(file, rank + offset);
         const Bitboard to_mask = bit(to);
-        if ((context.occupancy & to_mask) != EmptyBB || (allowed_targets & to_mask) == EmptyBB) {
+        if ((context.occupancy & to_mask) != EmptyBB) {
             continue;
         }
+        const bool single_push_allowed = (allowed_targets & to_mask) != EmptyBB;
 
         if (rank + offset == promotion_rank) {
+            if (!single_push_allowed) {
+                continue;
+            }
             push_legal_non_king_non_capture_move(
                 king_safety,
                 moves,
@@ -993,11 +997,13 @@ void generate_legal_pawn_non_capture_moves_with_context(
             continue;
         }
 
-        push_legal_non_king_non_capture_move(
-            king_safety,
-            moves,
-            make_move(from, to, MoveFlag::Quiet),
-            PieceType::Pawn);
+        if (single_push_allowed) {
+            push_legal_non_king_non_capture_move(
+                king_safety,
+                moves,
+                make_move(from, to, MoveFlag::Quiet),
+                PieceType::Pawn);
+        }
         if (rank == starting_rank) {
             const Square double_to = make_square(file, rank + offset + offset);
             const Bitboard double_to_mask = bit(double_to);

@@ -74,6 +74,10 @@ add_library(chess_core
     src/searchers/fast/heuristic_searcher_fast_v35_api.cpp
     src/searchers/fast/heuristic_searcher_fast_v35_ordering.cpp
     src/searchers/fast/heuristic_searcher_fast_v35_tt.cpp
+    src/searchers/fast/heuristic_searcher_v34.cpp
+    src/searchers/fast/heuristic_searcher_v34_api.cpp
+    src/searchers/fast/heuristic_searcher_v34_ordering.cpp
+    src/searchers/fast/heuristic_searcher_v34_tt.cpp
     src/searchers/strict/heuristic_searcher_v15.cpp
     src/searchers/strict/heuristic_searcher_v16.cpp
     src/searchers/strict/heuristic_searcher_v17.cpp
@@ -116,10 +120,6 @@ add_library(chess_core
     src/searchers/strict/heuristic_searcher_v33_api.cpp
     src/searchers/strict/heuristic_searcher_v33_ordering.cpp
     src/searchers/strict/heuristic_searcher_v33_tt.cpp
-    src/searchers/strict/heuristic_searcher_v34.cpp
-    src/searchers/strict/heuristic_searcher_v34_api.cpp
-    src/searchers/strict/heuristic_searcher_v34_ordering.cpp
-    src/searchers/strict/heuristic_searcher_v34_tt.cpp
     src/searchers/strict/heuristic_searcher_v35.cpp
     src/searchers/strict/heuristic_searcher_v35_api.cpp
     src/searchers/strict/heuristic_searcher_v35_ordering.cpp

@@ -213,15 +213,17 @@ inline void generate_legal_pawn_quiet_non_promotion_moves_with_info(
 
         const Square to = make_square(file, next_rank);
         const Bitboard to_mask = bit(to);
-        if ((context.occupancy & to_mask) != EmptyBB || (allowed_targets & to_mask) == EmptyBB) {
+        if ((context.occupancy & to_mask) != EmptyBB) {
             continue;
         }
 
-        try_emit_legal_non_king_non_capture_move(
-            king_safety,
-            make_move(from, to, MoveFlag::Quiet),
-            PieceType::Pawn,
-            callback);
+        if ((allowed_targets & to_mask) != EmptyBB) {
+            try_emit_legal_non_king_non_capture_move(
+                king_safety,
+                make_move(from, to, MoveFlag::Quiet),
+                PieceType::Pawn,
+                callback);
+        }
         if (rank == starting_rank) {
             const Square double_to = make_square(file, rank + offset + offset);
             const Bitboard double_to_mask = bit(double_to);

@@ -763,6 +763,10 @@ HeuristicSearcherV22::SearchValue HeuristicSearcherV22::negamax(
                     }
                 }
                 node_range.upper = Infinity;
+                if (tt_probe.has_score) {
+                    node_range = intersect_ranges(node_range, tt_probe.range);
+                }
+                assert(node_range.lower <= node_range.upper);
                 if (should_store_tt(node_range)) {
                     ScoreRange tt_range = node_range;
                     if (tt_range.lower != -Infinity) {

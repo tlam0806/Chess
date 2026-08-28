@@ -1,5 +1,6 @@
 #include "attacks.hpp"
 #include "king_safety.hpp"
+#include "legal_non_capture_generator.hpp"
 #include "move.hpp"
 #include "position.hpp"
 
@@ -163,6 +164,23 @@ void assert_legal_evasion_matches_legal_when_in_check(const Position& pos) {
     assert(move_keys(to_vector(legal_evasion_list)) == move_keys(generate_legal_moves(pos)));
 }
 
+void assert_callback_quiet_non_promotion_matches_filtered_legal(const Position& pos) {
+    std::vector<Move> filtered;
+    for (Move move : generate_legal_moves(pos)) {
+        if (!is_capture(move) && promotion_piece(move) == PieceType::None) {
+            filtered.push_back(move);
+        }
+    }
+
+    MoveList generated;
+    const KingSafetyContext king_safety = make_king_safety_context(pos);
+    generate_legal_quiet_non_promotion_moves_with_info(
+        pos,
+        king_safety,
+        [&](Move move, PieceType) { generated.push_back(move); });
+    assert(move_keys(to_vector(generated)) == move_keys(filtered));
+}
+
 void assert_fen_legal_count(std::string_view fen, std::size_t expected_count) {
     Position pos;
     assert(pos.set_fen(fen));
@@ -173,6 +191,7 @@ void assert_fen_legal_count(std::string_view fen, std::size_t expected_count) {
     assert_legal_capture_matches_filtered_legal(pos);
     assert_legal_non_capture_matches_filtered_legal(pos);
     assert_legal_evasion_matches_legal_when_in_check(pos);
+    assert_callback_quiet_non_promotion_matches_filtered_legal(pos);
     assert_legal_moves_are_unique_and_safe(pos, expected_count);
 }
 
@@ -280,6 +299,58 @@ int main() {
         assert_legal_evasion_matches_legal_when_in_check(pos);
         const std::vector<Move> moves = generate_legal_moves(pos);
         assert(contains_move(moves, make_move(make_square(2, 0), make_square(4, 2))));
+    }
+
+    {
+        Position pos;
+        assert(pos.set_fen("5k2/2p5/8/8/1Q6/8/8/6K1 b - - 0 1"));
+        const Square intermediate = make_square(2, 5);
+        const Square endpoint = make_square(2, 4);
+        const Move double_push =
+            make_move(make_square(2, 6), endpoint, MoveFlag::DoublePawnPush);
+        const KingSafetyContext king_safety = make_king_safety_context(pos);
+        assert(king_safety.checkers != EmptyBB);
+        assert((king_safety.block_mask & bit(intermediate)) == EmptyBB);
+        assert((king_safety.block_mask & bit(endpoint)) != EmptyBB);
+        const std::vector<Move> legal_moves = generate_legal_moves(pos);
+        assert(contains_move(legal_moves, double_push));
+        MoveList evasions;
+        generate_legal_evasion_moves(pos, king_safety, evasions);
+        assert(contains_move(to_vector(evasions), double_push));
+        std::vector<Move> callback_quiets;
+        generate_legal_quiet_non_promotion_moves_with_info(
+            pos,
+            king_safety,
+            [&](Move move, PieceType) { callback_quiets.push_back(move); });
+        assert(contains_move(callback_quiets, double_push));
+        assert_legal_evasion_matches_legal_when_in_check(pos);
+        assert_callback_quiet_non_promotion_matches_filtered_legal(pos);
+    }
+
+    {
+        Position pos;
+        assert(pos.set_fen("k7/8/1b6/8/8/8/3P4/6K1 w - - 0 1"));
+        const Square intermediate = make_square(3, 2);
+        const Square endpoint = make_square(3, 3);
+        const Move double_push =
+            make_move(make_square(3, 1), endpoint, MoveFlag::DoublePawnPush);
+        const KingSafetyContext king_safety = make_king_safety_context(pos);
+        assert(king_safety.checkers != EmptyBB);
+        assert((king_safety.block_mask & bit(intermediate)) == EmptyBB);
+        assert((king_safety.block_mask & bit(endpoint)) != EmptyBB);
+        const std::vector<Move> legal_moves = generate_legal_moves(pos);
+        assert(contains_move(legal_moves, double_push));
+        MoveList evasions;
+        generate_legal_evasion_moves(pos, king_safety, evasions);
+        assert(contains_move(to_vector(evasions), double_push));
+        std::vector<Move> callback_quiets;
+        generate_legal_quiet_non_promotion_moves_with_info(
+            pos,
+            king_safety,
+            [&](Move move, PieceType) { callback_quiets.push_back(move); });
+        assert(contains_move(callback_quiets, double_push));
+        assert_legal_evasion_matches_legal_when_in_check(pos);
+        assert_callback_quiet_non_promotion_matches_filtered_legal(pos);
     }
 
     assert_fen_legal_count("8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1", 14);
