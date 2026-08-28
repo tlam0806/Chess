@@ -29,6 +29,11 @@ NnueSearcherV38::SelectiveConfig NnueSearcherV39::to_v38_config(
     result.enable_qsearch_see_pruning =
         config.enable_qsearch_see_pruning;
     result.qsearch_see_threshold = config.qsearch_see_threshold;
+    result.enable_main_search_see_pruning =
+        config.enable_main_search_see_pruning;
+    result.main_search_see_max_depth = config.main_search_see_max_depth;
+    result.main_search_see_margin_per_depth =
+        config.main_search_see_margin_per_depth;
     return result;
 }
 

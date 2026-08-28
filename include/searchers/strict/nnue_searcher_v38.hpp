@@ -80,6 +80,9 @@ public:
         std::size_t late_move_pruning_depth_multiplier = 2;
         bool enable_qsearch_see_pruning = false;
         int qsearch_see_threshold = -200;
+        bool enable_main_search_see_pruning = false;
+        int main_search_see_max_depth = 5;
+        int main_search_see_margin_per_depth = 100;
     };
     struct SelectiveStats {
         std::uint64_t lmr_searches = 0;
@@ -92,6 +95,8 @@ public:
         std::uint64_t late_move_pruned_moves = 0;
         std::uint64_t qsearch_see_evaluations = 0;
         std::uint64_t qsearch_see_pruned_moves = 0;
+        std::uint64_t main_search_see_evaluations = 0;
+        std::uint64_t main_search_see_pruned_moves = 0;
     };
     explicit NnueSearcherV38(
         const PhaseQuantizedNnueModel& model,
@@ -158,6 +163,8 @@ private:
         bool stopped = false;
         bool in_null_move = false;
         bool repetition_enabled = false;
+        const std::atomic<bool>* stop_requested = nullptr;
+        Move ply_one_best_move{};
         RepetitionStack repetition;
     };
     enum class ScoringMode {

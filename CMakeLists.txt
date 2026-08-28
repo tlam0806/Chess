@@ -2,6 +2,8 @@ cmake_minimum_required(VERSION 3.20)
 
 project(ChessEngine LANGUAGES CXX)
 
+find_package(Threads REQUIRED)
+
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -508,15 +510,15 @@ add_executable(uci_v7 tools/uci_v7.cpp)
 target_link_libraries(uci_v7 PRIVATE chess_core)
 
 add_executable(uci_nnue_v38 tools/uci_nnue_v38.cpp)
-target_link_libraries(uci_nnue_v38 PRIVATE chess_core)
+target_link_libraries(uci_nnue_v38 PRIVATE chess_core Threads::Threads)
 
 add_executable(uci_nnue_v40 tools/uci_nnue_v38.cpp)
 target_compile_definitions(uci_nnue_v40 PRIVATE CHESS_UCI_NNUE_V40)
-target_link_libraries(uci_nnue_v40 PRIVATE chess_core)
+target_link_libraries(uci_nnue_v40 PRIVATE chess_core Threads::Threads)
 
 add_executable(uci_nnue_v41 tools/uci_nnue_v38.cpp)
 target_compile_definitions(uci_nnue_v41 PRIVATE CHESS_UCI_NNUE_V41)
-target_link_libraries(uci_nnue_v41 PRIVATE chess_core)
+target_link_libraries(uci_nnue_v41 PRIVATE chess_core Threads::Threads)
 
 add_executable(nnue_v38_time_gauntlet tools/nnue_v38_time_gauntlet.cpp)
 target_link_libraries(nnue_v38_time_gauntlet PRIVATE chess_core)

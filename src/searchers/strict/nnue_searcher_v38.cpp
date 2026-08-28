@@ -105,14 +105,26 @@ SearchResult ensure_legal_root_move(
 ) {
     const std::vector<Move> legal_moves = generate_legal_moves(pos);
     if (legal_moves.empty()) {
+        result.ponder_move = {};
         return result;
     }
     if (std::find(
             legal_moves.begin(), legal_moves.end(), result.best_move)
         == legal_moves.end()) {
         result.best_move = legal_moves.front();
+        result.ponder_move = {};
     }
     return result;
+}
+
+void inherit_ponder_move(
+    SearchResult& current,
+    const SearchResult& previous
+) {
+    if (current.ponder_move.value == 0
+        && current.best_move == previous.best_move) {
+        current.ponder_move = previous.ponder_move;
+    }
 }
 
 bool has_non_pawn_material(const Position& pos, Color color) {
@@ -290,10 +302,15 @@ void NnueSearcherV38::record_beta_cutoff(
 }
 
 bool NnueSearcherV38::should_stop(SearchState& state) const {
-    if (!state.has_deadline) {
+    if ((state.nodes & 1023ULL) != 0) {
         return false;
     }
-    if ((state.nodes & 1023ULL) != 0) {
+    if (state.stop_requested != nullptr
+        && state.stop_requested->load(std::memory_order_relaxed)) {
+        state.stopped = true;
+        return true;
+    }
+    if (!state.has_deadline) {
         return false;
     }
     if (Clock::now() >= state.deadline) {
@@ -541,6 +558,9 @@ NnueSearcherV38::SearchValue NnueSearcherV38::negamax(
 ) {
     assert(depth >= 0);
     assert(alpha < beta);
+    if (ply == 1) {
+        state.ply_one_best_move = {};
+    }
     ++state.nodes;
 
     if (should_stop(state)) {
@@ -562,6 +582,9 @@ NnueSearcherV38::SearchValue NnueSearcherV38::negamax(
         true,
         allow_tt_score);
     if (tt_probe.hit) {
+        if (ply == 1) {
+            state.ply_one_best_move = preferred_tt_move(tt_probe.moves);
+        }
         return SearchValue{tt_probe.range};
     }
 
@@ -707,6 +730,11 @@ NnueSearcherV38::SearchValue NnueSearcherV38::negamax(
             }
 
             update_best_range(node_range, best_lower_move, best_upper_move, alpha, scored_move.move, move_range);
+            if (ply == 1) {
+                state.ply_one_best_move = node_range.lower != -Infinity
+                    ? best_lower_move
+                    : best_upper_move;
+            }
             if (node_range.lower >= beta) {
                 record_beta_cutoff(
                     scored_move,
@@ -897,6 +925,11 @@ NnueSearcherV38::SearchValue NnueSearcherV38::negamax(
         }
         searched_any_move = true;
         update_best_range(node_range, best_lower_move, best_upper_move, alpha, scored_move.move, move_range);
+        if (ply == 1) {
+            state.ply_one_best_move = node_range.lower != -Infinity
+                ? best_lower_move
+                : best_upper_move;
+        }
         if (node_range.lower >= beta) {
             constexpr CutoffStage cutoff_stage = [] {
                 if constexpr (Stage == MoveGenerationStage::Promotion) {
@@ -944,6 +977,42 @@ NnueSearcherV38::SearchValue NnueSearcherV38::negamax(
             return;
         }
         for (std::size_t move_index = 0; move_index < moves.size(); ++move_index) {
+            if constexpr (Stage == MoveGenerationStage::BadCapture) {
+                const ScoredMove& scored_move = moves[move_index];
+                const PieceType moved_piece = scored_moved_piece(scored_move);
+                const PieceType captured_piece = scored_captured_piece(scored_move);
+                const bool can_prune_bad_capture =
+                    selective_config_.enable_main_search_see_pruning
+                    && selective_config_.main_search_see_max_depth >= 1
+                    && selective_config_.main_search_see_margin_per_depth >= 0
+                    && ply > 0
+                    && depth <= selective_config_.main_search_see_max_depth
+                    && beta == alpha + 1
+                    && searched_any_move
+                    && king_safety_cache
+                    && king_safety_cache->checkers == EmptyBB
+                    && !gives_check_fast(
+                        pos,
+                        scored_move.move,
+                        moved_piece,
+                        captured_piece);
+                if (can_prune_bad_capture) {
+                    ++selective_stats_.main_search_see_evaluations;
+                    const int see = static_exchange_eval(
+                        pos,
+                        scored_move.move,
+                        moved_piece,
+                        captured_piece);
+                    const std::int64_t margin =
+                        static_cast<std::int64_t>(
+                            selective_config_.main_search_see_margin_per_depth)
+                        * depth;
+                    if (static_cast<std::int64_t>(see) < -margin) {
+                        ++selective_stats_.main_search_see_pruned_moves;
+                        continue;
+                    }
+                }
+            }
             if constexpr (Stage == MoveGenerationStage::QuietNonPromotion) {
                 const std::uint64_t depth_squared =
                     static_cast<std::uint64_t>(depth)
@@ -1147,6 +1216,9 @@ NnueSearcherV38::RootSearchResult NnueSearcherV38::search_fixed_depth(
     Move best_lower_move{};
     Move best_upper_move{};
     Move fallback_best_move{};
+    Move best_lower_reply{};
+    Move best_upper_reply{};
+    Move fallback_reply{};
     bool searched_any_move = false;
     std::size_t searched_move_count = 0;
     Move searched_tt_move = tt_probe.moves.lower;
@@ -1167,6 +1239,7 @@ NnueSearcherV38::RootSearchResult NnueSearcherV38::search_fixed_depth(
             fallback_best_move = scored_move.move;
 
             ScoreRange move_range;
+            Move candidate_reply{};
             {
                 const Color moving_color = pos.side_to_move;
                 const PieceType moved_piece = scored_moved_piece(scored_move);
@@ -1205,6 +1278,7 @@ NnueSearcherV38::RootSearchResult NnueSearcherV38::search_fixed_depth(
                     state
                 );
                 move_range = negate_range(child.range);
+                candidate_reply = state.ply_one_best_move;
             }
             if (state.stopped) {
                 result.stopped = true;
@@ -1213,6 +1287,15 @@ NnueSearcherV38::RootSearchResult NnueSearcherV38::search_fixed_depth(
             }
 
             update_best_range(root_range, best_lower_move, best_upper_move, alpha, scored_move.move, move_range);
+            if (fallback_best_move == scored_move.move) {
+                fallback_reply = candidate_reply;
+            }
+            if (best_lower_move == scored_move.move) {
+                best_lower_reply = candidate_reply;
+            }
+            if (best_upper_move == scored_move.move) {
+                best_upper_reply = candidate_reply;
+            }
             if (root_range.lower >= beta) {
                 record_beta_cutoff(
                     scored_move,
@@ -1240,6 +1323,7 @@ NnueSearcherV38::RootSearchResult NnueSearcherV38::search_fixed_depth(
         }
 
         ScoreRange move_range;
+        Move candidate_reply{};
         {
             const Color moving_color = pos.side_to_move;
             SnapshotMoveUndoGuard move_guard(
@@ -1276,6 +1360,7 @@ NnueSearcherV38::RootSearchResult NnueSearcherV38::search_fixed_depth(
                 state
             );
             move_range = negate_range(child.range);
+            candidate_reply = state.ply_one_best_move;
         }
         if (state.stopped) {
             result.stopped = true;
@@ -1287,6 +1372,15 @@ NnueSearcherV38::RootSearchResult NnueSearcherV38::search_fixed_depth(
         searched_any_move = true;
 
         update_best_range(root_range, best_lower_move, best_upper_move, alpha, scored_move.move, move_range);
+        if (fallback_best_move == scored_move.move) {
+            fallback_reply = candidate_reply;
+        }
+        if (best_lower_move == scored_move.move) {
+            best_lower_reply = candidate_reply;
+        }
+        if (best_upper_move == scored_move.move) {
+            best_upper_reply = candidate_reply;
+        }
         if (root_range.lower >= beta) {
             constexpr CutoffStage cutoff_stage = [] {
                 if constexpr (Stage == MoveGenerationStage::Promotion) {
@@ -1417,11 +1511,16 @@ NnueSearcherV38::RootSearchResult NnueSearcherV38::search_fixed_depth(
     root_result.range = root_range;
     result.score = representative_score(root_result.range);
     result.best_move = root_range.lower != -Infinity ? best_lower_move : best_upper_move;
+    result.ponder_move = root_range.lower != -Infinity
+        ? best_lower_reply
+        : best_upper_reply;
     if (!is_valid_move(result.best_move)) {
         result.best_move = fallback_best_move;
+        result.ponder_move = fallback_reply;
     }
     if (!is_valid_move(result.best_move)) {
         result.best_move = make_fallback_result(pos).best_move;
+        result.ponder_move = {};
     }
 
     store_tt_if_needed(
@@ -1522,6 +1621,7 @@ SearchResult NnueSearcherV38::search_best_move_impl(
     const ScopedRepetitionStatsCommit repetition_stats_commit(
         repetition_stats_, state.repetition);
     state.repetition_enabled = enable_repetition;
+    state.stop_requested = limits.stop_requested;
     if (enable_repetition) {
         initialize_repetition(state, pos, game_history);
         if (history_draw(pos, state)) {
@@ -1538,6 +1638,12 @@ SearchResult NnueSearcherV38::search_best_move_impl(
     const int aspiration_window_cp = 50;
 
     for (int depth = 1; depth <= limits.max_depth; ++depth) {
+        if (state.stop_requested != nullptr
+            && state.stop_requested->load(std::memory_order_relaxed)) {
+            best.stopped = true;
+            best.nodes = state.nodes;
+            return ensure_legal_root_move(pos, best);
+        }
         if (depth == 1) {
             RootSearchResult current = search_fixed_depth(pos, depth, state);
             if (current.result.stopped || state.stopped) {
@@ -1545,6 +1651,7 @@ SearchResult NnueSearcherV38::search_best_move_impl(
                 best.nodes = state.nodes;
                 return ensure_legal_root_move(pos, best);
             }
+            inherit_ponder_move(current.result, best);
             best = current.result;
         } else if (EnableAspirationWindow) {
             RootSearchResult current = search_fixed_depth(
@@ -1570,6 +1677,7 @@ SearchResult NnueSearcherV38::search_best_move_impl(
                     return ensure_legal_root_move(pos, best);
                 }
             }
+            inherit_ponder_move(current.result, best);
             best = current.result;
         } else {
             RootSearchResult current = search_fixed_depth(pos, depth, state);
@@ -1586,6 +1694,7 @@ SearchResult NnueSearcherV38::search_best_move_impl(
                     return ensure_legal_root_move(pos, best);
                 }
             }
+            inherit_ponder_move(current.result, best);
             best = current.result;
         }
     }

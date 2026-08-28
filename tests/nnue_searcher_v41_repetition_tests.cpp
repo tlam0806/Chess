@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <cassert>
 #include <iostream>
 #include <string_view>
@@ -72,6 +73,46 @@ int main(int argc, char** argv) {
     chess::NnueSearcherV41 v41(model);
     assert(v41.name() == "nnue_repetition_v41");
 
+    // Depth one has not searched an opponent reply.  At a deeper completed
+    // iteration the searcher retains the best move found at ply one and pairs
+    // it with the selected root move.
+    chess::Position ponder_root;
+    ponder_root.set_startpos();
+    const std::array<chess::HashKey, 1> ponder_history{
+        ponder_root.zobrist_key};
+    const chess::SearchResult depth_one =
+        v41.search_best_move(ponder_root, 1, ponder_history);
+    assert(depth_one.ponder_move.value == 0);
+    const chess::SearchResult with_ponder =
+        v41.search_best_move(ponder_root, 4, ponder_history);
+    assert(with_ponder.best_move.value != 0);
+    assert(with_ponder.ponder_move.value != 0);
+    chess::Position ponder_child = ponder_root;
+    ponder_child.make_move(with_ponder.best_move);
+    const std::vector<chess::Move> legal_replies =
+        chess::generate_legal_moves(ponder_child);
+    assert(std::find(
+        legal_replies.begin(), legal_replies.end(), with_ponder.ponder_move)
+        != legal_replies.end());
+
+    // UCI stop/ponderhit uses a controller-owned atomic rather than a clock
+    // read in the hot search path. A pre-requested stop must be honored at an
+    // iterative-deepening boundary while still returning a legal fallback.
+    std::atomic<bool> stop_requested{true};
+    chess::SearchLimits stopped_limits;
+    stopped_limits.max_depth = 64;
+    stopped_limits.stop_requested = &stop_requested;
+    const chess::SearchResult externally_stopped =
+        v41.search_best_move(ponder_root, stopped_limits, ponder_history);
+    assert(externally_stopped.stopped);
+    assert(externally_stopped.nodes == 0);
+    const std::vector<chess::Move> stopped_legal_moves =
+        chess::generate_legal_moves(ponder_root);
+    assert(std::find(
+        stopped_legal_moves.begin(),
+        stopped_legal_moves.end(),
+        externally_stopped.best_move) != stopped_legal_moves.end());
+
     // The only legal move reaches a position already present twice. V41 must
     // search the child and score the third occurrence as a draw.
     const chess::Position repeat_root = forced_king_evasion(8);
@@ -125,6 +166,7 @@ int main(int argc, char** argv) {
     assert(terminal.score == 0);
     assert(terminal.nodes == 1);
     assert(terminal.best_move == chess::generate_legal_moves(root_threefold).front());
+    assert(terminal.ponder_move.value == 0);
     assert(v41.repetition_stats().threefold_draws == 1);
 
     // 99 halfmoves is not yet claimable. At depth zero no child can advance

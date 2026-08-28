@@ -38,6 +38,12 @@ public:
         // Kept disabled so V39 remains the validated Fast control.
         bool enable_qsearch_see_pruning = false;
         int qsearch_see_threshold = -200;
+
+        // Experimental capture-only pruning. It remains disabled in every
+        // production default until the two-dimensional tune is promoted.
+        bool enable_main_search_see_pruning = false;
+        int main_search_see_max_depth = 5;
+        int main_search_see_margin_per_depth = 100;
     };
 
     explicit NnueSearcherV39(

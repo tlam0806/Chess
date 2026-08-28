@@ -6,7 +6,7 @@ engine:
   name: "uci_nnue_v41"
   working_dir: "__ENGINE_ROOT__"
   protocol: "uci"
-  ponder: false
+  ponder: true
   uci_options:
     MoveOverhead: 200
     LmrBase: "0.45"

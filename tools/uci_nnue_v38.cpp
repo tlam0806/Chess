@@ -12,12 +12,17 @@
 #include "position.hpp"
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <cstdint>
 #include <cstdlib>
 #include <iostream>
+#include <memory>
+#include <mutex>
 #include <sstream>
 #include <string>
+#include <thread>
 #include <vector>
 
 namespace {
@@ -37,9 +42,17 @@ constexpr const char* EngineName = "ChessNNUEV38";
 
 struct AdapterOptions {
     bool avoid_draw = true;
+    bool ponder = true;
     int avoid_draw_min_cp = 120;
     int avoid_draw_max_loss_cp = 80;
     int move_overhead_ms = 200;
+};
+
+struct ParsedGo {
+    chess::SearchLimits limits{};
+    std::chrono::milliseconds budget{0};
+    bool ponder = false;
+    bool infinite = false;
 };
 
 std::uint8_t castling_rights(const chess::Position& pos) {
@@ -118,13 +131,13 @@ void set_position(
     }
 }
 
-chess::SearchLimits parse_go_limits(
+ParsedGo parse_go_limits(
     std::istringstream& input,
     chess::Color side,
     const AdapterOptions& options
 ) {
-    chess::SearchLimits limits;
-    limits.max_depth = DefaultDepth;
+    ParsedGo parsed;
+    parsed.limits.max_depth = DefaultDepth;
     int wtime = -1;
     int btime = -1;
     int winc = 0;
@@ -134,12 +147,18 @@ chess::SearchLimits parse_go_limits(
     std::string token;
     while (input >> token) {
         int value = 0;
-        if (token == "depth" && input >> value) {
-            limits.max_depth = std::max(1, value);
+        if (token == "ponder") {
+            parsed.ponder = true;
+        } else if (token == "infinite") {
+            parsed.infinite = true;
+            parsed.limits.max_depth = 64;
+            explicit_limit = true;
+        } else if (token == "depth" && input >> value) {
+            parsed.limits.max_depth = std::max(1, value);
             explicit_limit = true;
         } else if (token == "movetime" && input >> value) {
-            limits.max_depth = 64;
-            limits.move_time = std::chrono::milliseconds{std::max(1, value)};
+            parsed.limits.max_depth = 64;
+            parsed.budget = std::chrono::milliseconds{std::max(1, value)};
             explicit_limit = true;
         } else if (token == "wtime" && input >> value) {
             wtime = value;
@@ -165,11 +184,11 @@ chess::SearchLimits parse_go_limits(
             int budget = usable / horizon + increment / 2;
             budget = std::max(20, budget);
             budget = std::min(budget, std::max(1, usable / 5));
-            limits.max_depth = 64;
-            limits.move_time = std::chrono::milliseconds{budget};
+            parsed.limits.max_depth = 64;
+            parsed.budget = std::chrono::milliseconds{budget};
         }
     }
-    return limits;
+    return parsed;
 }
 
 bool move_causes_draw(
@@ -243,6 +262,7 @@ void set_option(
     auto config = searcher.selective_config();
     try {
         if (name == "AvoidDraw") adapter.avoid_draw = value == "true";
+        else if (name == "Ponder") adapter.ponder = value == "true";
         else if (name == "AvoidDrawMinCp") adapter.avoid_draw_min_cp = std::stoi(value);
         else if (name == "AvoidDrawMaxLossCp") adapter.avoid_draw_max_loss_cp = std::stoi(value);
         else if (name == "MoveOverhead") adapter.move_overhead_ms = std::stoi(value);
@@ -262,12 +282,209 @@ void set_option(
         else if (name == "LmpDepthMultiplier") config.late_move_pruning_depth_multiplier = std::stoul(value);
         else if (name == "QseeEnabled") config.enable_qsearch_see_pruning = value == "true";
         else if (name == "QseeThreshold") config.qsearch_see_threshold = std::stoi(value);
+        else if (name == "MainSeeEnabled")
+            config.enable_main_search_see_pruning = value == "true";
+        else if (name == "MainSeeMaxDepth")
+            config.main_search_see_max_depth = std::stoi(value);
+        else if (name == "MainSeeMarginPerDepth")
+            config.main_search_see_margin_per_depth = std::stoi(value);
         searcher.set_selective_config(config);
         searcher.clear_tt();
     } catch (...) {
         std::cerr << "info string ignored invalid option " << name << '\n';
     }
 }
+
+std::mutex UciOutputMutex;
+
+void write_uci(const std::string& text) {
+    const std::lock_guard<std::mutex> lock(UciOutputMutex);
+    std::cout << text << std::flush;
+}
+
+std::string format_search_result(const chess::SearchResult& result) {
+    const std::string best_move = result.best_move.value != 0
+        ? chess::move_to_string(result.best_move)
+        : "0000";
+    std::ostringstream output;
+    output << "info depth " << result.depth << " score cp " << result.score
+           << " nodes " << result.nodes;
+    if (result.best_move.value != 0) {
+        output << " pv " << best_move;
+        if (result.ponder_move.value != 0) {
+            output << ' ' << chess::move_to_string(result.ponder_move);
+        }
+    }
+    output << '\n' << "bestmove " << best_move;
+    if (result.ponder_move.value != 0) {
+        output << " ponder " << chess::move_to_string(result.ponder_move);
+    }
+    output << '\n';
+    return output.str();
+}
+
+struct SearchJob {
+    std::atomic<bool> stop_requested{false};
+    std::mutex mutex;
+    std::condition_variable changed;
+    std::chrono::milliseconds budget{0};
+    bool ponder = false;
+    bool hold_output = false;
+    bool ponder_hit = false;
+    bool stop_received = false;
+    bool cancel_timer = false;
+};
+
+class UciSearchController {
+public:
+    UciSearchController(
+        UciSearcher& searcher,
+        const chess::PhaseQuantizedNnueModel& model
+    ) : searcher_(searcher), model_(model) {
+    }
+
+    ~UciSearchController() {
+        finish_active(true);
+    }
+
+    void start(
+        const chess::Position& pos,
+        const std::vector<chess::HashKey>& history,
+        ParsedGo parsed,
+        const AdapterOptions& adapter
+    ) {
+        finish_active(true);
+
+        auto job = std::make_shared<SearchJob>();
+        job->budget = parsed.budget;
+        job->ponder = parsed.ponder && adapter.ponder;
+        job->hold_output = job->ponder || parsed.infinite;
+        parsed.limits.move_time = std::chrono::milliseconds{0};
+        parsed.limits.stop_requested = &job->stop_requested;
+        active_ = job;
+
+        if (!job->ponder && !parsed.infinite && job->budget.count() > 0) {
+            start_timer(job);
+        }
+
+        search_thread_ = std::thread([
+            this,
+            job,
+            search_pos = pos,
+            search_history = history,
+            limits = parsed.limits,
+            adapter
+        ]() mutable {
+            chess::SearchResult result =
+#if defined(CHESS_UCI_NNUE_V41)
+                searcher_.search_best_move(search_pos, limits, search_history);
+#else
+                searcher_.search_best_move(search_pos, limits);
+#endif
+#if !defined(CHESS_UCI_NNUE_V41)
+            const chess::Move selected = choose_non_drawing_alternative(
+                search_pos, search_history, model_, result, adapter);
+            if (selected != result.best_move) {
+                result.best_move = selected;
+                result.ponder_move = {};
+            }
+#endif
+
+            {
+                std::unique_lock<std::mutex> lock(job->mutex);
+                job->changed.wait(lock, [&] {
+                    return !job->hold_output || job->stop_received;
+                });
+                job->cancel_timer = true;
+                job->changed.notify_all();
+            }
+            write_uci(format_search_result(result));
+        });
+    }
+
+    void ponder_hit() {
+        const std::shared_ptr<SearchJob> job = active_;
+        if (!job) {
+            return;
+        }
+
+        bool arm_timer = false;
+        {
+            const std::lock_guard<std::mutex> lock(job->mutex);
+            if (!job->ponder || job->ponder_hit || job->stop_received) {
+                return;
+            }
+            job->ponder_hit = true;
+            job->hold_output = false;
+            arm_timer = job->budget.count() > 0;
+            job->changed.notify_all();
+        }
+        if (arm_timer) {
+            start_timer(job);
+        }
+    }
+
+    void stop() {
+        signal_stop(active_);
+    }
+
+    void finish_active(bool request_stop) {
+        const std::shared_ptr<SearchJob> job = active_;
+        if (!job) {
+            return;
+        }
+        if (request_stop) {
+            signal_stop(job);
+        }
+        if (search_thread_.joinable()) {
+            search_thread_.join();
+        }
+        {
+            const std::lock_guard<std::mutex> lock(job->mutex);
+            job->cancel_timer = true;
+            job->changed.notify_all();
+        }
+        if (timer_thread_.joinable()) {
+            timer_thread_.join();
+        }
+        active_.reset();
+    }
+
+private:
+    void start_timer(const std::shared_ptr<SearchJob>& job) {
+        if (timer_thread_.joinable()) {
+            timer_thread_.join();
+        }
+        timer_thread_ = std::thread([job] {
+            std::unique_lock<std::mutex> lock(job->mutex);
+            const bool cancelled = job->changed.wait_for(
+                lock,
+                job->budget,
+                [&] { return job->cancel_timer || job->stop_received; });
+            if (!cancelled) {
+                job->stop_requested.store(true, std::memory_order_relaxed);
+            }
+        });
+    }
+
+    static void signal_stop(const std::shared_ptr<SearchJob>& job) {
+        if (!job) {
+            return;
+        }
+        job->stop_requested.store(true, std::memory_order_relaxed);
+        const std::lock_guard<std::mutex> lock(job->mutex);
+        job->stop_received = true;
+        job->hold_output = false;
+        job->cancel_timer = true;
+        job->changed.notify_all();
+    }
+
+    UciSearcher& searcher_;
+    const chess::PhaseQuantizedNnueModel& model_;
+    std::shared_ptr<SearchJob> active_;
+    std::thread search_thread_;
+    std::thread timer_thread_;
+};
 
 } // namespace
 
@@ -299,6 +516,7 @@ int main(int argc, char** argv) {
     pos.set_startpos();
     std::vector<chess::HashKey> history{pos.zobrist_key};
     AdapterOptions adapter;
+    UciSearchController controller(searcher, model);
 
     std::string line;
     while (std::getline(std::cin, line)) {
@@ -307,7 +525,8 @@ int main(int argc, char** argv) {
         input >> command;
         if (command == "uci") {
             const auto& config = searcher.selective_config();
-            std::cout << "id name " << EngineName << '\n'
+            std::ostringstream output;
+            output << "id name " << EngineName << '\n'
                       << "id author TungLamNguyen\n"
                       << "info string nnue_kernel="
                       << model.forward_kernel_name()
@@ -316,12 +535,13 @@ int main(int argc, char** argv) {
                       << model.accumulator_kernel_name()
                       << '\n';
 #if !defined(CHESS_UCI_NNUE_V41)
-            std::cout
+            output
                       << "option name AvoidDraw type check default true\n"
                       << "option name AvoidDrawMinCp type spin default 120 min 0 max 2000\n"
                       << "option name AvoidDrawMaxLossCp type spin default 80 min 0 max 1000\n";
 #endif
-            std::cout
+            output
+                      << "option name Ponder type check default true\n"
                       << "option name MoveOverhead type spin default 200 min 0 max 5000\n"
                       << "option name LmrBase type string default " << config.lmr_base << '\n'
                       << "option name LmrDivisor type string default " << config.lmr_divisor << '\n'
@@ -339,36 +559,35 @@ int main(int argc, char** argv) {
                       << "option name LmpDepthMultiplier type spin default " << config.late_move_pruning_depth_multiplier << " min 0 max 32\n"
                       << "option name QseeEnabled type check default " << (config.enable_qsearch_see_pruning ? "true" : "false") << '\n'
                       << "option name QseeThreshold type spin default " << config.qsearch_see_threshold << " min -2000 max 2000\n"
-                      << "uciok" << std::endl;
+                      << "option name MainSeeEnabled type check default " << (config.enable_main_search_see_pruning ? "true" : "false") << '\n'
+                      << "option name MainSeeMaxDepth type spin default " << config.main_search_see_max_depth << " min 1 max 16\n"
+                      << "option name MainSeeMarginPerDepth type spin default " << config.main_search_see_margin_per_depth << " min 0 max 5000\n"
+                      << "uciok\n";
+            write_uci(output.str());
         } else if (command == "isready") {
-            std::cout << "readyok" << std::endl;
+            write_uci("readyok\n");
         } else if (command == "setoption") {
+            controller.finish_active(true);
             set_option(input, adapter, searcher);
         } else if (command == "ucinewgame") {
+            controller.finish_active(true);
             pos.set_startpos();
             history = {pos.zobrist_key};
             searcher.clear_tt();
             searcher.clear_search_heuristics();
         } else if (command == "position") {
+            controller.finish_active(true);
             set_position(pos, history, searcher, input);
         } else if (command == "go") {
-            const chess::SearchLimits limits =
+            const ParsedGo parsed =
                 parse_go_limits(input, pos.side_to_move, adapter);
-            chess::SearchResult result =
-#if defined(CHESS_UCI_NNUE_V41)
-                searcher.search_best_move(pos, limits, history);
-#else
-                searcher.search_best_move(pos, limits);
-#endif
-#if !defined(CHESS_UCI_NNUE_V41)
-            result.best_move = choose_non_drawing_alternative(
-                pos, history, model, result, adapter);
-#endif
-            std::cout << "info depth " << result.depth << " score cp " << result.score
-                      << " nodes " << result.nodes << '\n'
-                      << "bestmove " << chess::move_to_string(result.best_move)
-                      << std::endl;
+            controller.start(pos, history, parsed, adapter);
+        } else if (command == "ponderhit") {
+            controller.ponder_hit();
+        } else if (command == "stop") {
+            controller.stop();
         } else if (command == "quit") {
+            controller.finish_active(true);
             break;
         }
     }
