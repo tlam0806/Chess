@@ -431,6 +431,9 @@ target_link_libraries(benchmark_v32_v34 PRIVATE chess_core)
 add_executable(benchmark_v32_v35 tools/benchmark_v32_v35.cpp)
 target_link_libraries(benchmark_v32_v35 PRIVATE chess_core)
 
+add_executable(benchmark_strict_milestones tools/benchmark_strict_milestones.cpp)
+target_link_libraries(benchmark_strict_milestones PRIVATE chess_core)
+
 add_executable(check_v31_ordering_score tools/check_v31_ordering_score.cpp)
 target_link_libraries(check_v31_ordering_score PRIVATE chess_core)
 

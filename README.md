@@ -14,60 +14,39 @@ This README is the thematic project story. The tracked
 artifact hashes, negative experiments, and promotion-gate details that have
 already been packaged for the repository.
 
-## Last documented production engine
+## How milestone claims are classified
 
-The last documented production snapshot is V41 at commit `634b2d4`; the
-retained deployment observation records Heroku release v12 on 2026-08-25.
-This README does not treat that observation as proof of live state on a later
-date without a fresh provider query.
-
-- V39 Fast selective-search baseline
-- V40 quiescence SEE pruning at `-75cp`
-- V41 in-search threefold-repetition and 50-move rules
-- phase-aware quantized F2 NNUE model
-- native-build ARM I8MM/NEON and runtime-dispatched x86 AVX2/AVX-512 VNNI
-- Release plus LTO Heroku build
-
-The documented production model is 7,944,336 bytes; its SHA-256 is
-`a1a52891f95db9a1bacc48557325b0c5904da4b3c9f8a333eb2ec090b1bb9c02`.
-The canonical same-signature benchmark measures 4.71-4.94M fixed-depth NPS on
-the local Apple M4 and 1.48-1.58M NPS on the Heroku LTO release. This ratio is a
-cross-platform operational comparison, not isolated hosting overhead.
-
-## How to read the milestones
-
-The project keeps old searchers, benchmark tools, and negative experiments on
-purpose. A version number records an engineering step; it does not by itself
-mean that the version was stronger or faster. Milestone claims therefore keep
-two separate labels:
+The repository deliberately keeps old searchers, benchmark tools, and negative
+experiments. Each milestone claim therefore has two independent labels:
 
 | Dimension | Typical labels | Question answered |
 |---|---|---|
 | Lifecycle | experimental, historically promoted, deployed, rejected | What did the project do with the change? |
 | Evidence | validated, validated with caveats, reconstructed, incomplete, inconclusive | How strongly do the retained artifacts support the claim? |
 
-Lower model loss is not playing strength, fewer nodes is not automatically a
-better search, and higher NPS is not automatically a stronger engine. New
-claims must therefore pin the compared artifacts, workload, correctness
-signature, and stopping rule before interpreting performance or strength.
+These labels prevent a newer version or one isolated metric from being mistaken
+for a stronger engine: lower model loss, fewer nodes, higher NPS, and playing
+strength are different results. Interpreting a new performance or strength
+claim requires pinned artifacts, workload, correctness signatures, and stopping
+rule.
 
-## Five project milestones
+## Four project milestones
 
-The project is easier to understand as five engineering milestones than as a
+The project is easier to understand as four engineering milestones than as a
 list of every searcher version. The version numbers still matter for
-reproducibility, but the milestones describe the change in how the engine was
-built and evaluated.
+reproducibility, but each milestone marks a step change substantial enough to
+redefine how the engine was designed, searched, evaluated, or trained, rather
+than another incremental version.
 
 | Milestone | Main question | Result |
 |---|---|---|
 | 1. Correctness, simple search, heuristic evaluation | Can the engine represent chess correctly and return a defensible move? | A legal bitboard engine, perft/tests, plain alpha-beta, and a material-plus-piece-square evaluator. |
-| 2. Range-correct Strict search and clean optimization | How much work can be removed while retaining the intended finite-depth score contract? | Bound-correct TT, PVS/re-search, ordering, fixed move storage, magic attacks, lazy/staged legality, make/unmake, and cache/layout work, with per-position score/move/node gates where evidence survives. |
+| 2. Range-correct Strict search and clean optimization | How much search work can be removed while preserving the same fixed-depth score or a mathematically valid alpha-beta bound? | Bound-correct TT, PVS/re-search, ordering, fixed move storage, magic attacks, lazy/staged legality, make/unmake, and cache/layout work, with per-position score/move/node gates where evidence survives. |
 | 3. Neural evaluation becomes both stronger and practical | Can an NN evaluator justify its much higher cost? | The historical NNUE beat the heuristic engine while searching one ply less; incremental accumulators and SIMD kernels then made NN inference production-viable. |
-| 4. Controlled selective or “dirty” pruning | How far can the tree be reduced when exact finite-depth behavior is deliberately traded for strength and speed? | LMR, null move, RFP, LMP, and QSEE were evaluated on large position sets, safety banks, Pareto frontiers, and finally paired self-play. |
-| 5. Horizontal-mirror NN and 500M-data training | Can symmetry and much more data improve the model again? | Horizontal mirroring has a positive controlled offline signal and a 500M F2M run exists, but fine-tuning and the final promotion gate are not finished. |
+| 4. Controlled selective or “dirty” pruning | How aggressively can the engine prune unlikely moves without causing tactical blunders? | LMR, null move, RFP, LMP, and QSEE were evaluated on large position sets, safety banks, Pareto frontiers, and finally paired self-play. |
 
-This README uses those five thematic milestones. The version names remain in
-the source tree and Git history for finer-grained reconstruction; the five
+This README uses those four thematic milestones. The version names remain in
+the source tree and Git history for finer-grained reconstruction; the four
 groups here describe the engineering story rather than replacing those source
 anchors.
 
@@ -174,9 +153,9 @@ that a move probably does not deserve a full search.
 
 | Area | Evolution | Contract and caveat |
 |---|---|---|
-| Transposition table | Direct-mapped TT in V2; explicit bound behavior in V14; range-storing exact-depth Strict reuse in V15; bucketed range TT in V19; lower-only V33; compact single-bound V34 with `AtLeast` depth reuse; range-preserving 12-byte V35 back on exact-depth reuse | A valid exact/lower/upper bound preserves the score proof. Exact-depth was preferred, not universal across the lineage. Replacement policy and the TT move can still change ordering, nodes, and tied best moves. |
+| Transposition table | Direct-mapped TT in V2; explicit bound behavior in V14; range-storing exact-depth Strict reuse in V15; bucketed range TT in V19; lower-only V33; range-preserving 12-byte V35 | Strict reuses a score only at the requested depth. V34's compact single-bound TT deliberately reused deeper entries and is therefore classified as a Fast experiment, not part of the Strict score contract. Replacement policy and the TT move can still change ordering, nodes, and tied best moves. |
 | Move ordering | Tactical/static ordering, TT move, SEE-ranked captures, history, killers, counter-history, and staged scores | Ordering normally keeps every move and changes only when it is searched. It can dramatically change alpha-beta node count and tie-breaking, so node equality is not assumed. |
-| `MoveList` | Heap-backed collections were replaced by fixed-capacity storage | Removes allocation and improves locality without changing the generated move set. The primitive was shared by both sides of the retained V18/V19 comparison, so that comparison cannot isolate its speedup. |
+| `MoveList` | Heap-backed collections were replaced by fixed-capacity raw-storage management | Removes allocation and improves locality without changing the generated move set. The primitive was shared by both sides of the retained V18/V19 comparison, so that comparison cannot isolate its speedup. |
 | Sliding attacks | Ray work was replaced by magic-bitboard lookup | Exhaustive relevant-blocker and random-occupancy tests support primitive equivalence. No isolated historical search-level speed A/B survives. |
 | Lazy and staged generation | V19 generated the pseudo-legal list and filtered legality while scoring; V23+ split noisy/quiet stages; V28/V29 introduced dedicated legal callbacks | “Lazy legality filtering” is more precise for V19. The important invariant is that every legal move remains reachable until a proof-producing cutoff ends the node. |
 | SEE | First used to order captures, then specialized to reuse already-known moved/captured pieces | SEE used only for ordering is clean. Using SEE to discard a capture is selective pruning and belongs to milestone 4. |
@@ -187,10 +166,12 @@ that a move probably does not deserve a full search.
 V2-V13 were an exploratory search laboratory and already tried quiescence,
 LMR, null move, PVS, history, and killers. Not all of those experiments were
 behavior-preserving. V14 made bound behavior explicit; V15 introduced the
-range-storing, exact-depth hand-written Strict line. V16-V35 then concentrated
-the controlled TT, ordering, move-generation, state, and layout work above,
-with V34's `AtLeast` reuse as an explicit exception to the usual exact-depth
-policy. Aggressive LMR/null-move tuning is treated separately in milestone 4.
+range-storing, exact-depth hand-written Strict line. V16-V33 and V35 then
+concentrated the controlled TT, ordering, move-generation, state, and layout
+work above. V34 branched into the Fast line to test a compact single-bound TT
+with `AtLeast` depth reuse: a deeper result may accelerate the search, but it
+is not guaranteed to equal the score requested at the shallower fixed depth.
+Aggressive LMR/null-move tuning is treated separately in milestone 4.
 
 #### What “exact behavior” means in this repository
 
@@ -200,26 +181,39 @@ and starting heuristic state, then checks the result per position:
 - score equality is the primary semantic gate;
 - tied-optimal moves must be handled explicitly before claiming best-move
   equality;
-- node equality is required before claiming the same node count; claiming the
-  same tree would additionally require a retained node trace or tree hash;
-- timing is interpreted only after the result/tree relationship is known.
+- node equality is not part of the Strict contract; it is required only before
+  claiming the same node count or using equal nodes to isolate per-node speed;
+- timing is interpreted only after the score contract and workload relationship
+  are known.
 
-The retained evidence is uneven:
+The main Strict benchmark series therefore excludes V34. It may appear as a
+separate Fast/experimental comparison, but its time, nodes, and NPS describe a
+different fixed-depth computation and cannot be presented as a clean Strict
+speedup.
 
-| Comparison | Retained behavior result | Timing interpretation |
-|---|---|---|
-| Initial alpha-beta vs full-negamax reference | Exact score on the small test suite; returned move realizes that score | No reference node comparison. |
-| V7/V8/V9 | Only aggregate node/time totals survive; the node totals differ | Historical direction only. |
-| V18/V19 | Zero recorded score and move mismatches; the printed node ratio `1` is too rounded to prove exact nodes | Historical `0.464284` time ratio; raw corpus and totals are missing. |
-| V32/V35 clean reconstruction | Exact score, best move, and node count on 26 positions × 10 runs; both sides used 23,294,908 nodes per run | Strong suite-specific behavior-and-node-count parity, not a retained tree trace. The roughly `1.03x` timing signal is diagnostic because V35 always ran first. |
+#### Measured Strict milestone progression
 
-The clean-snapshot test audit was not a blanket all-version pass: 64 of 69
-available CTests passed, V21-V23 failed historical cold/warm score assertions,
-and two legacy neural tests lacked ignored assets. The exact comparisons above
-therefore remain suite- and version-specific.
+![Strict milestone depth-7 elapsed-time benchmark](docs/benchmarks/assets/strict-milestones-d7.svg)
 
-These comparisons are intentionally reported with their limitations rather
-than collapsed into a single historical speedup number.
+| Version | Depth-7 time | Speedup vs V15 | Nodes | NPS |
+|---|---:|---:|---:|---:|
+| V15 | 268.322 s | 1.00× | 412,761,712 | 1.54M |
+| V19 | 83.615 s | 3.21× | 477,666,976 | 5.71M |
+| V24 | 57.512 s | 4.67× | 393,023,536 | 6.83M |
+| V27 | 47.003 s | 5.71× | 402,033,696 | 8.55M |
+| V29 | 42.357 s | 6.33× | 435,992,336 | 10.29M |
+| V32 | 18.373 s | 14.60× | 446,454,896 | 24.30M |
+| V33 | 21.493 s | 12.48× | 489,489,456 | 22.77M |
+| V35 | 18.424 s | 14.56× | 446,454,896 | 24.23M |
+
+- **Protocol:** 25 positions, direct depths 6–8, eight balanced rounds, fresh
+  64 MiB searcher state per measurement on one Apple M4.
+- **Correctness:** all 9,600 timed searches matched the reference score; there
+  were no illegal moves, stopped searches, or depth failures. The only different
+  move was force-verified as a tie.
+- **Interpretation:** elapsed time is primary and NPS explains per-node cost.
+  These are current-tree reconstruction results, not original historical-binary
+  timings; depth 7 was stable, while depth 8 showed late thermal drift.
 
 ### 3. Neural evaluation becomes stronger and fast enough to use
 
@@ -482,71 +476,6 @@ around the selected search, not another pruning-strength claim.
 See the [selective-search pipeline](docs/nnue_selective_adversarial_pipeline.md)
 for the tracked candidate flow and safety-bank method.
 
-### 5. Horizontal-mirror NN, 500M samples, and unfinished fine-tuning
-
-Status: **in progress; no horizontally mirrored model has been promoted**.
-
-#### Horizontal mirror
-
-F2M canonicalizes each king perspective horizontally. If the perspective king
-is on files e-h, the king and all piece squares are mirrored so the king always
-lands on files a-d. This reduces the stored king-square contexts from 64 to 32:
-
-```text
-F2 feature rows:  49,152
-F2M feature rows: 24,576
-```
-
-The dense `256 -> 32 -> 32 -> 1`, phase heads, PSQT buckets, and incremental
-two-perspective semantics remain. The change injects a true board symmetry and
-roughly halves the sparse feature-table footprint.
-
-A controlled 50M-position trial used the same data, order, seed, optimizer,
-and sealed validation rows:
-
-| Model | Ranking CP MAE | Ranking WDL loss |
-|---|---:|---:|
-| F2 | 319.2366 | 0.02440781 |
-| F2M independent | 313.0076 | 0.02306620 |
-| F2M shared L1 | 312.8563 | 0.02301654 |
-
-F2M independent improved paired ranking error over F2 by `6.2289cp`, with
-block-bootstrap CI `5.7196-6.7292cp`. Shared L1 differed from independent F2M
-by only `0.1513cp`, with an interval crossing zero. This is controlled offline
-evidence for the mirror transform, not playing-strength proof.
-
-#### What the 500M experiments established
-
-There are two separate 500M stories:
-
-1. An ordinary F2 epoch-4 candidate scored `47.08%` against an older 200M
-   reference over 600 games and was rejected. More data alone was not enough.
-2. A development F2M run over the 500M unique-position corpus reached a local
-   selected epoch 12. Its retained report records sealed-test CP MAE `107.686`,
-   a 4,012,176-byte quantized export, and local Python/C++ parity over 32,768
-   positions.
-
-The second result is still development evidence. The exact source/checkpoint
-snapshot is not yet a promoted production artifact, and the intended
-fine-tuning and final playing-strength validation are unfinished.
-
-Earlier epoch-5 F2M self-play also failed to settle the question: the longer
-600-game run scored `50.92%`, with CI `48.39%-53.44%`. No F2M model is deployed.
-
-#### Remaining promotion gate
-
-Before milestone 5 is complete, the project still needs to:
-
-1. freeze the exact F2M source, 500M checkpoint, data manifest, and fine-tune
-   recipe;
-2. finish fine-tuning and select the checkpoint on a sealed validation rule;
-3. export the final quantized model and repeat Python/C++ incremental parity;
-4. compare model size and full-search throughput with production F2;
-5. run paired self-play with fixed openings, both colors, clean per-game search
-   state, pinned artifact hashes, and a declared stopping rule;
-6. promote only if correctness, offline quality, throughput, and playing
-   strength all pass.
-
 ### Evidence discipline and negative results
 
 The milestone story intentionally retains results that did not become wins:
@@ -554,10 +483,15 @@ The milestone story intentionally retains results that did not become wins:
 - V18/V19's historical timing ratio is not presented as exact-tree proof;
 - the V39 all-four offline candidate lost its direct match to Fast;
 - V40 QSEE improved efficiency but not conclusively playing strength;
-- the ordinary 500M F2 candidate was rejected;
-- shared-L1 F2M was indistinguishable from independent F2M offline;
-- F2M self-play remains inconclusive;
-- milestone 5 remains unfinished rather than being labeled a model promotion.
+- the ordinary 500M F2 candidate scored `47.08%` against the older 200M
+  reference over 600 games and was rejected;
+- horizontal mirroring improved controlled offline error, but the longer F2M
+  self-play run scored `50.92%`, with CI `48.39%-53.44%`, and did not
+  demonstrate a playing-strength improvement. No F2M model was promoted.
+
+The model-scaling experiments remain documented in the
+[model-scaling report](docs/benchmarks/nnue_model_scaling_20260825.md), but they
+are not a project milestone because they did not improve the deployed engine.
 
 ## Current engine architecture
 
@@ -591,6 +525,26 @@ history-dependent draw scores but prevents cross-move TT reuse. The working
 tree contains an experimental generation-tag design in which older entries may
 provide move hints but not score cutoffs; it is not a committed or benchmarked
 production milestone.
+
+### Last documented production snapshot
+
+The last documented production snapshot is V41 at commit `634b2d4`; the
+retained deployment observation records Heroku release v12 on 2026-08-25.
+This README does not treat that observation as proof of live state on a later
+date without a fresh provider query.
+
+- V39 Fast selective-search baseline
+- V40 quiescence SEE pruning at `-75cp`
+- V41 in-search threefold-repetition and 50-move rules
+- phase-aware quantized F2 NNUE model
+- native-build ARM I8MM/NEON and runtime-dispatched x86 AVX2/AVX-512 VNNI
+- Release plus LTO Heroku build
+
+The documented production model is 7,944,336 bytes; its SHA-256 is
+`a1a52891f95db9a1bacc48557325b0c5904da4b3c9f8a333eb2ec090b1bb9c02`.
+The canonical same-signature benchmark measures 4.71-4.94M fixed-depth NPS on
+the local Apple M4 and 1.48-1.58M NPS on the Heroku LTO release. This ratio is a
+cross-platform operational comparison, not isolated hosting overhead.
 
 ## Repository guide
 
@@ -900,19 +854,15 @@ Without `--go-once`, it starts an interactive CLI where the NN engine plays Blac
 
 The next serious milestones are:
 
-- freeze the exact F2M 500M checkpoint and finish the planned fine-tuning;
-- select the fine-tuned checkpoint on a sealed rule, then repeat quantized
-  export, Python/C++ parity, throughput, and paired self-play before promotion;
 - benchmark a register-fused x86 VNNI forward candidate against the current
   kernel on the same dynos, with forced-backend parity before changing `auto`;
 - finish and benchmark safe cross-search TT reuse with a persistent UCI process;
 - make the self-play harness reset all search state and pin every artifact hash;
 - run a provenance-complete V41-versus-V39 strength match if that historical
   comparison is still needed;
-- fix or retire the V21-V23 historical warm/cold tests and the optional
-  TT-profile build wiring;
+- re-run the full clean suite after the V21-V23 TT-range repair, and fix the
+  optional TT-profile build wiring;
 - archive selected raw benchmark bundles outside ignored local directories.
 
 New models are promoted only after distinct parity, offline-quality,
-throughput, and paired playing-strength gates. The current evidence does not
-promote the experimental F2M model.
+throughput, and paired playing-strength gates.
