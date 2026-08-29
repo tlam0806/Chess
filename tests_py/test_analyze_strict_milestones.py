@@ -30,7 +30,7 @@ def _meta(depth: int) -> dict[str, Any]:
     return {
         "type": "meta",
         "schema_version": 2,
-        "benchmark": "strict_milestones_v2",
+        "benchmark": "strict_milestones_v3",
         "versions": list(MODULE.VERSIONS),
         "depths": [depth],
         "rounds_per_depth": MODULE.ROUNDS,
@@ -212,6 +212,16 @@ def _first_row(records: list[dict[str, Any]]) -> dict[str, Any]:
 
 
 def test_validates_split_depth_runs_and_analyzes_paired_ratios(tmp_path: Path) -> None:
+    assert MODULE.VERSIONS == (
+        "V15",
+        "V19",
+        "V23",
+        "V25",
+        "V27",
+        "V29",
+        "V30",
+        "V35",
+    )
     validated = MODULE.load_and_validate(_write_inputs(tmp_path))
     assert validated["validation"]["status"] == "pass"
     assert validated["validation"]["schedule"]["ordered_predecessor_balance_verified"] is True

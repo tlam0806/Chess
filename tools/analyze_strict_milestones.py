@@ -2,10 +2,10 @@
 """Validate and summarize Strict-milestone fixed-depth benchmark NDJSON.
 
 This analyzer intentionally targets the approved D6/D7/D8 protocol emitted by
-``benchmark_strict_milestones`` schema v2.  It treats elapsed search time as the
-primary metric.  Nodes and NPS are retained as secondary diagnostics because a
-version can process nodes faster while still taking longer after searching a
-larger tree.
+``benchmark_strict_milestones`` schema v2 for benchmark cohort v3.  It treats
+elapsed search time as the primary metric.  Nodes and NPS are retained as
+secondary diagnostics because a version can process nodes faster while still
+taking longer after searching a larger tree.
 
 Confidence intervals are descriptive, paired percentile bootstraps.  The
 primary interval resamples all 50 complete (leg, FEN) blocks in a round as one
@@ -26,7 +26,7 @@ from typing import Any, Iterable, Mapping, Sequence
 import numpy as np
 
 
-VERSIONS = ("V15", "V19", "V24", "V27", "V29", "V32", "V33", "V35")
+VERSIONS = ("V15", "V19", "V23", "V25", "V27", "V29", "V30", "V35")
 EXPECTED_DEPTHS = (6, 7, 8)
 ROUNDS = 8
 LEGS = ("forward", "reverse")
@@ -153,7 +153,7 @@ def _load_records(path: Path) -> list[dict[str, Any]]:
 def _validate_meta(meta: Mapping[str, Any]) -> tuple[int, ...]:
     expected_fields = {
         "schema_version": 2,
-        "benchmark": "strict_milestones_v2",
+        "benchmark": "strict_milestones_v3",
         "versions": list(VERSIONS),
         "rounds_per_depth": ROUNDS,
         "legs_per_round": len(LEGS),

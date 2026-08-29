@@ -1,6 +1,6 @@
 # Project milestone ledger
 
-Updated: 2026-08-25
+Updated: 2026-08-29
 
 This is the chronological index for the chess-engine project. It separates two
 questions which older notes often mixed together:
@@ -32,7 +32,7 @@ New promotion claims follow the
 |---|---|---|---|---|---|
 | M01 | 2026-06-11 | Bitboard engine, legal move generation, make/unmake, FEN and perft | Historical foundation | Validated correctness | The legal chess core exists and is covered by targeted tests/perft. A speed benchmark is not required to establish this milestone. |
 | M02 | 2026-06-13 to 2026-06-15 | Classical V7-V19: history/killer ordering, MoveList, magic bitboards, lazy legal filtering and SEE | Historical | Mixed | V19's original V18 comparison reported identical nodes/moves/scores and a 0.4643 time ratio, but the sampled input corpus was never retained. See the [classical revalidation](../benchmarks/classical_search_revalidation_20260825.md). |
-| M03 | 2026-06-19 to 2026-07-09 | Classical V20-V35 search and TT experiments; V34 Fast/experimental branch | Historical baseline | Validated current-tree reconstruction with provenance caveats | V34's `AtLeast` TT reuse relaxes the fixed-depth contract and is classified as Fast/experimental. A balanced 2026-08-29 reconstruction of V15/V19/V24/V27/V29/V32/V33/V35 found identical fixed-depth scores at D6-D8; V35 used 6.866% of V15's D7 time (14.56x faster). The implementations share current primitives, so this is not authentic historical-release speed. See the [Strict milestone benchmark](../benchmarks/strict_milestone_benchmark_20260829.md). |
+| M03 | 2026-06-19 to 2026-07-09 | Classical V20-V35 search and TT experiments; V34 Fast/experimental branch | Historical baseline | Validated current-tree reconstruction with provenance caveats | V34's `AtLeast` TT reuse relaxes the fixed-depth contract and is classified as Fast/experimental. A balanced 2026-08-29 reconstruction sampled the architecture boundaries V15/V19/V23/V25/V27/V29/V30/V35 and found zero score mismatches at D6-D8; V35 used 7.520% of V15's D7 time (13.30x faster). The implementations share current primitives, so this is not authentic historical-release speed. See the [Strict milestone benchmark](../benchmarks/strict_milestone_benchmark_20260829.md). |
 | M04 | 2026-07-29 | Phase-aware quantized NNUE and V36 search | Superseded historical baseline | Validated with stopping-rule caveat | V36 NNUE at depth 3 beat heuristic V35 at depth 4: 46-132-22, 56.0%, nominal paired 95% CI 52.75-59.25%. The ordinary interval was inspected every five pairs under `--stop-on-ci`, so it is directional promotion evidence rather than a sequentially valid confirmatory interval. See [the original result](../nnue_vs_heuristic_result.md). |
 | M05 | 2026-07-29 to 2026-08-16 | V38 selective search and V39 Fast promotion | Historically promoted search baseline | Directional with protocol caveats | V39 Fast led Balanced and baseline7 under the project's paired early-stop protocol; a later all-four candidate lost directly to Fast. Repeated CI peeking and cross-game heuristic state prevent a confirmatory statistical claim. See [V39/V40 search milestones](../benchmarks/nnue_v39_v40_search_milestones.md). |
 | M06 | 2026-08-17 | V40 QSEE at -75cp | Adopted in V41 for efficiency | Historical efficiency evidence with provenance caveats; inconclusive strength | Holdout nodes fell 15.50% and time 11.36%, but the raw tune summary does not retain complete source/binary/model/harness identity. V40 scored 52.0% vs V39 with CI 49.71-54.29%. Deployment establishes the engineering choice, not a conclusive strength win. |
@@ -104,9 +104,10 @@ with SHA-256
 It preserves normalized sampling evidence and compact exports, not every bulky
 native profiler trace.
 
-The current-tree Strict timing reconstruction is retained in an
-[874,544-byte evidence bundle](../benchmarks/evidence/strict_milestones_20260829.tar.gz)
+The current-tree Strict architecture-milestone reconstruction is retained in a
+[6,514,394-byte evidence bundle](../benchmarks/evidence/strict_milestones_20260829.tar.gz)
 with SHA-256
-`d12384e4e9c826830aea68f4ae6cafd3a8123ea12b3605c87646601eb17dc9ab`.
-It includes all 9,600 timed rows, the exact source snapshot and executable,
-build metadata, analyzer/tests, move-tie verification, and checksums.
+`d14f5a69dc13feaf07f00fac8c2091636e3bacba6ab4f25b01c2f4c850a8efb4`.
+It includes all 9,600 timed rows, the exact clean source snapshot, executable
+and library, build metadata, analyzer/tests, move-tie verification, and
+checksums.

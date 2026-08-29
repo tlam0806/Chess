@@ -19,7 +19,7 @@ New runs should follow the [benchmark protocol and evidence policy](PROTOCOL.md)
 | 2026-08-25 | [V41 cross-host component sampling](nnue_v41_cross_host_component_profile_20260825.md) | Validated relative-share diagnostic; absolute timing conditional | TT was the clearest x86 disadvantage; accumulator/forward and move generation are the main next targets. Local thermal drift prevents a canonical component-time or host-slowdown claim. |
 | 2026-08-25 | [V41 NNUE forward stages: M4 versus Heroku](nnue_v41_forward_stage_arm_vs_x86_20260825.md) | Validated isolated-stage diagnostic | Full kernel core was 79.95 ns on M4 versus 227.11 ns on Heroku (2.84x); S1 was the largest isolated absolute gap, while S3 was large only as a ratio. |
 | 2026-08-25 | [NNUE model scaling](nnue_model_scaling_20260825.md) | Rejected/inconclusive candidates | 500M F2 lost to an older 200M reference; F2M won offline but the 600-game epoch-5 match was inconclusive. |
-| 2026-08-29 | [Strict milestone fixed-depth benchmark](strict_milestone_benchmark_20260829.md) | Validated current-tree reconstruction; D8 absolute timing conditional | V35 used 6.866% of V15's depth-7 elapsed time (14.56x faster) with identical fixed-depth scores on the 25-FEN corpus; D6 and D8 confirmed the relative trend. |
+| 2026-08-29 | [Strict architecture-milestone fixed-depth benchmark](strict_milestone_benchmark_20260829.md) | Validated current-tree reconstruction | Architecture checkpoints V15/V19/V23/V25/V27/V29/V30/V35 had zero score mismatches at D6-D8; V35 used 7.520% of V15's depth-7 time (13.30x faster). |
 
 The status labels are deliberate:
 

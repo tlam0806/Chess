@@ -1,10 +1,10 @@
 #include "heuristic_searcher_v15.hpp"
 #include "heuristic_searcher_v19.hpp"
-#include "heuristic_searcher_v24.hpp"
+#include "heuristic_searcher_v23.hpp"
+#include "heuristic_searcher_v25.hpp"
 #include "heuristic_searcher_v27.hpp"
 #include "heuristic_searcher_v29.hpp"
-#include "heuristic_searcher_v32.hpp"
-#include "heuristic_searcher_v33.hpp"
+#include "heuristic_searcher_v30.hpp"
 #include "heuristic_searcher_v35.hpp"
 #include "move.hpp"
 #include "position.hpp"
@@ -37,27 +37,27 @@ constexpr int DefaultRounds = 8;
 enum class Version : std::size_t {
     V15,
     V19,
-    V24,
+    V23,
+    V25,
     V27,
     V29,
-    V32,
-    V33,
+    V30,
     V35,
 };
 
 constexpr std::array<Version, 8> Versions = {
     Version::V15,
     Version::V19,
-    Version::V24,
+    Version::V23,
+    Version::V25,
     Version::V27,
     Version::V29,
-    Version::V32,
-    Version::V33,
+    Version::V30,
     Version::V35,
 };
 
 constexpr std::array<std::string_view, Versions.size()> VersionNames = {
-    "V15", "V19", "V24", "V27", "V29", "V32", "V33", "V35",
+    "V15", "V19", "V23", "V25", "V27", "V29", "V30", "V35",
 };
 
 // Even-order Williams design.  Rotating these offsets through all eight
@@ -225,7 +225,7 @@ Options parse_options(int argc, char** argv) {
             std::cout
                 << "Usage: benchmark_strict_milestones [--depth N | --depths N,N,...]\n"
                 << "                                    [--rounds N] [--emit-corpus]\n\n"
-                << "Direct fixed-depth benchmark of Strict V15,V19,V24,V27,V29,V32,V33,V35.\n"
+                << "Direct fixed-depth benchmark of Strict V15,V19,V23,V25,V27,V29,V30,V35.\n"
                 << "The approved multi-depth protocol is --depths 6,7,8 --rounds 8.\n"
                 << "Each round contains a Williams-balanced forward leg and its mirrored reverse leg.\n"
                 << "Each depth gets an independent unmeasured correctness preflight/warmup.\n"
@@ -294,11 +294,11 @@ std::unique_ptr<chess::Searcher> make_searcher(Version version) {
     switch (version) {
         case Version::V15: return std::make_unique<chess::HeuristicSearcherV15>(TtMegabytes);
         case Version::V19: return std::make_unique<chess::HeuristicSearcherV19>(TtMegabytes);
-        case Version::V24: return std::make_unique<chess::HeuristicSearcherV24>(TtMegabytes);
+        case Version::V23: return std::make_unique<chess::HeuristicSearcherV23>(TtMegabytes);
+        case Version::V25: return std::make_unique<chess::HeuristicSearcherV25>(TtMegabytes);
         case Version::V27: return std::make_unique<chess::HeuristicSearcherV27>(TtMegabytes);
         case Version::V29: return std::make_unique<chess::HeuristicSearcherV29>(TtMegabytes);
-        case Version::V32: return std::make_unique<chess::HeuristicSearcherV32>(TtMegabytes);
-        case Version::V33: return std::make_unique<chess::HeuristicSearcherV33>(TtMegabytes);
+        case Version::V30: return std::make_unique<chess::HeuristicSearcherV30>(TtMegabytes);
         case Version::V35: return std::make_unique<chess::HeuristicSearcherV35>(TtMegabytes);
     }
     throw std::logic_error("unknown Strict milestone version");
@@ -345,8 +345,8 @@ std::array<Version, Versions.size()> scheduled_versions(
 void emit_meta(const Options& options, const std::string& hash) {
     std::cout
         << "{\"type\":\"meta\",\"schema_version\":2"
-        << ",\"benchmark\":\"strict_milestones_v2\""
-        << ",\"versions\":[\"V15\",\"V19\",\"V24\",\"V27\",\"V29\",\"V32\",\"V33\",\"V35\"]"
+        << ",\"benchmark\":\"strict_milestones_v3\""
+        << ",\"versions\":[\"V15\",\"V19\",\"V23\",\"V25\",\"V27\",\"V29\",\"V30\",\"V35\"]"
         << ",\"depths\":[";
     for (std::size_t i = 0; i < options.depths.size(); ++i) {
         std::cout << (i == 0 ? "" : ",") << options.depths[i];

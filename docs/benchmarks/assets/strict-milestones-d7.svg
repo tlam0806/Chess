@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="760" viewBox="0 0 1200 760" role="img" aria-labelledby="title desc">
-  <title id="title">Strict search milestone benchmark at fixed depth 7</title>
-  <desc id="desc">Horizontal bars compare pooled elapsed search time for V15, V19, V24, V27, V29, V32, V33, and V35. V35 takes 18.4 seconds compared with V15 at 268.3 seconds, a 14.56 times speedup. All selected versions returned the same fixed-depth scores.</desc>
+  <title id="title">Strict search architecture milestones at fixed depth 7</title>
+  <desc id="desc">Horizontal bars compare pooled elapsed search time for V15, V19, V23, V25, V27, V29, V30, and V35. V35 takes 20.3 seconds compared with V15 at 270.4 seconds, a 13.30 times speedup. All selected versions returned the same fixed-depth scores.</desc>
   <defs>
     <linearGradient id="background" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0" stop-color="#0b1020"/>
@@ -20,16 +20,16 @@
   <circle cx="1040" cy="690" r="190" fill="#06b6d4" opacity="0.05"/>
 
   <g font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif">
-    <text x="58" y="66" fill="#f8fafc" font-size="30" font-weight="700">Strict Search Milestones</text>
+    <text x="58" y="66" fill="#f8fafc" font-size="30" font-weight="700">Strict Search Architecture Milestones</text>
     <text x="58" y="96" fill="#94a3b8" font-size="16">Current-tree reconstruction · fixed depth 7 · 25-position corpus · elapsed time is primary</text>
 
     <g filter="url(#shadow)">
       <rect x="58" y="124" width="300" height="78" rx="14" fill="#18223d" stroke="#334155"/>
-      <text x="82" y="158" fill="#c4b5fd" font-size="27" font-weight="700">14.56×</text>
+      <text x="82" y="158" fill="#c4b5fd" font-size="27" font-weight="700">13.30×</text>
       <text x="82" y="183" fill="#cbd5e1" font-size="15">V35 speedup over V15</text>
 
       <rect x="376" y="124" width="300" height="78" rx="14" fill="#18223d" stroke="#334155"/>
-      <text x="400" y="158" fill="#67e8f9" font-size="27" font-weight="700">93.13%</text>
+      <text x="400" y="158" fill="#67e8f9" font-size="27" font-weight="700">92.48%</text>
       <text x="400" y="183" fill="#cbd5e1" font-size="15">less depth-7 search time</text>
 
       <rect x="694" y="124" width="448" height="78" rx="14" fill="#18223d" stroke="#334155"/>
@@ -37,85 +37,93 @@
       <text x="718" y="183" fill="#cbd5e1" font-size="15">9,600 timed rows across depths 6, 7, and 8</text>
     </g>
 
-    <text x="58" y="244" fill="#e2e8f0" font-size="15" font-weight="650">Version</text>
-    <text x="220" y="225" fill="#e2e8f0" font-size="15" font-weight="650">Elapsed time relative to V15</text>
-    <text x="220" y="244" fill="#94a3b8" font-size="13">Lower is better</text>
-    <text x="906" y="244" fill="#e2e8f0" font-size="15" font-weight="650">Speedup</text>
+    <text x="58" y="244" fill="#e2e8f0" font-size="15" font-weight="650">Architecture checkpoint</text>
+    <text x="280" y="225" fill="#e2e8f0" font-size="15" font-weight="650">Elapsed time relative to V15</text>
+    <text x="280" y="244" fill="#94a3b8" font-size="13">Lower is better</text>
+    <text x="910" y="244" fill="#e2e8f0" font-size="15" font-weight="650">Speedup</text>
     <text x="1022" y="244" fill="#e2e8f0" font-size="15" font-weight="650">Throughput</text>
 
     <g stroke="#334155" stroke-width="1">
-      <line x1="220" y1="255" x2="220" y2="674"/>
-      <line x1="387.5" y1="255" x2="387.5" y2="674" stroke-dasharray="4 6"/>
-      <line x1="555" y1="255" x2="555" y2="674" stroke-dasharray="4 6"/>
-      <line x1="722.5" y1="255" x2="722.5" y2="674" stroke-dasharray="4 6"/>
-      <line x1="890" y1="255" x2="890" y2="674"/>
+      <line x1="280" y1="255" x2="280" y2="674"/>
+      <line x1="430" y1="255" x2="430" y2="674" stroke-dasharray="4 6"/>
+      <line x1="580" y1="255" x2="580" y2="674" stroke-dasharray="4 6"/>
+      <line x1="730" y1="255" x2="730" y2="674" stroke-dasharray="4 6"/>
+      <line x1="880" y1="255" x2="880" y2="674"/>
     </g>
     <g fill="#64748b" font-size="12" text-anchor="middle">
-      <text x="220" y="690">0%</text>
-      <text x="387.5" y="690">25%</text>
-      <text x="555" y="690">50%</text>
-      <text x="722.5" y="690">75%</text>
-      <text x="890" y="690">100%</text>
+      <text x="280" y="690">0%</text>
+      <text x="430" y="690">25%</text>
+      <text x="580" y="690">50%</text>
+      <text x="730" y="690">75%</text>
+      <text x="880" y="690">100%</text>
     </g>
 
-    <!-- V15 -->
-    <text x="58" y="291" fill="#f8fafc" font-size="16" font-weight="650">V15</text>
-    <rect x="220" y="271" width="670" height="28" rx="7" fill="#64748b"/>
-    <text x="874" y="291" fill="#ffffff" font-size="14" font-weight="650" text-anchor="end">268.3 s</text>
-    <text x="906" y="291" fill="#cbd5e1" font-size="15">baseline</text>
-    <text x="1022" y="291" fill="#cbd5e1" font-size="15">1.54 MNPS</text>
+    <!-- V15: exact-depth range TT baseline -->
+    <text x="58" y="290" fill="#f8fafc" font-size="16" font-weight="700">V15</text>
+    <text x="99" y="290" fill="#94a3b8" font-size="11">range-TT baseline</text>
+    <rect x="280" y="271" width="600" height="28" rx="7" fill="#64748b"/>
+    <text x="864" y="291" fill="#ffffff" font-size="14" font-weight="650" text-anchor="end">270.4 s</text>
+    <text x="910" y="291" fill="#cbd5e1" font-size="15">baseline</text>
+    <text x="1022" y="291" fill="#cbd5e1" font-size="15">1.53 MNPS</text>
 
-    <!-- V19 -->
-    <text x="58" y="343" fill="#f8fafc" font-size="16" font-weight="650">V19</text>
-    <rect x="220" y="323" width="208.8" height="28" rx="7" fill="#3b82f6"/>
-    <text x="416.8" y="343" fill="#ffffff" font-size="14" font-weight="650" text-anchor="end">83.6 s</text>
-    <text x="906" y="343" fill="#93c5fd" font-size="15" font-weight="650">3.21×</text>
-    <text x="1022" y="343" fill="#cbd5e1" font-size="15">5.71 MNPS</text>
+    <!-- V19: bucket TT and lazy legality -->
+    <text x="58" y="342" fill="#f8fafc" font-size="16" font-weight="700">V19</text>
+    <text x="99" y="342" fill="#94a3b8" font-size="11">bucket TT + lazy legality</text>
+    <rect x="280" y="323" width="189.8" height="28" rx="7" fill="#3b82f6"/>
+    <text x="457.8" y="343" fill="#ffffff" font-size="14" font-weight="650" text-anchor="end">85.5 s</text>
+    <text x="910" y="343" fill="#93c5fd" font-size="15" font-weight="650">3.16×</text>
+    <text x="1022" y="343" fill="#cbd5e1" font-size="15">5.59 MNPS</text>
 
-    <!-- V24 -->
-    <text x="58" y="395" fill="#f8fafc" font-size="16" font-weight="650">V24</text>
-    <rect x="220" y="375" width="143.6" height="28" rx="7" fill="#06b6d4"/>
-    <text x="351.6" y="395" fill="#ffffff" font-size="14" font-weight="650" text-anchor="end">57.5 s</text>
-    <text x="906" y="395" fill="#67e8f9" font-size="15" font-weight="650">4.67×</text>
-    <text x="1022" y="395" fill="#cbd5e1" font-size="15">6.83 MNPS</text>
+    <!-- V23: first noisy/quiet stage split -->
+    <text x="58" y="394" fill="#f8fafc" font-size="16" font-weight="700">V23</text>
+    <text x="99" y="394" fill="#94a3b8" font-size="11">noisy → quiet stages</text>
+    <rect x="280" y="375" width="150.4" height="28" rx="7" fill="#06b6d4"/>
+    <text x="418.4" y="395" fill="#ffffff" font-size="14" font-weight="650" text-anchor="end">67.8 s</text>
+    <text x="910" y="395" fill="#67e8f9" font-size="15" font-weight="650">3.99×</text>
+    <text x="1022" y="395" fill="#cbd5e1" font-size="15">7.17 MNPS</text>
 
-    <!-- V27 -->
-    <text x="58" y="447" fill="#f8fafc" font-size="16" font-weight="650">V27</text>
-    <rect x="220" y="427" width="117.4" height="28" rx="7" fill="#14b8a6"/>
-    <text x="325.4" y="447" fill="#ffffff" font-size="14" font-weight="650" text-anchor="end">47.0 s</text>
-    <text x="906" y="447" fill="#5eead4" font-size="15" font-weight="650">5.71×</text>
-    <text x="1022" y="447" fill="#cbd5e1" font-size="15">8.55 MNPS</text>
+    <!-- V25: fixed raw move storage -->
+    <text x="58" y="446" fill="#f8fafc" font-size="16" font-weight="700">V25</text>
+    <text x="99" y="446" fill="#94a3b8" font-size="11">fixed raw storage</text>
+    <rect x="280" y="427" width="115.5" height="28" rx="7" fill="#14b8a6"/>
+    <text x="407.5" y="447" fill="#5eead4" font-size="14" font-weight="650">52.1 s</text>
+    <text x="910" y="447" fill="#5eead4" font-size="15" font-weight="650">5.20×</text>
+    <text x="1022" y="447" fill="#cbd5e1" font-size="15">7.72 MNPS</text>
 
-    <!-- V29 -->
-    <text x="58" y="499" fill="#f8fafc" font-size="16" font-weight="650">V29</text>
-    <rect x="220" y="479" width="105.8" height="28" rx="7" fill="#22c55e"/>
-    <text x="313.8" y="499" fill="#ffffff" font-size="14" font-weight="650" text-anchor="end">42.4 s</text>
-    <text x="906" y="499" fill="#86efac" font-size="15" font-weight="650">6.33×</text>
-    <text x="1022" y="499" fill="#cbd5e1" font-size="15">10.29 MNPS</text>
+    <!-- V27: make/unmake plus RAII -->
+    <text x="58" y="498" fill="#f8fafc" font-size="16" font-weight="700">V27</text>
+    <text x="99" y="498" fill="#94a3b8" font-size="11">make/unmake + RAII</text>
+    <rect x="280" y="479" width="108.9" height="28" rx="7" fill="#22c55e"/>
+    <text x="400.9" y="499" fill="#86efac" font-size="14" font-weight="650">49.1 s</text>
+    <text x="910" y="499" fill="#86efac" font-size="15" font-weight="650">5.51×</text>
+    <text x="1022" y="499" fill="#cbd5e1" font-size="15">8.19 MNPS</text>
 
-    <!-- V32 -->
-    <text x="58" y="551" fill="#f8fafc" font-size="16" font-weight="650">V32</text>
-    <rect x="220" y="531" width="45.9" height="28" rx="7" fill="#8b5cf6"/>
-    <text x="277.9" y="551" fill="#ddd6fe" font-size="14" font-weight="650">18.4 s</text>
-    <text x="906" y="551" fill="#c4b5fd" font-size="15" font-weight="650">14.60×</text>
-    <text x="1022" y="551" fill="#cbd5e1" font-size="15">24.30 MNPS</text>
+    <!-- V29: dedicated callback generators -->
+    <text x="58" y="550" fill="#f8fafc" font-size="16" font-weight="700">V29</text>
+    <text x="99" y="550" fill="#94a3b8" font-size="11">four callback stages</text>
+    <rect x="280" y="531" width="98.7" height="28" rx="7" fill="#6366f1"/>
+    <text x="390.7" y="551" fill="#a5b4fc" font-size="14" font-weight="650">44.5 s</text>
+    <text x="910" y="551" fill="#a5b4fc" font-size="15" font-weight="650">6.08×</text>
+    <text x="1022" y="551" fill="#cbd5e1" font-size="15">9.80 MNPS</text>
 
-    <!-- V33 -->
-    <text x="58" y="603" fill="#f8fafc" font-size="16" font-weight="650">V33</text>
-    <rect x="220" y="583" width="53.7" height="28" rx="7" fill="#f59e0b"/>
-    <text x="285.7" y="603" fill="#fde68a" font-size="14" font-weight="650">21.5 s</text>
-    <text x="906" y="603" fill="#fcd34d" font-size="15" font-weight="650">12.48×</text>
-    <text x="1022" y="603" fill="#cbd5e1" font-size="15">22.77 MNPS</text>
+    <!-- V30: packed hot path -->
+    <text x="58" y="602" fill="#f8fafc" font-size="16" font-weight="700">V30</text>
+    <text x="99" y="602" fill="#94a3b8" font-size="11">packed hot path</text>
+    <rect x="280" y="583" width="46.7" height="28" rx="7" fill="#a855f7"/>
+    <text x="338.7" y="603" fill="#d8b4fe" font-size="14" font-weight="650">21.1 s</text>
+    <text x="910" y="603" fill="#d8b4fe" font-size="15" font-weight="650">12.83×</text>
+    <text x="1022" y="603" fill="#cbd5e1" font-size="15">19.98 MNPS</text>
 
-    <!-- V35 -->
-    <text x="58" y="655" fill="#f8fafc" font-size="16" font-weight="700">V35</text>
-    <rect x="220" y="635" width="46.0" height="28" rx="7" fill="url(#v35)"/>
-    <text x="278" y="655" fill="#fbcfe8" font-size="14" font-weight="700">18.4 s</text>
-    <text x="906" y="655" fill="#f0abfc" font-size="15" font-weight="700">14.56×</text>
-    <text x="1022" y="655" fill="#f8fafc" font-size="15" font-weight="700">24.23 MNPS</text>
+    <!-- V35: final range-correct Strict endpoint -->
+    <text x="58" y="654" fill="#f8fafc" font-size="16" font-weight="700">V35</text>
+    <text x="99" y="654" fill="#94a3b8" font-size="11">final Strict endpoint</text>
+    <rect x="280" y="635" width="45.1" height="28" rx="7" fill="url(#v35)"/>
+    <text x="337.1" y="655" fill="#f0abfc" font-size="14" font-weight="700">20.3 s</text>
+    <text x="910" y="655" fill="#f0abfc" font-size="15" font-weight="700">13.30×</text>
+    <text x="1022" y="655" fill="#f8fafc" font-size="15" font-weight="700">21.96 MNPS</text>
 
     <line x1="58" y1="712" x2="1142" y2="712" stroke="#334155"/>
     <text x="58" y="738" fill="#94a3b8" font-size="14">64 MiB fresh TT per tuple · Release + ThinLTO · Apple M4</text>
-    <text x="1142" y="738" fill="#94a3b8" font-size="14" text-anchor="end">Full protocol, confidence intervals, and raw evidence ↗</text>
+    <text x="1142" y="738" fill="#94a3b8" font-size="14" text-anchor="end">6 / 6 differing-move cases verified as ties</text>
   </g>
 </svg>

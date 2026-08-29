@@ -76,9 +76,7 @@ transitions before trying to make them cheap.
 
 The evaluator was intentionally understandable:
 
-```text
-score = material balance + piece-square terms
-```
+> **Heuristic score** = material balance + piece-square terms
 
 One chess point is represented as 100 centipawns (`cp`). The base material
 values in the original evaluator were:
@@ -105,11 +103,11 @@ and Black receive the same preference from their own perspective.
 
 Conceptually, the calculation was:
 
-```text
-piece contribution = base piece value + PST[piece][relative square]
-white score        = sum(White contributions) - sum(Black contributions)
-side-to-move score = white score if White moves, otherwise -white score
-```
+| Quantity | Calculation |
+|---|---|
+| Piece contribution | Base piece value + `PST[piece][relative square]` |
+| White score | Sum of White contributions − sum of Black contributions |
+| Side-to-move score | White score if White moves; otherwise, its negation |
 
 Thus winning an otherwise equal rook changes the score by roughly `+500cp`,
 whereas improving a knight's square might change it by only a few dozen
@@ -149,28 +147,15 @@ things inside this milestone:
 These are different from milestone 4, where a heuristic intentionally decides
 that a move probably does not deserve a full search.
 
-#### What was optimized in the Strict line
-
-| Area | Evolution | Contract and caveat |
-|---|---|---|
-| Transposition table | Direct-mapped TT in V2; explicit bound behavior in V14; range-storing exact-depth Strict reuse in V15; bucketed range TT in V19; lower-only V33; range-preserving 12-byte V35 | Strict reuses a score only at the requested depth. V34's compact single-bound TT deliberately reused deeper entries and is therefore classified as a Fast experiment, not part of the Strict score contract. Replacement policy and the TT move can still change ordering, nodes, and tied best moves. |
-| Move ordering | Tactical/static ordering, TT move, SEE-ranked captures, history, killers, counter-history, and staged scores | Ordering normally keeps every move and changes only when it is searched. It can dramatically change alpha-beta node count and tie-breaking, so node equality is not assumed. |
-| `MoveList` | Heap-backed collections were replaced by fixed-capacity raw-storage management | Removes allocation and improves locality without changing the generated move set. The primitive was shared by both sides of the retained V18/V19 comparison, so that comparison cannot isolate its speedup. |
-| Sliding attacks | Ray work was replaced by magic-bitboard lookup | Exhaustive relevant-blocker and random-occupancy tests support primitive equivalence. No isolated historical search-level speed A/B survives. |
-| Lazy and staged generation | V19 generated the pseudo-legal list and filtered legality while scoring; V23+ split noisy/quiet stages; V28/V29 introduced dedicated legal callbacks | “Lazy legality filtering” is more precise for V19. The important invariant is that every legal move remains reachable until a proof-producing cutoff ends the node. |
-| SEE | First used to order captures, then specialized to reuse already-known moved/captured pieces | SEE used only for ordering is clean. Using SEE to discard a capture is selective pruning and belongs to milestone 4. |
-| King safety | V19 cached checkers, pins, king square, and block masks within a node; later position state gained persistent per-color caches | Avoids recomputation while retaining the same legal-move result. |
-| Make/unmake | Early search copied positions; V26 used in-place undo state and V27 added RAII guards | Round-trip tests cover quiet moves, captures, en passant, promotions, castling, and random plies. |
-| PVS and aspiration | Narrow scout/window searches plus required re-search | Correct re-search preserves the final score, although it normally changes nodes. |
-
 V2-V13 were an exploratory search laboratory and already tried quiescence,
 LMR, null move, PVS, history, and killers. Not all of those experiments were
 behavior-preserving. V14 made bound behavior explicit; V15 introduced the
 range-storing, exact-depth hand-written Strict line. V16-V33 and V35 then
 concentrated the controlled TT, ordering, move-generation, state, and layout
-work above. V34 branched into the Fast line to test a compact single-bound TT
-with `AtLeast` depth reuse: a deeper result may accelerate the search, but it
-is not guaranteed to equal the score requested at the shallower fixed depth.
+work within this line. V34 branched into the Fast line to test a compact
+single-bound TT with `AtLeast` depth reuse: a deeper result may accelerate the
+search, but it is not guaranteed to equal the score requested at the shallower
+fixed depth.
 Aggressive LMR/null-move tuning is treated separately in milestone 4.
 
 #### What “exact behavior” means in this repository
@@ -193,27 +178,43 @@ speedup.
 
 #### Measured Strict milestone progression
 
-![Strict milestone depth-7 elapsed-time benchmark](docs/benchmarks/assets/strict-milestones-d7.svg)
+![Strict architecture-milestone depth-7 elapsed-time benchmark](docs/benchmarks/assets/strict-milestones-d7.svg)
 
-| Version | Depth-7 time | Speedup vs V15 | Nodes | NPS |
-|---|---:|---:|---:|---:|
-| V15 | 268.322 s | 1.00× | 412,761,712 | 1.54M |
-| V19 | 83.615 s | 3.21× | 477,666,976 | 5.71M |
-| V24 | 57.512 s | 4.67× | 393,023,536 | 6.83M |
-| V27 | 47.003 s | 5.71× | 402,033,696 | 8.55M |
-| V29 | 42.357 s | 6.33× | 435,992,336 | 10.29M |
-| V32 | 18.373 s | 14.60× | 446,454,896 | 24.30M |
-| V33 | 21.493 s | 12.48× | 489,489,456 | 22.77M |
-| V35 | 18.424 s | 14.56× | 446,454,896 | 24.23M |
+#### How the benchmark was run
 
-- **Protocol:** 25 positions, direct depths 6–8, eight balanced rounds, fresh
-  64 MiB searcher state per measurement on one Apple M4.
-- **Correctness:** all 9,600 timed searches matched the reference score; there
-  were no illegal moves, stopped searches, or depth failures. The only different
-  move was force-verified as a tie.
+Every version searched the same 25 positions directly at fixed depths 6, 7,
+and 8. For each `(depth, round, leg, position, version)` tuple, the harness
+constructed a fresh 64 MiB searcher state outside the timer and measured only
+the in-process `search_best_move` call. Eight Williams-balanced forward/reverse
+rounds controlled execution-order effects, and every timed result had to match
+V15's score, return a legal move, reach the requested depth, and finish without
+stopping. The chart reports pooled depth-7 wall time from the same Apple M4
+Release + ThinLTO build. All 9,600 timed searches passed; the six unique move
+differences were force-verified as score-equivalent ties.
+
+#### What each measured version introduced
+
+Because the selected checkpoints skip intermediate versions, each row reports
+only the accumulated change since the previous measured checkpoint.
+
+| Version | Main improvement | Move ordering |
+|---|---|---|
+| V15 | Baseline: hand-written Strict search with exact-depth range TT. | Baseline weighted ordering: preferred TT move, promotions, SEE, history, checks, and two killers. |
+| V19 | Bucketed range TT, cached king safety, and legality filtered while scoring pseudo-legal moves. | Separately weight the lower/upper TT moves and add counter-history. |
+| V23 | **Two-stage lazy move generation.** | Search the lower TT move first; generate noisy moves next and quiet moves only if still needed. |
+| V25 | Fixed-capacity raw storage replaces heap-backed scored-move vectors. | Replace noisy/quiet stages with a priority stage for promotions and non-losing captures, followed by quiets and deferred losing captures. |
+| V27 | In-place make/unmake with undo state and RAII replaces child-position copies. | No deliberate ordering change. |
+| V29 | Dedicated legal callbacks complete **fully staged lazy move generation**. | Split the remaining moves into four on-demand stages: promotions → good captures → quiet moves → bad captures. |
+| V30 | `ScoredMove` is packed from 16 to 8 bytes and the templated search hot path is rewritten. | Replace qsearch SEE ordering with cheaper victim/attacker scoring; main-search stages are unchanged. |
+| V35 | Compact 12-byte TT preserves score ranges and exact-depth reuse. | Insert a priority quiet stage for two killers and the countermove before general quiet moves. |
+
+These labels explain why each checkpoint was selected. The measured difference
+between two rows still includes every accumulated change between them; it is
+not an isolated one-feature A/B.
+
 - **Interpretation:** elapsed time is primary and NPS explains per-node cost.
-  These are current-tree reconstruction results, not original historical-binary
-  timings; depth 7 was stable, while depth 8 showed late thermal drift.
+- **Provenance:** these are stable current-tree reconstruction results, not
+  timings from the original historical binaries.
 
 ### 3. Neural evaluation becomes stronger and fast enough to use
 
@@ -236,31 +237,58 @@ training a model with lower loss. It was the combination of:
 
 The result was substantially stronger than I expected.
 
-#### The phase-aware F2 NNUE
+#### First match win over the heuristic engine
 
-For each perspective, an active piece feature contains:
+Across 200 games, the historical `hs2x8_os128` NNUE at depth 3 scored
+**56.0%** against `HeuristicSearcherV35` at depth 4: 46 wins, 132 draws, and
+22 losses, with a nominal paired 95% interval of 52.75%-59.25%. It searched
+29.0M nodes in total, compared with 79.2M for the heuristic engine.
 
-```text
-piece type × friendly/enemy × perspective king square × piece square
-```
+That result changed the project direction: the NN won while searching one ply
+less. The ordinary interval was inspected every five pairs and the run used an
+early-stop rule, so it is directional historical promotion evidence, not a
+modern sequential Elo proof. The winning model was also an older artifact, not
+the current production model described below.
 
-The production F2 model stores 49,152 shared feature rows. Each row contributes
-to a 128-lane accumulator for one king perspective. The two perspective
-accumulators are concatenated, giving the dense network 256 values. Thirteen
-auxiliary inputs represent castling and en-passant state without rebuilding a
-second large accumulator.
+See [the full NNUE-vs-heuristic result](docs/nnue_vs_heuristic_result.md).
 
-```text
-piece/king sparse features
-        -> 128-lane STM accumulator
-        -> 128-lane opponent accumulator
-        -> concatenate to 256
-        -> SCReLU
-        -> 32
-        -> 32
-        -> 1 positional score
-        + phase PSQT score
-        -> centipawns
+#### How the NN works
+
+##### Phase-aware F2 architecture
+
+The board is encoded as sparse feature indices instead of a dense tensor. For
+each active piece and king perspective, the encoder records:
+
+| Feature component | Possibilities |
+|---|---:|
+| Piece type | 6 types |
+| Piece side relative to perspective | 2: friendly or enemy |
+| Perspective king square | 64 squares |
+| Piece square | 64 squares |
+
+This gives `6 × 2 × 64 × 64 = 49,152` possible feature rows. The same
+table is shared by the side-to-move and opponent perspectives. Each active row
+contributes 128 values to its perspective accumulator; the two accumulators are
+then concatenated into 256 dense inputs.
+
+Thirteen auxiliary inputs encode castling rights, en-passant availability, and
+the en-passant file without creating another large sparse table.
+
+```mermaid
+flowchart TB
+    F["Sparse piece–king features"] --> S["STM accumulator<br/>128 lanes"]
+    F --> O["Opponent accumulator<br/>128 lanes"]
+    S --> C["Concatenate + auxiliary row<br/>256 values"]
+    O --> C
+    X["Castling + en-passant state"] --> C
+    C --> A["SCReLU"]
+    A --> H2["Dense · 32"]
+    H2 --> H3["Dense · 32"]
+    H3 --> P["Positional score"]
+    F --> Q["Phase PSQT buckets"]
+    P --> SUM(("+"))
+    Q --> SUM
+    SUM --> CP["Centipawns"]
 ```
 
 Other architectural details:
@@ -273,49 +301,28 @@ Other architectural details:
 - production scales `(hidden2=2, hidden3=8, output=128)`, clip `181`, and
   SCReLU divisor `128`.
 
-The documented production artifact is 7,944,336 bytes with SHA-256
-`a1a52891f95db9a1bacc48557325b0c5904da4b3c9f8a333eb2ec090b1bb9c02`.
+##### The NEON kernel made the model operational
 
-#### First match win over the heuristic engine
+The hot mixed-sign dot product maps directly to the ARM NEON/I8MM intrinsic
+`vsudotq_laneq_s32` (the `SUDOT` instruction).
 
-The historical `hs2x8_os128` NNUE was tested at depth 3 against
-`HeuristicSearcherV35` at depth 4:
+It multiplies unsigned activation bytes by signed weight bytes and accumulates
+the products into `int32` lanes. The ARM kernel is compiled natively with NEON,
+dot-product, and I8MM support, while the scalar reference remains the bit-exact
+correctness oracle.
 
-| Engine | Depth | W-D-L | Score | Nominal paired 95% CI | Nodes |
-|---|---:|---:|---:|---:|---:|
-| Historical NNUE | 3 | 46-132-22 | **56.0%** | 52.75%-59.25% | 29.0M |
-| Heuristic V35 | 4 | 22-132-46 | 44.0% | 40.75%-47.25% | 79.2M |
+The standalone NNUE prototype went through many small kernel experiments, but
+those implementation checkpoints are not promoted to project milestones here.
+The important progression was architectural: map quantized inference to native
+mixed-sign dot products, keep SCReLU and dense accumulation vectorized, and
+decompose wider activations into low/high byte banks that the same dot-product
+instructions can consume.
 
-That result changed the project direction: the NN won while searching one ply
-less. The ordinary interval was inspected every five pairs and the run used an
-early-stop rule, so it is directional historical promotion evidence, not a
-modern sequential Elo proof. The winning model was also an older artifact, not
-the current production model above.
-
-See [the full NNUE-vs-heuristic result](docs/nnue_vs_heuristic_result.md).
-
-#### Kernel work made the model operational
-
-The hot mixed-sign dot product has a close native implementation on both
-architectures:
-
-```text
-ARM: vsudotq_laneq_s32  -> SUDOT
-x86: _mm256_dpbusd_epi32 -> VPDPBUSD
-```
-
-Both compute unsigned activation bytes × signed weight bytes into `int32`
-accumulators. ARM uses a native-build NEON/I8MM kernel. x86 chooses at runtime
-between AVX-512 VNNI, exact AVX2, and scalar fallbacks. Scalar/Python/ARM/x86
-paths are required to produce the same integer evaluation.
-
-On the matched three-dyno Heroku matrix, the production-style VNNI backend was
-`6.08x` faster than scalar at depth 7 and `6.42x` faster at depth 8. LTO later
-added another `6.15%` and `6.77%`. These are throughput results, separate from
-the playing-strength result above.
-
-See the [SIMD validation](docs/benchmarks/nnue_v41_x86_simd_heroku_20260825.md)
-for the x86 implementation and parity gates.
+Microbenchmarks decided which implementations survived. Several intuitive
+manual pipelines, paired-load loops, and algebra rewrites were neutral or even
+slower because they increased dependency chains or forced accumulator spills.
+That negative evidence is useful engineering history, but the main milestone
+is the resulting bit-exact NEON kernel rather than every intermediate rewrite.
 
 ### 4. Controlled selective (“dirty”) pruning
 
@@ -341,30 +348,23 @@ The V38/V39 tuner compared each candidate with the finite-depth V36 Strict
 control over thousands of positions. When a candidate selected a different
 root move, that control re-searched the move and measured **root regret**:
 
-```text
-root regret = max(0,
-                  strict score(best strict move)
-                - strict score(candidate move))
-```
+> **Root regret** is the score lost relative to the Strict move:
+> `max(0, best Strict score − candidate-move Strict score)`.
 
 This is disagreement with a pinned finite-depth teacher, not objective chess
 error. V36 itself ends in a finite capture quiescence search, so a low regret
 is useful selection evidence rather than proof that the move is best chess.
 
-The active adversarial LMR/NMP pipeline used:
+The active adversarial LMR/NMP pipeline was organized into six stages:
 
-```text
-historical safety-bank mining and deduplication
-    -> fresh 16,000-position dataset (8k tune / 4k selection / 4k holdout)
-    -> visible core safety gate at depths 5/6/7/8
-    -> fixed 2,000-position gate drawn from the tune split at depth 6
-    -> per-lineage node/regret Pareto frontier
-    -> sealed adversarial selection at depth 7
-    -> fresh 4,000-position selection and 4,000-position holdout
-    -> at most eight spread points re-audited at depth 8
-    -> later WDL and RFP/LMP selection
-    -> paired, color-reversed self-play
-```
+| Stage | Evaluation step |
+|---|---|
+| Prepare data | Mine and deduplicate the historical safety bank; create 16,000 fresh positions: 8k tune, 4k selection, and 4k holdout. |
+| Core safety | Run the visible safety gate at depths 5–8 and a fixed 2,000-position tune-split gate at depth 6. |
+| Build the frontier | Keep the per-lineage Pareto frontier over node count and root regret. |
+| Sealed selection | Evaluate candidates against the sealed adversarial set at depth 7. |
+| Fresh validation | Use a fresh 4,000-position selection set and a fresh 4,000-position holdout set, then re-audit at most eight spread points at depth 8. |
+| Final promotion | Apply the later WDL and RFP/LMP selection, then decide by paired, color-reversed self-play. |
 
 Safety was not reduced to average CP loss:
 
@@ -427,12 +427,12 @@ therefore not proven.
 
 The historically promoted V39 `Fast` profile was:
 
-```text
-LMR: base=0.45, divisor=2.9, min depth=3, min move index=6
-NMP: min depth=2, reduction=3
-RFP: max depth=2, base margin=175, margin/depth=275
-LMP: max depth=3, base=4, depth multiplier=2
-```
+| Mechanism | Promoted settings |
+|---|---|
+| LMR | Base `0.45`; divisor `2.9`; minimum depth `3`; minimum move index `6` |
+| NMP | Minimum depth `2`; reduction `3` |
+| RFP | Maximum depth `2`; base margin `175`; margin per depth `275` |
+| LMP | Maximum depth `3`; base `4`; depth multiplier `2` |
 
 The LMR move index is zero-based, so index `6` means the seventh searched move.
 For LMP, the searched-move threshold is `4 + 2 × depth²`; captures,
@@ -497,14 +497,14 @@ are not a project milestone because they did not improve the deployed engine.
 
 The production path now looks like this:
 
-```text
-Lichess / UCI client
-        -> UCI adapter (ChessNNUEV41)
-        -> V41 wrapper
-        -> V40 QSEE + V39 selective search core
-        -> move generation / make-unmake / TT / repetition stack
-        -> incremental phase-aware quantized NNUE
-        -> ARM-native NEON/I8MM or runtime-dispatched x86 VNNI/AVX2/scalar
+```mermaid
+flowchart TB
+    U["Lichess / UCI client"] --> A["UCI adapter<br/>ChessNNUEV41"]
+    A --> W["V41 wrapper"]
+    W --> S["V40 QSEE + V39 selective-search core"]
+    S --> C["Move generation · make/unmake · TT · repetition"]
+    C --> N["Incremental phase-aware quantized NNUE"]
+    N --> K["ARM NEON/I8MM or x86 VNNI/AVX2/scalar"]
 ```
 
 Key implementation properties:
@@ -565,59 +565,20 @@ project history, but it does **not** describe the current production NNUE. The
 production architecture is the phase-aware quantized `256 -> 32 -> 32 -> 1`
 network described in the milestone and benchmark reports.
 
-The prototype NN was a value model:
-
-```text
-position -> scalar score from side-to-move POV
-```
-
-It did not output policy/move probabilities.
-
-### NN Input
-
-The board is encoded as sparse feature indices instead of a dense tensor.
-
-For each piece, the encoder records:
-
-```text
-piece type:       6 types
-piece side:       friendly / enemy
-king context:     relative to friendly king / enemy king
-piece square:     64 squares
-king square:      64 squares
-```
-
-Total sparse feature space:
-
-```text
-6 * 2 * 2 * 64 * 64 = 98304 features
-```
-
-The encoder also adds small auxiliary features:
-
-- friendly castling rights
-- enemy castling rights
-- en passant availability
-- en passant file
-
-The position is encoded from side-to-move perspective, so the model sees:
-
-```text
-friendly pieces
-enemy pieces
-```
-
-instead of fixed white/black ownership.
+The prototype NN was a value model that mapped each position to a scalar score
+from the side-to-move perspective. It did not output policy or move
+probabilities.
 
 ### NN Architecture
 
-The prototype network was intentionally small:
+The prototype used an earlier form of the sparse encoding above. It stored the
+friendly-king and enemy-king contexts as separate groups, giving
+`6 × 2 × 2 × 64 × 64 = 98,304` possible feature indices. Its network was
+intentionally small:
 
-```text
-EmbeddingBag(98304 -> 256)
-concat aux features
-Linear -> ReLU -> Linear -> scalar
-```
+- `EmbeddingBag`: 98,304 sparse features → a 256-dimensional embedding;
+- concatenate the auxiliary features;
+- `Linear` → ReLU → `Linear` → scalar output.
 
 This was a pipeline test model, not the final NNUE.
 
@@ -625,25 +586,10 @@ This was a pipeline test model, not the final NNUE.
 
 The prototype model learned from the classical engine itself.
 
-Dataset labels are generated by:
-
-```cpp
-search_best_move(position, depth).score
-```
-
-That score ultimately comes from:
-
-```cpp
-heuristic evaluate(position)
-```
-
-plus tactical correction from shallow alpha-beta search.
-
-So that prototype learned:
-
-```text
-heuristic evaluation + shallow search behavior
-```
+Dataset labels came from `search_best_move(position, depth).score`. That score
+combined the classical heuristic evaluation with tactical correction from
+shallow alpha-beta search. The prototype therefore learned the heuristic
+evaluation together with shallow-search behavior.
 
 It is not expected to exceed the teacher automatically. A stronger model must be accepted only after match testing against the previous model.
 
@@ -651,13 +597,11 @@ It is not expected to exceed the teacher automatically. A stronger model must be
 
 The intended promotion loop was:
 
-```text
-1. Freeze current model as model_old
-2. Generate games using model_old + search
-3. Train model_new
-4. Match model_new vs model_old
-5. Promote model_new only if it wins clearly
-```
+1. Freeze the current model as `model_old`.
+2. Generate games using `model_old` plus search.
+3. Train `model_new`.
+4. Match `model_new` against `model_old`.
+5. Promote `model_new` only if it wins clearly.
 
 This prevents blindly replacing the engine with a model that only has lower training loss.
 
