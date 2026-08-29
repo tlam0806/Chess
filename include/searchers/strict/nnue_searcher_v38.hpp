@@ -151,6 +151,8 @@ public:
     void clear_selective_stats();
     const SelectiveStats& selective_stats() const;
     const RepetitionStack::Stats& repetition_stats() const;
+    void set_twofold_search_draw_enabled(bool enabled);
+    bool twofold_search_draw_enabled() const;
     void set_selective_config(SelectiveConfig config);
     const SelectiveConfig& selective_config() const;
 
@@ -445,6 +447,7 @@ private:
     SelectiveConfig selective_config_{};
     SelectiveStats selective_stats_{};
     RepetitionStack::Stats repetition_stats_{};
+    bool twofold_search_draw_enabled_ = false;
     bool move_ordering_stats_enabled_ = false;
 };
 

@@ -135,24 +135,35 @@ int main(int argc, char** argv) {
 
         Measurement v40_total;
         Measurement v41_total;
+        Measurement v41_hybrid_total;
         std::vector<double> paired_nps_ratios;
         std::vector<double> paired_time_ratios;
+        std::vector<double> hybrid_nps_ratios;
+        std::vector<double> hybrid_time_ratios;
         paired_nps_ratios.reserve(static_cast<std::size_t>(options.repeats));
         paired_time_ratios.reserve(static_cast<std::size_t>(options.repeats));
         for (int repeat = 0; repeat < options.repeats; ++repeat) {
             chess::NnueSearcherV40 v40(model, 64, 4);
             chess::NnueSearcherV41 v41(model, 64, 4);
+            chess::NnueSearcherV41 v41_hybrid(model, 64, 4);
+            v41_hybrid.set_twofold_search_draw_enabled(true);
             Measurement v40_round;
             Measurement v41_round;
+            Measurement v41_hybrid_round;
             for (std::size_t index = 0; index < suite.size(); ++index) {
                 Measurement v40_position;
                 Measurement v41_position;
+                Measurement v41_hybrid_position;
                 if (((repeat + static_cast<int>(index)) & 1) == 0) {
                     v40_position = measure_position(
                         v40, suite[index], options.depth);
                     v41_position = measure_position(
                         v41, suite[index], options.depth);
+                    v41_hybrid_position = measure_position(
+                        v41_hybrid, suite[index], options.depth);
                 } else {
+                    v41_hybrid_position = measure_position(
+                        v41_hybrid, suite[index], options.depth);
                     v41_position = measure_position(
                         v41, suite[index], options.depth);
                     v40_position = measure_position(
@@ -162,23 +173,36 @@ int main(int argc, char** argv) {
                 v40_round.us += v40_position.us;
                 v41_round.nodes += v41_position.nodes;
                 v41_round.us += v41_position.us;
+                v41_hybrid_round.nodes += v41_hybrid_position.nodes;
+                v41_hybrid_round.us += v41_hybrid_position.us;
             }
             v40_total.nodes += v40_round.nodes;
             v40_total.us += v40_round.us;
             v41_total.nodes += v41_round.nodes;
             v41_total.us += v41_round.us;
+            v41_hybrid_total.nodes += v41_hybrid_round.nodes;
+            v41_hybrid_total.us += v41_hybrid_round.us;
             const double v40_round_nps =
                 v40_round.nodes * 1'000'000.0 / v40_round.us;
             const double v41_round_nps =
                 v41_round.nodes * 1'000'000.0 / v41_round.us;
+            const double v41_hybrid_round_nps =
+                v41_hybrid_round.nodes * 1'000'000.0 / v41_hybrid_round.us;
             paired_nps_ratios.push_back(v41_round_nps / v40_round_nps);
             paired_time_ratios.push_back(
                 static_cast<double>(v41_round.us) / v40_round.us);
+            hybrid_nps_ratios.push_back(
+                v41_hybrid_round_nps / v41_round_nps);
+            hybrid_time_ratios.push_back(
+                static_cast<double>(v41_hybrid_round.us) / v41_round.us);
             print_round("v40", repeat, v40_round);
             print_round("v41", repeat, v41_round);
+            print_round("v41_hybrid", repeat, v41_hybrid_round);
         }
         const double v40_nps = v40_total.nodes * 1'000'000.0 / v40_total.us;
         const double v41_nps = v41_total.nodes * 1'000'000.0 / v41_total.us;
+        const double v41_hybrid_nps =
+            v41_hybrid_total.nodes * 1'000'000.0 / v41_hybrid_total.us;
         std::cout << "summary version=v40"
                   << " depth=" << options.depth
                   << " samples=" << suite.size()
@@ -201,6 +225,22 @@ int main(int argc, char** argv) {
                   << median(paired_nps_ratios)
                   << " median_paired_time_ratio="
                   << median(paired_time_ratios)
+                  << '\n';
+        std::cout << "summary version=v41_hybrid"
+                  << " depth=" << options.depth
+                  << " samples=" << suite.size()
+                  << " repeats=" << options.repeats
+                  << " nodes=" << v41_hybrid_total.nodes
+                  << " us=" << v41_hybrid_total.us
+                  << " nps=" << v41_hybrid_nps
+                  << " nps_ratio_vs_v41=" << (v41_hybrid_nps / v41_nps)
+                  << " node_ratio_vs_v41="
+                  << (static_cast<double>(v41_hybrid_total.nodes)
+                      / v41_total.nodes)
+                  << " median_paired_nps_ratio_vs_v41="
+                  << median(hybrid_nps_ratios)
+                  << " median_paired_time_ratio_vs_v41="
+                  << median(hybrid_time_ratios)
                   << '\n';
     } catch (const std::exception& error) {
         std::cerr << "error: " << error.what() << '\n';

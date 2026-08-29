@@ -263,6 +263,8 @@ void set_option(
     try {
         if (name == "AvoidDraw") adapter.avoid_draw = value == "true";
         else if (name == "Ponder") adapter.ponder = value == "true";
+        else if (name == "TwofoldSearchDraw")
+            searcher.set_twofold_search_draw_enabled(value == "true");
         else if (name == "AvoidDrawMinCp") adapter.avoid_draw_min_cp = std::stoi(value);
         else if (name == "AvoidDrawMaxLossCp") adapter.avoid_draw_max_loss_cp = std::stoi(value);
         else if (name == "MoveOverhead") adapter.move_overhead_ms = std::stoi(value);
@@ -539,6 +541,13 @@ int main(int argc, char** argv) {
                       << "option name AvoidDraw type check default true\n"
                       << "option name AvoidDrawMinCp type spin default 120 min 0 max 2000\n"
                       << "option name AvoidDrawMaxLossCp type spin default 80 min 0 max 1000\n";
+#endif
+#if defined(CHESS_UCI_NNUE_V41)
+            output
+                      << "option name TwofoldSearchDraw type check default "
+                      << (searcher.twofold_search_draw_enabled()
+                            ? "true" : "false")
+                      << '\n';
 #endif
             output
                       << "option name Ponder type check default true\n"

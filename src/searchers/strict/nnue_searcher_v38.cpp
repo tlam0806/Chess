@@ -179,7 +179,11 @@ void NnueSearcherV38::initialize_repetition(
     const Position& pos,
     std::span<const HashKey> game_history
 ) const {
-    state.repetition.reset(game_history, pos.zobrist_key, pos.halfmove_clock);
+    state.repetition.reset(
+        game_history,
+        pos.zobrist_key,
+        pos.halfmove_clock,
+        twofold_search_draw_enabled_);
 }
 
 bool NnueSearcherV38::history_draw(
@@ -191,6 +195,11 @@ bool NnueSearcherV38::history_draw(
     }
     if (state.repetition.current_is_threefold()) {
         state.repetition.record_threefold_draw();
+        return true;
+    }
+    if (twofold_search_draw_enabled_
+        && state.repetition.current_repeats_in_search_path()) {
+        state.repetition.record_search_cycle_draw();
         return true;
     }
     if (pos.halfmove_clock < 100) {

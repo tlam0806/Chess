@@ -20,6 +20,7 @@ public:
 
     struct Stats {
         std::uint64_t threefold_draws = 0;
+        std::uint64_t search_cycle_draws = 0;
         std::uint64_t fifty_move_draws = 0;
         std::uint64_t tt_score_suppressions = 0;
     };
@@ -27,11 +28,14 @@ public:
     void reset(
         std::span<const HashKey> game_history,
         HashKey current_key,
-        int halfmove_clock
+        int halfmove_clock,
+        bool stop_on_search_cycle = false
     ) noexcept {
         size_ = 0;
         segment_begin_ = 0;
         twofold_positions_ = 0;
+        root_index_ = Capacity;
+        stop_on_search_cycle_ = stop_on_search_cycle;
         stats_ = {};
 
         // A pawn move or capture resets halfmove_clock and makes every older
@@ -54,6 +58,7 @@ public:
                 halfmove_clock == 0,
                 static_cast<std::size_t>(std::max(0, halfmove_clock)));
         }
+        root_index_ = size_ - 1;
     }
 
     void push(
@@ -74,7 +79,7 @@ public:
             const std::uint32_t saved = saved_irreversible_state_[index];
             segment_begin_ = saved >> 16;
             twofold_positions_ = saved & 0xFFFFU;
-        } else if (prior_occurrences_[index] == 1) {
+        } else if ((prior_occurrences_[index] & PriorCountMask) == 1) {
             assert(twofold_positions_ > 0);
             --twofold_positions_;
         }
@@ -84,7 +89,16 @@ public:
     bool current_is_threefold() const noexcept {
         return size_ > 0
             && prior_occurrences_[size_ - 1] != IrreversibleMarker
-            && prior_occurrences_[size_ - 1] >= 2;
+            && (prior_occurrences_[size_ - 1] & PriorCountMask) >= 2;
+    }
+
+    // A second occurrence is sufficient only when the earlier occurrence is
+    // at or below this search's root. Positions found solely in the real game
+    // history still require a literal third occurrence.
+    bool current_repeats_in_search_path() const noexcept {
+        return size_ > 0
+            && prior_occurrences_[size_ - 1] != IrreversibleMarker
+            && (prior_occurrences_[size_ - 1] & SearchPathMarker) != 0;
     }
 
     bool has_twofold_position() const noexcept {
@@ -101,6 +115,10 @@ public:
 
     void record_threefold_draw() noexcept {
         ++stats_.threefold_draws;
+    }
+
+    void record_search_cycle_draw() noexcept {
+        ++stats_.search_cycle_draws;
     }
 
     void record_fifty_move_draw() noexcept {
@@ -132,6 +150,7 @@ private:
         }
 
         std::uint8_t prior = 0;
+        bool prior_in_search_path = false;
         if (max_lookback >= 4 && index >= 4) {
             // Identical positions have the same side to move, hence only
             // every second entry can match. A legal identical position needs
@@ -145,7 +164,12 @@ private:
                 }
                 if (keys_[previous] == key) {
                     ++prior;
-                    if (prior == 2) {
+                    const bool match_in_search_path =
+                        previous >= root_index_;
+                    prior_in_search_path |= match_in_search_path;
+                    if (prior == 2
+                        || (stop_on_search_cycle_
+                            && match_in_search_path)) {
                         break;
                     }
                 }
@@ -156,7 +180,8 @@ private:
         }
 
         keys_[index] = key;
-        prior_occurrences_[index] = prior;
+        prior_occurrences_[index] = static_cast<std::uint8_t>(
+            prior | (prior_in_search_path ? SearchPathMarker : 0));
         ++size_;
         if (prior == 1) {
             ++twofold_positions_;
@@ -167,11 +192,17 @@ private:
     // Packed previous segment begin (high 16 bits) and twofold count (low 16).
     // This array is touched only by irreversible pushes/pops.
     std::array<std::uint32_t, Capacity> saved_irreversible_state_{};
+    // Low seven bits store the capped occurrence count; the high bit marks a
+    // match at or below the current search root. 0xFF remains irreversible.
     std::array<std::uint8_t, Capacity> prior_occurrences_{};
     std::size_t size_ = 0;
     std::size_t segment_begin_ = 0;
     std::size_t twofold_positions_ = 0;
+    std::size_t root_index_ = Capacity;
+    bool stop_on_search_cycle_ = false;
     Stats stats_{};
+    static constexpr std::uint8_t PriorCountMask = 0x7F;
+    static constexpr std::uint8_t SearchPathMarker = 0x80;
     static constexpr std::uint8_t IrreversibleMarker = 0xFF;
 };
 

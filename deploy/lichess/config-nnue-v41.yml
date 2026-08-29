@@ -9,6 +9,7 @@ engine:
   ponder: true
   uci_options:
     MoveOverhead: 200
+    TwofoldSearchDraw: true
     LmrBase: "0.45"
     LmrDivisor: "2.9"
     LmrMinDepth: 3

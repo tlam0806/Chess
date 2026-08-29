@@ -115,6 +115,18 @@ const RepetitionStack::Stats& NnueSearcherV38::repetition_stats() const {
     return repetition_stats_;
 }
 
+void NnueSearcherV38::set_twofold_search_draw_enabled(bool enabled) {
+    if (twofold_search_draw_enabled_ == enabled) {
+        return;
+    }
+    twofold_search_draw_enabled_ = enabled;
+    clear_tt();
+}
+
+bool NnueSearcherV38::twofold_search_draw_enabled() const {
+    return twofold_search_draw_enabled_;
+}
+
 void NnueSearcherV38::set_selective_config(SelectiveConfig config) {
     selective_config_ = config;
 }

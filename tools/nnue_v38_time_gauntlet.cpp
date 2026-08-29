@@ -47,6 +47,7 @@ using MatchSearcher = chess::NnueSearcherV38;
 struct Profile {
     std::string name;
     MatchSearcher::SelectiveConfig config;
+    bool twofold_search_draw = false;
 };
 
 struct Opening {
@@ -75,6 +76,7 @@ struct Options {
     bool clean_search = false;
     std::string balanced_new_config;
     std::vector<std::string> profile_specs;
+    std::set<std::string> twofold_search_profiles;
     int ci_min_pairs = 40;
     std::string trace_key;
     std::string stop_after_key;
@@ -88,6 +90,8 @@ struct GameResult {
     std::uint64_t candidate_nodes = 0;
     std::int64_t control_time_ms = 0;
     std::int64_t candidate_time_ms = 0;
+    std::uint64_t control_search_cycle_draws = 0;
+    std::uint64_t candidate_search_cycle_draws = 0;
 };
 
 int parse_int(std::string_view value, std::string_view name) {
@@ -160,6 +164,9 @@ Options parse_args(int argc, char** argv) {
         } else if (arg == "--profile") {
             options.profile_specs.push_back(next());
             options.round_robin = true;
+        } else if (arg == "--twofold-search-profile") {
+            options.twofold_search_profiles.insert(next());
+            options.round_robin = true;
         } else if (arg == "--ci-min-pairs") {
             options.ci_min_pairs = parse_int(next(), arg);
         } else if (arg == "--trace-key") {
@@ -225,6 +232,22 @@ chess::Move legal_uci(const chess::Position& position, std::string_view uci) {
     throw std::runtime_error("illegal opening move: " + std::string(uci));
 }
 
+std::uint8_t castling_rights(const chess::Position& position) {
+    return static_cast<std::uint8_t>(
+        (position.white_can_castle_kingside ? 1 : 0)
+        | (position.white_can_castle_queenside ? 2 : 0)
+        | (position.black_can_castle_kingside ? 4 : 0)
+        | (position.black_can_castle_queenside ? 8 : 0));
+}
+
+bool move_was_irreversible(
+    std::uint8_t rights_before,
+    const chess::Position& after
+) {
+    return after.halfmove_clock == 0
+        || castling_rights(after) != rights_before;
+}
+
 chess::Position opening_position(
     const Opening& opening,
     std::vector<chess::HashKey>* history = nullptr
@@ -236,8 +259,15 @@ chess::Position opening_position(
         history->push_back(position.zobrist_key);
     }
     for (const std::string& uci : opening.moves) {
-        position.make_move(legal_uci(position, uci));
-        if (history != nullptr) history->push_back(position.zobrist_key);
+        const chess::Move move = legal_uci(position, uci);
+        const std::uint8_t rights_before = castling_rights(position);
+        position.make_move(move);
+        if (history != nullptr) {
+            if (move_was_irreversible(rights_before, position)) {
+                history->clear();
+            }
+            history->push_back(position.zobrist_key);
+        }
     }
     return position;
 }
@@ -360,6 +390,15 @@ chess::SearchResult search_with_history(
     }
 }
 
+template <typename Engine>
+std::uint64_t last_search_cycle_draws(const Engine& engine) {
+    if constexpr (requires { engine.repetition_stats().search_cycle_draws; }) {
+        return engine.repetition_stats().search_cycle_draws;
+    } else {
+        return 0;
+    }
+}
+
 template <typename ControlEngine, typename CandidateEngine>
 GameResult play_game(
     const Opening& opening,
@@ -416,6 +455,13 @@ GameResult play_game(
         const chess::SearchResult result = use_candidate
             ? search_with_history(candidate, position, limits, history)
             : search_with_history(control, position, limits, history);
+        if (use_candidate) {
+            game.candidate_search_cycle_draws +=
+                last_search_cycle_draws(candidate);
+        } else {
+            game.control_search_cycle_draws +=
+                last_search_cycle_draws(control);
+        }
         const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::steady_clock::now() - start).count();
         if (trace_search) {
@@ -454,7 +500,11 @@ GameResult play_game(
             game.plies = ply;
             return game;
         }
+        const std::uint8_t rights_before = castling_rights(position);
         position.make_move(result.best_move);
+        if (move_was_irreversible(rights_before, position)) {
+            history.clear();
+        }
         history.push_back(position.zobrist_key);
     }
     game.result = "1/2-1/2";
@@ -554,6 +604,12 @@ void append_game(
            << ",\"control_nodes\":" << game.control_nodes
            << ",\"candidate_time_ms\":" << game.candidate_time_ms
            << ",\"control_time_ms\":" << game.control_time_ms
+           << ",\"candidate_search_cycle_draws\":"
+           << game.candidate_search_cycle_draws
+           << ",\"control_search_cycle_draws\":"
+           << game.control_search_cycle_draws
+           << ",\"candidate_twofold_search_draw\":"
+           << (profile.twofold_search_draw ? "true" : "false")
            << "}\n";
     output.flush();
 }
@@ -720,6 +776,18 @@ int main(int argc, char** argv) {
                 disable_dirty_pruning(profile.config);
             }
         }
+        std::set<std::string> unmatched_twofold_profiles =
+            options.twofold_search_profiles;
+        for (Profile& profile : profiles) {
+            if (unmatched_twofold_profiles.erase(profile.name) != 0) {
+                profile.twofold_search_draw = true;
+            }
+        }
+        if (!unmatched_twofold_profiles.empty()) {
+            throw std::runtime_error(
+                "--twofold-search-profile does not match a --profile: "
+                + *unmatched_twofold_profiles.begin());
+        }
         const std::map<std::string, double> completed =
             completed_games(options.output);
         std::ofstream output(options.output, std::ios::app);
@@ -746,6 +814,10 @@ int main(int argc, char** argv) {
                         *second_model, options.tt_mb, 4, 10, 14, 14'000,
                         MatchSearcher::MoveOrderingWeights{},
                         opponent.config);
+                    first_engine.set_twofold_search_draw_enabled(
+                        profile.twofold_search_draw);
+                    second_engine.set_twofold_search_draw_enabled(
+                        opponent.twofold_search_draw);
                     for (std::size_t index = 0; index < openings.size(); ++index) {
                         current_pair_points = 0.0;
                         int pair_game_count = 0;
@@ -869,6 +941,8 @@ int main(int argc, char** argv) {
                 model, options.tt_mb, 4, 10, 14, 14'000,
                 MatchSearcher::MoveOrderingWeights{},
                 profile.config);
+            candidate.set_twofold_search_draw_enabled(
+                profile.twofold_search_draw);
             for (std::size_t index = 0; index < openings.size(); ++index) {
                 for (int color = 0; color < 2; ++color) {
                     const bool candidate_white = color == 0;

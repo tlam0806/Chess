@@ -145,6 +145,14 @@ const RepetitionStack::Stats& NnueSearcherV40::repetition_stats() const {
     return searcher_.repetition_stats();
 }
 
+void NnueSearcherV40::set_twofold_search_draw_enabled(bool enabled) {
+    searcher_.set_twofold_search_draw_enabled(enabled);
+}
+
+bool NnueSearcherV40::twofold_search_draw_enabled() const {
+    return searcher_.twofold_search_draw_enabled();
+}
+
 void NnueSearcherV40::set_selective_config(SelectiveConfig config) {
     selective_config_ = config;
     searcher_.set_selective_config(config);
