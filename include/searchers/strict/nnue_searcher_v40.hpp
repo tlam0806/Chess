@@ -14,6 +14,8 @@ public:
     using MoveOrderingStats = NnueSearcherV39::MoveOrderingStats;
     using MoveOrderingWeights = NnueSearcherV39::MoveOrderingWeights;
     using SelectiveStats = NnueSearcherV39::SelectiveStats;
+    using AspirationConfig = NnueSearcherV39::AspirationConfig;
+    using AspirationStats = NnueSearcherV39::AspirationStats;
 
     struct SelectiveConfig : NnueSearcherV39::SelectiveConfig {
         SelectiveConfig() {
@@ -82,6 +84,10 @@ public:
     bool twofold_search_draw_enabled() const;
     void set_selective_config(SelectiveConfig config);
     const SelectiveConfig& selective_config() const;
+    void clear_aspiration_stats();
+    const AspirationStats& aspiration_stats() const;
+    void set_aspiration_config(AspirationConfig config);
+    const AspirationConfig& aspiration_config() const;
 
 private:
     SelectiveConfig selective_config_{};

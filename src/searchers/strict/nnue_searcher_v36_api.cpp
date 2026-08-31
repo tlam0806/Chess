@@ -78,4 +78,13 @@ void NnueSearcherV36::set_move_ordering_stats_enabled(bool enabled) {
     move_ordering_stats_enabled_ = enabled;
 }
 
+bool NnueSearcherV36::last_search_exact() const {
+    return last_search_exact_;
+}
+
+const NnueSearcherV36::ExactnessStats&
+NnueSearcherV36::exactness_stats() const {
+    return exactness_stats_;
+}
+
 } // namespace chess

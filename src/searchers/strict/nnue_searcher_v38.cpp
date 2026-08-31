@@ -127,6 +127,71 @@ void inherit_ponder_move(
     }
 }
 
+int adaptive_aspiration_delta(
+    const NnueSearcherV38::AspirationConfig& config,
+    int mean_score
+) {
+    const std::int64_t bounded_mean = std::clamp<std::int64_t>(
+        mean_score,
+        -static_cast<std::int64_t>(config.mean_score_clamp_cp),
+        static_cast<std::int64_t>(config.mean_score_clamp_cp));
+    const std::int64_t score_term =
+        bounded_mean * bounded_mean / config.delta_divisor;
+    return static_cast<int>(std::clamp<std::int64_t>(
+        static_cast<std::int64_t>(config.delta_base_cp) + score_term,
+        1,
+        Infinity));
+}
+
+int expand_aspiration_delta(
+    const NnueSearcherV38::AspirationConfig& config,
+    int delta
+) {
+    const std::int64_t scaled =
+        (static_cast<std::int64_t>(delta)
+             * config.expansion_factor_per_mille
+         + 999)
+        / 1'000;
+    return static_cast<int>(std::clamp<std::int64_t>(
+        std::max<std::int64_t>(scaled, static_cast<std::int64_t>(delta) + 1),
+        1,
+        Infinity));
+}
+
+int update_aspiration_mean_score(
+    const NnueSearcherV38::AspirationConfig& config,
+    int previous_mean,
+    int exact_score
+) {
+    const std::int64_t bounded_score = std::clamp<std::int64_t>(
+        exact_score,
+        -static_cast<std::int64_t>(config.mean_score_clamp_cp),
+        static_cast<std::int64_t>(config.mean_score_clamp_cp));
+    const std::int64_t new_weight = config.mean_score_new_weight_per_mille;
+    const std::int64_t old_weight = 1'000 - new_weight;
+    return static_cast<int>(
+        (static_cast<std::int64_t>(previous_mean) * old_weight
+         + bounded_score * new_weight)
+        / 1'000);
+}
+
+int aspiration_lower_bound(int score, int delta) {
+    return static_cast<int>(std::max<std::int64_t>(
+        -Infinity,
+        static_cast<std::int64_t>(score) - delta));
+}
+
+int aspiration_upper_bound(int score, int delta) {
+    return static_cast<int>(std::min<std::int64_t>(
+        Infinity,
+        static_cast<std::int64_t>(score) + delta));
+}
+
+int midpoint_without_overflow(int lhs, int rhs) {
+    return static_cast<int>(
+        (static_cast<std::int64_t>(lhs) + rhs) / 2);
+}
+
 bool has_non_pawn_material(const Position& pos, Color color) {
     const int color_index = static_cast<int>(color);
     for (PieceType piece :
@@ -218,6 +283,9 @@ bool NnueSearcherV38::history_draw(
 }
 
 bool NnueSearcherV38::allow_repetition_tt_score(SearchState& state) const {
+    if (!state.tt_scores_enabled) {
+        return false;
+    }
     if (!state.repetition_enabled
         || state.in_null_move
         || !state.repetition.has_twofold_position()) {
@@ -310,8 +378,11 @@ void NnueSearcherV38::record_beta_cutoff(
     }
 }
 
-bool NnueSearcherV38::should_stop(SearchState& state) const {
-    if ((state.nodes & 1023ULL) != 0) {
+bool NnueSearcherV38::should_stop(
+    SearchState& state,
+    bool force_poll
+) const {
+    if (!force_poll && (state.nodes & 1023ULL) != 0) {
         return false;
     }
     if (state.stop_requested != nullptr
@@ -751,8 +822,18 @@ NnueSearcherV38::SearchValue NnueSearcherV38::negamax(
                     CutoffStage::TtLower);
                 reward_quiet_cutoff(pos.side_to_move, depth, ply, scored_move, prev_move, prev_moved_piece);
                 node_range.upper = Infinity;
+                bool range_conflict = false;
                 if (tt_probe.has_score) {
-                    node_range = intersect_ranges(node_range, tt_probe.range);
+                    ScoreRange intersection =
+                        intersect_ranges(node_range, tt_probe.range);
+                    if (aspiration_config_.enabled
+                        && discard_conflicting_score_range(intersection)) {
+                        state.tt_range_conflict_detected = true;
+                        range_conflict = true;
+                        node_range = {};
+                    } else {
+                        node_range = intersection;
+                    }
                 }
                 assert(node_range.lower <= node_range.upper);
                 store_tt_if_needed(
@@ -763,7 +844,7 @@ NnueSearcherV38::SearchValue NnueSearcherV38::negamax(
                     best_lower_move,
                     best_upper_move,
                     fallback_best_move,
-                    allow_tt_score);
+                    allow_tt_score && !range_conflict);
                 return SearchValue{node_range};
             }
             ++searched_move_count;
@@ -1143,8 +1224,17 @@ NnueSearcherV38::SearchValue NnueSearcherV38::negamax(
     // repeatedly re-search it, which can make enabling LMP increase the node
     // count by an order of magnitude.
     assert(node_range.lower <= node_range.upper);
+    bool range_conflict = false;
     if (tt_probe.has_score) {
-        node_range = intersect_ranges(node_range, tt_probe.range);
+        ScoreRange intersection = intersect_ranges(node_range, tt_probe.range);
+        if (aspiration_config_.enabled
+            && discard_conflicting_score_range(intersection)) {
+            state.tt_range_conflict_detected = true;
+            range_conflict = true;
+            node_range = {};
+        } else {
+            node_range = intersection;
+        }
     }
     assert(node_range.lower <= node_range.upper);
 
@@ -1156,7 +1246,7 @@ NnueSearcherV38::SearchValue NnueSearcherV38::negamax(
         best_lower_move,
         best_upper_move,
         fallback_best_move,
-        allow_tt_score);
+        allow_tt_score && !range_conflict);
 
     return SearchValue{node_range};
 }
@@ -1184,6 +1274,7 @@ NnueSearcherV38::RootSearchResult NnueSearcherV38::search_fixed_depth(
     bool allow_root_tt_probe
 ) {
     assert(depth >= 0);
+    state.tt_range_conflict_detected = false;
     state.accumulator.reset(model_, pos);
 
     RootSearchResult root_result;
@@ -1509,11 +1600,38 @@ NnueSearcherV38::RootSearchResult NnueSearcherV38::search_fixed_depth(
         return root_result;
     }
 
-    if (root_range.lower != -Infinity && root_range.upper <= root_range.lower) {
-        root_range.upper = root_range.lower;
-    }
-    if (tt_probe.has_score) {
-        root_range = intersect_ranges(root_range, tt_probe.range);
+    bool range_conflict = aspiration_config_.enabled
+        && state.tt_range_conflict_detected;
+    if (!aspiration_config_.enabled) {
+        // Preserve the validated V38--V41 root semantics byte-for-byte.  V42
+        // A/B tests use this disabled policy as their production-V41 anchor.
+        if (root_range.lower != -Infinity
+            && root_range.upper <= root_range.lower) {
+            root_range.upper = root_range.lower;
+        }
+        if (tt_probe.has_score) {
+            root_range = intersect_ranges(root_range, tt_probe.range);
+        }
+    } else {
+        range_conflict = range_conflict
+            || discard_conflicting_score_range(root_range);
+        if (!range_conflict && tt_probe.has_score) {
+            const ScoreRange intersection =
+                intersect_ranges(root_range, tt_probe.range);
+            ScoreRange checked_intersection = intersection;
+            if (discard_conflicting_score_range(checked_intersection)) {
+                range_conflict = true;
+            } else {
+                root_range = checked_intersection;
+            }
+        }
+        if (range_conflict) {
+            // Never manufacture an exact V42 result by collapsing
+            // contradictory bounds. Unknown is deliberately non-exact, so
+            // the adaptive caller enters its TT-score-free recovery path.
+            root_result.range_conflict = true;
+            root_range = {};
+        }
     }
     assert(root_range.lower <= root_range.upper);
 
@@ -1540,7 +1658,7 @@ NnueSearcherV38::RootSearchResult NnueSearcherV38::search_fixed_depth(
         best_lower_move,
         best_upper_move,
         fallback_best_move,
-        allow_tt_score);
+        allow_tt_score && !range_conflict);
 
     result.nodes = state.nodes;
     return root_result;
@@ -1572,6 +1690,7 @@ SearchResult NnueSearcherV38::search_best_move_impl(
     std::span<const HashKey> game_history,
     bool enable_repetition
 ) {
+    clear_aspiration_stats();
     if (enable_repetition) {
         tt_.advance_generation();
     }
@@ -1593,7 +1712,16 @@ SearchResult NnueSearcherV38::search_best_move_impl(
     }
     RootSearchResult current = search_fixed_depth(pos, depth, state);
     if (!current.result.stopped && !state.stopped && !is_exact_range(current.range)) {
-        current = search_fixed_depth(pos, depth, state, -Infinity, Infinity, false);
+        if (aspiration_config_.enabled) {
+            tt_.advance_generation();
+            state.tt_scores_enabled = false;
+            current = search_fixed_depth(
+                pos, depth, state, -Infinity, Infinity, true);
+            state.tt_scores_enabled = true;
+        } else {
+            current = search_fixed_depth(
+                pos, depth, state, -Infinity, Infinity, false);
+        }
     }
     return ensure_legal_root_move(pos, current.result);
 }
@@ -1617,6 +1745,8 @@ SearchResult NnueSearcherV38::search_best_move_impl(
     bool enable_repetition
 ) {
     assert(limits.max_depth >= 0);
+
+    clear_aspiration_stats();
 
     if (enable_repetition) {
         tt_.advance_generation();
@@ -1645,13 +1775,239 @@ SearchResult NnueSearcherV38::search_best_move_impl(
     }
 
     const int aspiration_window_cp = 50;
+    bool has_mean_score = false;
+    int mean_score = 0;
+
+    auto record_completed_iteration = [&](const RootSearchResult& current) {
+        if (!is_exact_range(current.range)) {
+            return;
+        }
+        const int exact_score = current.range.lower;
+        if (!has_mean_score) {
+            mean_score = std::clamp(
+                exact_score,
+                -aspiration_config_.mean_score_clamp_cp,
+                aspiration_config_.mean_score_clamp_cp);
+            has_mean_score = true;
+        } else {
+            mean_score = update_aspiration_mean_score(
+                aspiration_config_, mean_score, exact_score);
+        }
+        ++aspiration_stats_.completed_iterations;
+        aspiration_stats_.final_mean_score_cp = mean_score;
+        aspiration_stats_.has_final_mean_score = true;
+    };
 
     for (int depth = 1; depth <= limits.max_depth; ++depth) {
-        if (state.stop_requested != nullptr
-            && state.stop_requested->load(std::memory_order_relaxed)) {
+        // Adaptive retries can hit the root TT without incrementing nodes, so
+        // V42 must poll both its clock and cooperative stop at every root
+        // boundary. Keep the legacy V38--V41 boundary check unchanged.
+        const bool stop_at_iteration_boundary = aspiration_config_.enabled
+            ? should_stop(state, true)
+            : state.stop_requested != nullptr
+                && state.stop_requested->load(std::memory_order_relaxed);
+        if (stop_at_iteration_boundary) {
             best.stopped = true;
             best.nodes = state.nodes;
             return ensure_legal_root_move(pos, best);
+        }
+        if (aspiration_config_.enabled) {
+            const bool use_narrow_window =
+                depth >= aspiration_config_.min_depth
+                && has_mean_score
+                && std::abs(best.score) < MateScoreThreshold;
+            int accepted_search_depth = depth;
+            auto search_emergency_full_window = [&]() {
+                // A failed search can leave mutually incompatible child
+                // bounds at this nominal depth. A full root window alone
+                // cannot make those scores safe, and even a clean table can
+                // reconstruct conflicts through a transposition inside the
+                // escape search itself. Start a fresh generation, retain old
+                // moves as ordering hints, and suppress every TT score
+                // probe/store throughout this bounded emergency fallback.
+                tt_.advance_generation();
+                const bool previous_tt_scores_enabled =
+                    state.tt_scores_enabled;
+                state.tt_scores_enabled = false;
+                RootSearchResult result = search_fixed_depth(
+                    pos, depth, state, -Infinity, Infinity, false);
+                state.tt_scores_enabled = previous_tt_scores_enabled;
+                return result;
+            };
+
+            RootSearchResult current;
+            if (!use_narrow_window) {
+                current = search_fixed_depth(pos, depth, state);
+                if (current.result.stopped || state.stopped) {
+                    best.stopped = true;
+                    best.nodes = state.nodes;
+                    return ensure_legal_root_move(pos, best);
+                }
+                if (!is_exact_range(current.range)) {
+                    if (current.range_conflict) {
+                        ++aspiration_stats_.range_conflict_fallbacks;
+                    }
+                    ++aspiration_stats_.full_window_fallbacks;
+                    if (should_stop(state, true)) {
+                        best.stopped = true;
+                        best.nodes = state.nodes;
+                        return ensure_legal_root_move(pos, best);
+                    }
+                    current = search_emergency_full_window();
+                    if (current.result.stopped || state.stopped) {
+                        best.stopped = true;
+                        best.nodes = state.nodes;
+                        return ensure_legal_root_move(pos, best);
+                    }
+                }
+            } else {
+                int delta = adaptive_aspiration_delta(
+                    aspiration_config_, mean_score);
+                const bool first_narrow_iteration =
+                    aspiration_stats_.narrow_iterations == 0;
+                ++aspiration_stats_.narrow_iterations;
+                aspiration_stats_.initial_delta_sum_cp += delta;
+                if (first_narrow_iteration) {
+                    aspiration_stats_.initial_delta_min_cp = delta;
+                    aspiration_stats_.initial_delta_max_cp = delta;
+                } else {
+                    aspiration_stats_.initial_delta_min_cp = std::min(
+                        aspiration_stats_.initial_delta_min_cp, delta);
+                    aspiration_stats_.initial_delta_max_cp = std::max(
+                        aspiration_stats_.initial_delta_max_cp, delta);
+                }
+                aspiration_stats_.last_initial_delta_cp = delta;
+                int alpha = aspiration_lower_bound(best.score, delta);
+                int beta = aspiration_upper_bound(best.score, delta);
+                int fail_high_reductions = 0;
+                int failed_attempts = 0;
+                bool require_full_window = false;
+
+                while (true) {
+                    if (should_stop(state, true)) {
+                        best.stopped = true;
+                        best.nodes = state.nodes;
+                        return ensure_legal_root_move(pos, best);
+                    }
+                    const int search_depth = std::max(
+                        1, depth - fail_high_reductions);
+                    ++aspiration_stats_.narrow_attempts;
+                    if (search_depth < depth) {
+                        ++aspiration_stats_.reduced_depth_attempts;
+                    }
+
+                    current = search_fixed_depth(
+                        pos,
+                        search_depth,
+                        state,
+                        alpha,
+                        beta,
+                        failed_attempts == 0);
+                    if (current.result.stopped || state.stopped) {
+                        best.stopped = true;
+                        best.nodes = state.nodes;
+                        return ensure_legal_root_move(pos, best);
+                    }
+                    if (is_exact_range(current.range)) {
+                        accepted_search_depth = search_depth;
+                        if (failed_attempts == 0) {
+                            ++aspiration_stats_.initial_window_successes;
+                        }
+                        break;
+                    }
+
+                    if (current.range.upper <= alpha) {
+                        ++aspiration_stats_.fail_lows;
+                        const int value = current.range.upper;
+                        beta = midpoint_without_overflow(alpha, beta);
+                        alpha = aspiration_lower_bound(value, delta);
+                        fail_high_reductions = 0;
+                        if (value <= -MateScoreThreshold) {
+                            alpha = -Infinity;
+                        }
+                    } else if (current.range.lower >= beta) {
+                        ++aspiration_stats_.fail_highs;
+                        const int value = current.range.lower;
+                        beta = aspiration_upper_bound(value, delta);
+                        fail_high_reductions = std::min(
+                            fail_high_reductions + 1,
+                            aspiration_config_.max_fail_high_reductions);
+                        if (value >= MateScoreThreshold) {
+                            beta = Infinity;
+                            fail_high_reductions = 0;
+                        }
+                    } else {
+                        ++aspiration_stats_.range_conflict_fallbacks;
+                        require_full_window = true;
+                    }
+
+                    ++failed_attempts;
+                    if (failed_attempts >= aspiration_config_.max_researches) {
+                        ++aspiration_stats_.retry_limit_fallbacks;
+                        require_full_window = true;
+                    }
+                    if (alpha >= beta) {
+                        ++aspiration_stats_.range_conflict_fallbacks;
+                        require_full_window = true;
+                    }
+                    if (require_full_window) {
+                        break;
+                    }
+                    delta = expand_aspiration_delta(
+                        aspiration_config_, delta);
+                }
+
+                if (require_full_window) {
+                    ++aspiration_stats_.full_window_fallbacks;
+                    accepted_search_depth = depth;
+                    if (should_stop(state, true)) {
+                        best.stopped = true;
+                        best.nodes = state.nodes;
+                        return ensure_legal_root_move(pos, best);
+                    }
+                    current = search_emergency_full_window();
+                    if (current.result.stopped || state.stopped) {
+                        best.stopped = true;
+                        best.nodes = state.nodes;
+                        return ensure_legal_root_move(pos, best);
+                    }
+                }
+            }
+
+            if (!is_exact_range(current.range)) {
+                if (current.range_conflict) {
+                    ++aspiration_stats_.range_conflict_fallbacks;
+                }
+                ++aspiration_stats_.unresolved_ranges;
+                // A completed iterative-deepening result must be exact.  Keep
+                // the previous completed iteration instead of publishing a
+                // bound as though it were an exact score.
+                best.nodes = state.nodes;
+                return ensure_legal_root_move(pos, best);
+            }
+            if (use_narrow_window) {
+                aspiration_stats_.accepted_narrow_nominal_depth_sum +=
+                    static_cast<std::uint64_t>(depth);
+                aspiration_stats_.accepted_narrow_search_depth_sum +=
+                    static_cast<std::uint64_t>(accepted_search_depth);
+                const int accepted_depth_reduction =
+                    depth - accepted_search_depth;
+                if (accepted_depth_reduction > 0) {
+                    ++aspiration_stats_.accepted_reduced_depth_iterations;
+                    aspiration_stats_.max_accepted_depth_reduction = std::max(
+                        aspiration_stats_.max_accepted_depth_reduction,
+                        accepted_depth_reduction);
+                }
+            }
+            // The public depth is the completed iterative-deepening
+            // iteration.  As in the Plenty-style policy, a fail-high retry
+            // may have used depth - fail_high_reductions before producing an
+            // exact result inside the widened window.
+            current.result.depth = depth;
+            record_completed_iteration(current);
+            inherit_ponder_move(current.result, best);
+            best = current.result;
+            continue;
         }
         if (depth == 1) {
             RootSearchResult current = search_fixed_depth(pos, depth, state);

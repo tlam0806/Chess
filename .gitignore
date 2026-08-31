@@ -1,5 +1,6 @@
 build/
 build-*/
+/build-*.nnue_v*_aspiration.lock
 build-debug/
 build_asan/
 build_debug/

@@ -68,6 +68,31 @@ bool contains_move(const std::vector<Move>& moves, Move target) {
 
 int main() {
     {
+        LowerMoveRangeBucketTranspositionTable::TTValue value{};
+        assert(value.lower_score() == -Infinity);
+        assert(value.upper_score() == Infinity);
+        assert(value.generation() == 0);
+
+        constexpr int Scores[] = {
+            -Infinity, -CheckmateScore, -1, 0, 1, CheckmateScore, Infinity};
+        for (const int score : Scores) {
+            value.set_lower_score(score);
+            value.set_upper_score(score);
+            assert(value.lower_score() == score);
+            assert(value.upper_score() == score);
+        }
+
+        for (const std::uint8_t generation : {
+                 std::uint8_t{0}, std::uint8_t{1}, std::uint8_t{127},
+                 std::uint8_t{254}, std::uint8_t{255}}) {
+            value.set_generation(generation);
+            assert(value.generation() == generation);
+            assert(value.lower_score() == Infinity);
+            assert(value.upper_score() == Infinity);
+        }
+    }
+
+    {
         LowerMoveRangeBucketTranspositionTable tt(1, 4);
         constexpr HashKey key = 0x123456789abcdef0ULL;
         const Move old_hint = make_move(

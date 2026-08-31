@@ -113,8 +113,19 @@ def key_for(board: bytes, aux: int) -> str:
     return hashlib.sha256(board + struct.pack("<H", aux)).hexdigest()[:24]
 
 
+def record_ply(record: bytes) -> int:
+    """Return the original absolute ply stored in a CHSCBIN2 record."""
+    if len(record) != RECORD_SIZE:
+        raise ValueError(
+            f"expected {RECORD_SIZE} record bytes, got {len(record)}")
+    ply = struct.unpack_from("<H", record, 36)[0]
+    if ply > 0x3FFF:
+        raise ValueError(f"ply out of CHSCBIN2 range: {ply}")
+    return ply
+
+
 def reservoir_add(
-    reservoir: list[tuple[str, str]], item: tuple[str, str], seen: int,
+    reservoir: list[tuple[str, str, int]], item: tuple[str, str, int], seen: int,
     limit: int, rng: random.Random,
 ) -> None:
     if len(reservoir) < limit:
@@ -128,18 +139,28 @@ def reservoir_add(
 def sample_corpus(
     root: Path, seed: int, excluded: set[str],
     counts: dict[str, dict[str, int]],
-) -> dict[str, list[tuple[str, str]]]:
+    shard_count: int = 16,
+) -> tuple[dict[str, list[tuple[str, str, int]]], list[Path]]:
     need = {
         "random": sum(v["random"] for v in counts.values()),
         "tactical": sum(v["tactical"] for v in counts.values()),
         "endgame": sum(v["endgame"] for v in counts.values()),
     }
+    if shard_count <= 0:
+        raise ValueError("corpus shard count must be positive")
     rng = random.Random(seed)
     shards = sorted(root.glob("*.cbin.zst"))
     rng.shuffle(shards)
+    if len(shards) < shard_count:
+        raise RuntimeError(
+            f"not enough corpus shards: need {shard_count}, got {len(shards)}")
+    # Select the shard set once, then scan every selected shard.  Stopping as
+    # soon as each reservoir filled made a nominally large dataset come from a
+    # single shard and inherited that shard's local game/distribution cluster.
+    shards = shards[:shard_count]
     pools = {name: [] for name in need}
     seen_count = {name: 0 for name in need}
-    used: set[str] = set()
+    encountered: set[str] = set()
     for shard in shards:
         proc = subprocess.Popen(
             ["zstd", "-q", "-dc", str(shard)], stdout=subprocess.PIPE
@@ -156,9 +177,11 @@ def sample_corpus(
                 raise RuntimeError(f"truncated CBIN record: {shard}")
             board = record[:32]
             aux = struct.unpack_from("<H", record, 32)[0]
+            ply = record_ply(record)
             key = key_for(board, aux)
-            if key in excluded or key in used:
+            if key in excluded or key in encountered:
                 continue
+            encountered.add(key)
             category = (
                 "endgame" if is_pawn_endgame(board)
                 else "tactical" if pseudo_tactical(board)
@@ -166,40 +189,56 @@ def sample_corpus(
             )
             seen_count[category] += 1
             reservoir_add(
-                pools[category], (key, board_fen(board, aux)),
+                pools[category], (key, board_fen(board, aux), ply),
                 seen_count[category], need[category], rng,
             )
         if proc.wait() != 0:
             raise RuntimeError(f"zstd failed: {shard}")
-        if all(len(pools[name]) >= need[name] for name in need):
-            break
     for name, count in need.items():
         if len(pools[name]) < count:
             raise RuntimeError(f"not enough {name}: {len(pools[name])} < {count}")
-        used.update(key for key, _ in pools[name])
         rng.shuffle(pools[name])
-    return pools
+    return pools, shards
 
 
 def balanced_prefixes(
     paths: list[Path], seed: int, excluded: set[str],
     counts: dict[str, dict[str, int]],
-) -> list[tuple[str, str]]:
-    prefixes: dict[str, tuple[str, str]] = {}
+) -> list[tuple[str, str, int]]:
+    # One source game/line may yield many legal prefixes, but those positions
+    # are a lineage and must never be split between selection and holdout.  Use
+    # at most one position per unique source line: its full move sequence.  We
+    # also discard a shorter source line when it is a strict prefix of another
+    # retained line, making the resulting pool globally prefix-free even when
+    # source files contain lines of different lengths.
+    unique_lines: set[tuple[str, ...]] = set()
     for path in paths:
         for raw in path.read_text().splitlines():
             line = raw.split("#", 1)[0].strip()
             moves = line.split()
-            for length in range(4, len(moves) + 1):
-                payload = "book:" + " ".join(moves[:length])
-                key = hashlib.sha256(payload.encode()).hexdigest()[:24]
-                if key not in excluded:
-                    prefixes[key] = (key, payload)
-    out = list(prefixes.values())
+            if len(moves) >= 4:
+                unique_lines.add(tuple(moves))
+
+    strict_prefixes = {
+        moves[:length]
+        for moves in unique_lines
+        for length in range(4, len(moves))
+    }
+    maximal_lines = sorted(unique_lines - strict_prefixes)
+    out: list[tuple[str, str, int]] = []
+    for moves in maximal_lines:
+        payload = "book:" + " ".join(moves)
+        key = hashlib.sha256(payload.encode()).hexdigest()[:24]
+        if key not in excluded:
+            # A book line starts at the initial position, so the number of UCI
+            # moves is exactly the absolute ply used by WDL calibration.
+            out.append((key, payload, len(moves)))
     random.Random(seed ^ 0xB41A).shuffle(out)
     required = sum(v["balanced"] for v in counts.values())
     if len(out) < required:
-        raise RuntimeError(f"not enough unique balanced prefixes: {len(out)}")
+        raise RuntimeError(
+            "not enough unique prefix-free balanced source lines: "
+            f"{len(out)} < {required}")
     return out[:required]
 
 
@@ -212,6 +251,10 @@ def main() -> None:
     )
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--seed", type=int, default=20260726)
+    parser.add_argument(
+        "--corpus-shards", type=int, default=16,
+        help="number of deterministically selected corpus shards to scan fully",
+    )
     parser.add_argument("--scale", type=int, default=1)
     parser.add_argument("--balanced-total", type=int)
     parser.add_argument(
@@ -219,6 +262,8 @@ def main() -> None:
     args = parser.parse_args()
     if args.scale <= 0:
         raise SystemExit("--scale must be positive")
+    if args.corpus_shards <= 0:
+        raise SystemExit("--corpus-shards must be positive")
     counts = {
         split: {
             category: count * args.scale
@@ -256,7 +301,8 @@ def main() -> None:
                 fields = row.split("\t", 2)
                 if len(fields) >= 2:
                     excluded.add(fields[1])
-    pools = sample_corpus(args.corpus, args.seed, excluded, counts)
+    pools, corpus_shards = sample_corpus(
+        args.corpus, args.seed, excluded, counts, args.corpus_shards)
     pools["balanced"] = balanced_prefixes(
         args.balanced, args.seed, excluded, counts)
     args.output_dir.mkdir(parents=True, exist_ok=True)
@@ -268,16 +314,22 @@ def main() -> None:
             start = offsets[category]
             selected = pools[category][start:start + count]
             offsets[category] += count
-            for key, payload in selected:
+            for key, payload, ply in selected:
                 if key in global_keys:
                     raise RuntimeError(f"duplicate position hash: {key}")
                 global_keys.add(key)
-                rows.append(f"{category}\t{key}\t{payload}")
+                rows.append(f"{category}\t{key}\t{ply}\t{payload}")
         random.Random(args.seed ^ sum(map(ord, split))).shuffle(rows)
         (args.output_dir / f"{split}.tsv").write_text("\n".join(rows) + "\n")
     manifest = (
         f"seed={args.seed}\n"
         f"hash=sha256_96bit\n"
+        f"schema=category_hash_ply_payload_v1\n"
+        f"balanced_sampling=one_full_prefix_free_line_per_source_v1\n"
+        f"corpus_shard_count={len(corpus_shards)}\n"
+        f"corpus_shard_selection_seed={args.seed}\n"
+        f"corpus_shard_names_sha256="
+        f"{hashlib.sha256(chr(10).join(path.name for path in corpus_shards).encode()).hexdigest()}\n"
         f"excluded={len(excluded)}\n"
         f"total={len(global_keys)}\n"
         + "".join(

@@ -2,7 +2,11 @@
 #include "game_state.hpp"
 #include "move.hpp"
 #include "nnue_searcher_v36.hpp"
-#if defined(CHESS_NNUE_V41_TIME_GAUNTLET)
+#if defined(CHESS_NNUE_V43_TIME_GAUNTLET)
+#include "nnue_searcher_v43.hpp"
+#elif defined(CHESS_NNUE_V42_TIME_GAUNTLET)
+#include "nnue_searcher_v42.hpp"
+#elif defined(CHESS_NNUE_V41_TIME_GAUNTLET)
 #include "nnue_searcher_v41.hpp"
 #elif defined(CHESS_NNUE_V40_TIME_GAUNTLET)
 #include "nnue_searcher_v40.hpp"
@@ -20,8 +24,12 @@
 #include <cmath>
 #include <cstdlib>
 #include <cstdint>
+#include <filesystem>
 #include <fstream>
+#include <iomanip>
 #include <iostream>
+#include <iterator>
+#include <limits>
 #include <map>
 #include <random>
 #include <set>
@@ -34,7 +42,11 @@
 
 namespace {
 
-#if defined(CHESS_NNUE_V41_TIME_GAUNTLET)
+#if defined(CHESS_NNUE_V43_TIME_GAUNTLET)
+using MatchSearcher = chess::NnueSearcherV43;
+#elif defined(CHESS_NNUE_V42_TIME_GAUNTLET)
+using MatchSearcher = chess::NnueSearcherV42;
+#elif defined(CHESS_NNUE_V41_TIME_GAUNTLET)
 using MatchSearcher = chess::NnueSearcherV41;
 #elif defined(CHESS_NNUE_V40_TIME_GAUNTLET)
 using MatchSearcher = chess::NnueSearcherV40;
@@ -48,6 +60,16 @@ struct Profile {
     std::string name;
     MatchSearcher::SelectiveConfig config;
     bool twofold_search_draw = false;
+    bool reuse_stale_tt_scores = false;
+    bool reuse_deeper_tt_scores = false;
+    MatchSearcher::AspirationConfig aspiration = [] {
+        MatchSearcher::AspirationConfig result;
+#if defined(CHESS_NNUE_V42_TIME_GAUNTLET) \
+    || defined(CHESS_NNUE_V43_TIME_GAUNTLET)
+        result.enabled = true;
+#endif
+        return result;
+    }();
 };
 
 struct Opening {
@@ -76,7 +98,10 @@ struct Options {
     bool clean_search = false;
     std::string balanced_new_config;
     std::vector<std::string> profile_specs;
+    std::vector<std::string> aspiration_profile_specs;
     std::set<std::string> twofold_search_profiles;
+    std::set<std::string> reuse_stale_tt_profiles;
+    std::set<std::string> reuse_deeper_tt_profiles;
     int ci_min_pairs = 40;
     std::string trace_key;
     std::string stop_after_key;
@@ -164,9 +189,20 @@ Options parse_args(int argc, char** argv) {
         } else if (arg == "--profile") {
             options.profile_specs.push_back(next());
             options.round_robin = true;
+        } else if (arg == "--aspiration-profile") {
+            options.aspiration_profile_specs.push_back(next());
+            options.round_robin = true;
         } else if (arg == "--twofold-search-profile") {
             options.twofold_search_profiles.insert(next());
             options.round_robin = true;
+#if defined(CHESS_NNUE_V43_TIME_GAUNTLET)
+        } else if (arg == "--reuse-stale-tt-profile") {
+            options.reuse_stale_tt_profiles.insert(next());
+            options.round_robin = true;
+        } else if (arg == "--reuse-deeper-tt-profile") {
+            options.reuse_deeper_tt_profiles.insert(next());
+            options.round_robin = true;
+#endif
         } else if (arg == "--ci-min-pairs") {
             options.ci_min_pairs = parse_int(next(), arg);
         } else if (arg == "--trace-key") {
@@ -513,34 +549,6 @@ GameResult play_game(
     return game;
 }
 
-std::map<std::string, double> completed_games(const std::string& path) {
-    std::ifstream input(path);
-    std::map<std::string, double> games;
-    std::string line;
-    while (std::getline(input, line)) {
-        const std::string marker = "\"key\":\"";
-        const std::size_t start = line.find(marker);
-        if (start == std::string::npos) continue;
-        const std::size_t value_start = start + marker.size();
-        const std::size_t end = line.find('"', value_start);
-        if (end == std::string::npos) continue;
-        const std::string key = line.substr(value_start, end - value_start);
-        const std::string outcome_marker = "\"candidate_outcome\":\"";
-        const std::size_t outcome_start = line.find(outcome_marker);
-        if (outcome_start == std::string::npos) continue;
-        const std::size_t outcome_value_start =
-            outcome_start + outcome_marker.size();
-        const std::size_t outcome_end = line.find('"', outcome_value_start);
-        if (outcome_end == std::string::npos) continue;
-        const std::string outcome = line.substr(
-            outcome_value_start, outcome_end - outcome_value_start);
-        if (outcome == "win") games[key] = 1.0;
-        else if (outcome == "draw") games[key] = 0.5;
-        else if (outcome == "loss") games[key] = 0.0;
-    }
-    return games;
-}
-
 std::string candidate_outcome(const GameResult& game, bool candidate_white) {
     if (game.result == "1/2-1/2") return "draw";
     const bool white_won = game.result == "1-0";
@@ -580,16 +588,379 @@ ConfidenceInterval paired_score_ci95(const std::vector<double>& pair_scores) {
     return result;
 }
 
+void append_aspiration_config_json(
+    std::ostream& output,
+    const MatchSearcher::AspirationConfig& config
+) {
+    output << "{\"enabled\":" << (config.enabled ? "true" : "false")
+           << ",\"min_depth\":" << config.min_depth
+           << ",\"delta_base_cp\":" << config.delta_base_cp
+           << ",\"delta_divisor\":" << config.delta_divisor
+           << ",\"expansion_factor_per_mille\":"
+           << config.expansion_factor_per_mille
+           << ",\"max_fail_high_reductions\":"
+           << config.max_fail_high_reductions
+           << ",\"mean_score_new_weight_per_mille\":"
+           << config.mean_score_new_weight_per_mille
+           << ",\"max_researches\":" << config.max_researches
+           << ",\"mean_score_clamp_cp\":" << config.mean_score_clamp_cp
+           << '}';
+}
+
+void append_json_string(std::ostream& output, std::string_view value) {
+    static constexpr char hex[] = "0123456789abcdef";
+    output << '"';
+    for (const unsigned char byte : value) {
+        switch (byte) {
+            case '"': output << "\\\""; break;
+            case '\\': output << "\\\\"; break;
+            case '\b': output << "\\b"; break;
+            case '\f': output << "\\f"; break;
+            case '\n': output << "\\n"; break;
+            case '\r': output << "\\r"; break;
+            case '\t': output << "\\t"; break;
+            default:
+                if (byte < 0x20) {
+                    output << "\\u00" << hex[byte >> 4] << hex[byte & 0x0f];
+                } else {
+                    output << static_cast<char>(byte);
+                }
+        }
+    }
+    output << '"';
+}
+
+std::uint64_t fnv1a_update(
+    std::uint64_t hash,
+    const char* data,
+    std::size_t size
+) {
+    for (std::size_t index = 0; index < size; ++index) {
+        hash ^= static_cast<unsigned char>(data[index]);
+        hash *= 1'099'511'628'211ULL;
+    }
+    return hash;
+}
+
+std::string fnv1a_hex(std::string_view value) {
+    const std::uint64_t hash = fnv1a_update(
+        14'695'981'039'346'656'037ULL, value.data(), value.size());
+    std::ostringstream output;
+    output << std::hex << std::setw(16) << std::setfill('0') << hash;
+    return output.str();
+}
+
+struct FileFingerprint {
+    std::string path;
+    std::uintmax_t size = 0;
+    std::string fnv1a64;
+};
+
+std::filesystem::path resolve_executable(std::string_view argv0) {
+    std::filesystem::path candidate{std::string(argv0)};
+    std::error_code error;
+    if (candidate.has_parent_path()) {
+        const auto result = std::filesystem::canonical(candidate, error);
+        if (!error) return result;
+    } else if (const char* path = std::getenv("PATH")) {
+        std::istringstream entries(path);
+        std::string directory;
+        while (std::getline(entries, directory, ':')) {
+            if (directory.empty()) directory = ".";
+            const auto resolved = std::filesystem::canonical(
+                std::filesystem::path(directory) / candidate, error);
+            if (!error) return resolved;
+            error.clear();
+        }
+    }
+    throw std::runtime_error(
+        "cannot resolve gauntlet executable for resume manifest: "
+        + std::string(argv0));
+}
+
+FileFingerprint fingerprint_file(const std::filesystem::path& input_path) {
+    std::error_code error;
+    const std::filesystem::path path =
+        std::filesystem::canonical(input_path, error);
+    if (error) {
+        throw std::runtime_error(
+            "cannot resolve manifest input: " + input_path.string());
+    }
+    std::ifstream input(path, std::ios::binary);
+    if (!input) {
+        throw std::runtime_error(
+            "cannot fingerprint manifest input: " + path.string());
+    }
+    std::uint64_t hash = 14'695'981'039'346'656'037ULL;
+    std::uintmax_t size = 0;
+    std::array<char, 64 * 1024> buffer{};
+    while (input) {
+        input.read(buffer.data(), static_cast<std::streamsize>(buffer.size()));
+        const std::streamsize count = input.gcount();
+        if (count <= 0) break;
+        hash = fnv1a_update(
+            hash, buffer.data(), static_cast<std::size_t>(count));
+        size += static_cast<std::uintmax_t>(count);
+    }
+    if (!input.eof()) {
+        throw std::runtime_error(
+            "failed while fingerprinting manifest input: " + path.string());
+    }
+    std::ostringstream encoded_hash;
+    encoded_hash << std::hex << std::setw(16) << std::setfill('0') << hash;
+    return {path.string(), size, encoded_hash.str()};
+}
+
+void append_file_fingerprint_json(
+    std::ostream& output,
+    const FileFingerprint& fingerprint
+) {
+    output << "{\"path\":";
+    append_json_string(output, fingerprint.path);
+    output << ",\"size\":" << fingerprint.size
+           << ",\"fnv1a64\":\"" << fingerprint.fnv1a64 << "\"}";
+}
+
+void append_selective_config_json(
+    std::ostream& output,
+    const MatchSearcher::SelectiveConfig& config
+) {
+    output << std::setprecision(std::numeric_limits<double>::max_digits10)
+           << "{\"enable_lmr\":" << (config.enable_lmr ? "true" : "false")
+           << ",\"lmr_base\":" << config.lmr_base
+           << ",\"lmr_divisor\":" << config.lmr_divisor
+           << ",\"lmr_min_depth\":" << config.lmr_min_depth
+           << ",\"lmr_min_move_index\":" << config.lmr_min_move_index
+           << ",\"enable_null_move\":"
+           << (config.enable_null_move ? "true" : "false")
+           << ",\"null_move_min_depth\":" << config.null_move_min_depth
+           << ",\"null_move_reduction\":" << config.null_move_reduction
+           << ",\"enable_reverse_futility\":"
+           << (config.enable_reverse_futility ? "true" : "false")
+           << ",\"reverse_futility_max_depth\":"
+           << config.reverse_futility_max_depth
+           << ",\"reverse_futility_base_margin\":"
+           << config.reverse_futility_base_margin
+           << ",\"reverse_futility_margin_per_depth\":"
+           << config.reverse_futility_margin_per_depth
+           << ",\"enable_late_move_pruning\":"
+           << (config.enable_late_move_pruning ? "true" : "false")
+           << ",\"late_move_pruning_max_depth\":"
+           << config.late_move_pruning_max_depth
+           << ",\"late_move_pruning_base\":"
+           << config.late_move_pruning_base
+           << ",\"late_move_pruning_depth_multiplier\":"
+           << config.late_move_pruning_depth_multiplier
+           << ",\"enable_qsearch_see_pruning\":"
+           << (config.enable_qsearch_see_pruning ? "true" : "false")
+           << ",\"qsearch_see_threshold\":" << config.qsearch_see_threshold
+           << ",\"enable_main_search_see_pruning\":"
+           << (config.enable_main_search_see_pruning ? "true" : "false")
+           << ",\"main_search_see_max_depth\":"
+           << config.main_search_see_max_depth
+           << ",\"main_search_see_margin_per_depth\":"
+           << config.main_search_see_margin_per_depth
+           << '}';
+}
+
+struct GauntletManifest {
+    std::string json;
+    std::string run_fingerprint;
+};
+
+GauntletManifest make_gauntlet_manifest(
+    const Options& options,
+    std::span<const Profile> profiles,
+    std::string_view argv0
+) {
+    std::ostringstream identity;
+    identity << std::setprecision(std::numeric_limits<double>::max_digits10)
+             << "{\"binary\":";
+    append_file_fingerprint_json(
+        identity, fingerprint_file(resolve_executable(argv0)));
+    identity << ",\"book\":";
+    append_file_fingerprint_json(identity, fingerprint_file(options.book));
+    identity << ",\"model\":";
+    append_file_fingerprint_json(identity, fingerprint_file(options.model));
+    identity << ",\"opponent_model\":";
+    if (options.opponent_model.empty()) {
+        identity << "null";
+    } else {
+        append_file_fingerprint_json(
+            identity, fingerprint_file(options.opponent_model));
+    }
+    identity << ",\"match_options\":{"
+             << "\"openings\":" << options.openings
+             << ",\"base_ms\":" << options.base_ms
+             << ",\"increment_ms\":" << options.increment_ms
+             << ",\"overhead_ms\":" << options.overhead_ms
+             << ",\"max_plies\":" << options.max_plies
+             << ",\"tt_mb\":" << options.tt_mb
+             << ",\"seed\":" << options.seed
+             << ",\"round_robin\":"
+             << (options.round_robin ? "true" : "false")
+             << ",\"fast_balanced_ci\":"
+             << (options.fast_balanced_ci ? "true" : "false")
+             << ",\"stop_on_ci\":"
+             << (options.stop_on_ci ? "true" : "false")
+             << ",\"ci_max_width\":" << options.ci_max_width
+             << ",\"ci_min_pairs\":" << options.ci_min_pairs
+             << ",\"balanced_rematch\":"
+             << (options.balanced_rematch ? "true" : "false")
+             << ",\"clean_search\":"
+             << (options.clean_search ? "true" : "false")
+             << "},\"profiles\":[";
+    for (std::size_t index = 0; index < profiles.size(); ++index) {
+        if (index != 0) identity << ',';
+        const Profile& profile = profiles[index];
+        identity << "{\"name\":";
+        append_json_string(identity, profile.name);
+        identity << ",\"twofold_search_draw\":"
+                 << (profile.twofold_search_draw ? "true" : "false")
+#if defined(CHESS_NNUE_V43_TIME_GAUNTLET)
+                 << ",\"reuse_stale_tt_scores\":"
+                 << (profile.reuse_stale_tt_scores ? "true" : "false")
+                 << ",\"reuse_deeper_tt_scores\":"
+                 << (profile.reuse_deeper_tt_scores ? "true" : "false")
+#endif
+                 << ",\"selective_config\":";
+        append_selective_config_json(identity, profile.config);
+        identity << ",\"aspiration_config\":";
+        append_aspiration_config_json(identity, profile.aspiration);
+        identity << '}';
+    }
+    identity << "]}";
+
+    const std::string identity_json = identity.str();
+    const std::string run_fingerprint = fnv1a_hex(identity_json);
+    std::ostringstream manifest;
+    manifest << "{\"kind\":\"gauntlet_manifest\",\"schema_version\":1,"
+             << "\"run_fingerprint\":\"" << run_fingerprint
+             << "\",\"identity\":" << identity_json << '}';
+    return {manifest.str(), run_fingerprint};
+}
+
+void ensure_gauntlet_manifest(
+    const std::string& output_path,
+    const GauntletManifest& expected
+) {
+    const std::filesystem::path games_path(output_path);
+    const std::filesystem::path manifest_path(output_path + ".manifest.json");
+    std::error_code error;
+    const bool games_nonempty = std::filesystem::exists(games_path, error)
+        && std::filesystem::file_size(games_path, error) != 0;
+    if (error) {
+        throw std::runtime_error("cannot inspect gauntlet output for resume");
+    }
+
+    std::ifstream existing(manifest_path, std::ios::binary);
+    if (existing) {
+        const std::string actual{
+            std::istreambuf_iterator<char>(existing),
+            std::istreambuf_iterator<char>()};
+        if (actual != expected.json && actual != expected.json + "\n") {
+            throw std::runtime_error(
+                "gauntlet output manifest mismatch; use a new --output path");
+        }
+        return;
+    }
+    if (games_nonempty) {
+        throw std::runtime_error(
+            "refusing to resume legacy gauntlet output without a manifest; "
+            "use a new --output path");
+    }
+
+    std::ofstream created(manifest_path, std::ios::binary | std::ios::trunc);
+    if (!created) {
+        throw std::runtime_error("failed to create gauntlet resume manifest");
+    }
+    created << expected.json << '\n';
+    created.flush();
+    if (!created) {
+        throw std::runtime_error("failed to write gauntlet resume manifest");
+    }
+}
+
+std::map<std::string, double> completed_games(
+    const std::string& path,
+    std::string_view run_fingerprint
+) {
+    std::ifstream input(path);
+    std::map<std::string, double> games;
+    std::string line;
+    const std::string fingerprint_marker =
+        "\"run_fingerprint\":\"" + std::string(run_fingerprint) + "\"";
+    for (int line_number = 1; std::getline(input, line); ++line_number) {
+        if (line.empty()) continue;
+        if (line.find(fingerprint_marker) == std::string::npos) {
+            throw std::runtime_error(
+                "gauntlet output record does not match resume manifest at line "
+                + std::to_string(line_number));
+        }
+        const std::string marker = "\"key\":\"";
+        const std::size_t start = line.find(marker);
+        if (start == std::string::npos) {
+            throw std::runtime_error(
+                "malformed gauntlet output at line "
+                + std::to_string(line_number));
+        }
+        const std::size_t value_start = start + marker.size();
+        const std::size_t end = line.find('"', value_start);
+        if (end == std::string::npos) {
+            throw std::runtime_error(
+                "malformed gauntlet key at line "
+                + std::to_string(line_number));
+        }
+        const std::string key = line.substr(value_start, end - value_start);
+        const std::string outcome_marker = "\"candidate_outcome\":\"";
+        const std::size_t outcome_start = line.find(outcome_marker);
+        if (outcome_start == std::string::npos) {
+            throw std::runtime_error(
+                "missing gauntlet outcome at line "
+                + std::to_string(line_number));
+        }
+        const std::size_t outcome_value_start =
+            outcome_start + outcome_marker.size();
+        const std::size_t outcome_end = line.find('"', outcome_value_start);
+        if (outcome_end == std::string::npos) {
+            throw std::runtime_error(
+                "malformed gauntlet outcome at line "
+                + std::to_string(line_number));
+        }
+        const std::string outcome = line.substr(
+            outcome_value_start, outcome_end - outcome_value_start);
+        double points = 0.0;
+        if (outcome == "win") points = 1.0;
+        else if (outcome == "draw") points = 0.5;
+        else if (outcome != "loss") {
+            throw std::runtime_error(
+                "unknown gauntlet outcome at line "
+                + std::to_string(line_number));
+        }
+        if (!games.emplace(key, points).second) {
+            throw std::runtime_error(
+                "duplicate gauntlet game key at line "
+                + std::to_string(line_number));
+        }
+    }
+    return games;
+}
+
 void append_game(
     std::ofstream& output,
     const std::string& key,
+    const std::string& logical_key,
+    std::string_view run_fingerprint,
     const Profile& profile,
     std::string_view opponent,
+    const Profile* opponent_profile,
     const Opening& opening,
     bool candidate_white,
     const GameResult& game
 ) {
-    output << "{\"kind\":\"game\",\"key\":\"" << key
+    output << "{\"kind\":\"game\",\"run_fingerprint\":\""
+           << run_fingerprint << "\",\"key\":\"" << key
+           << "\",\"logical_key\":\"" << logical_key
            << "\",\"profile\":\"" << profile.name
            << "\",\"opponent\":\"" << opponent
            << "\",\"opening_line\":" << opening.source_line
@@ -610,7 +981,36 @@ void append_game(
            << game.control_search_cycle_draws
            << ",\"candidate_twofold_search_draw\":"
            << (profile.twofold_search_draw ? "true" : "false")
-           << "}\n";
+#if defined(CHESS_NNUE_V43_TIME_GAUNTLET)
+           << ",\"candidate_reuse_stale_tt_scores\":"
+           << (profile.reuse_stale_tt_scores ? "true" : "false")
+           << ",\"candidate_reuse_deeper_tt_scores\":"
+           << (profile.reuse_deeper_tt_scores ? "true" : "false")
+           << ",\"opponent_reuse_stale_tt_scores\":";
+    if (opponent_profile != nullptr) {
+        output << (opponent_profile->reuse_stale_tt_scores ? "true" : "false");
+    } else {
+        output << "null";
+    }
+    output << ",\"opponent_reuse_deeper_tt_scores\":";
+    if (opponent_profile != nullptr) {
+        output << (opponent_profile->reuse_deeper_tt_scores ? "true" : "false");
+    } else {
+        output << "null";
+    }
+    output
+#endif
+           << ",\"candidate_adaptive_aspiration\":"
+           << (profile.aspiration.enabled ? "true" : "false")
+           << ",\"candidate_aspiration_config\":";
+    append_aspiration_config_json(output, profile.aspiration);
+    output << ",\"opponent_aspiration_config\":";
+    if (opponent_profile != nullptr) {
+        append_aspiration_config_json(output, opponent_profile->aspiration);
+    } else {
+        output << "null";
+    }
+    output << "}\n";
     output.flush();
 }
 
@@ -664,13 +1064,20 @@ bool parse_bool01(std::string_view value, std::string_view name) {
 Profile parse_profile(std::string text) {
     std::replace(text.begin(), text.end(), ',', ' ');
     const std::vector<std::string> fields = words(text);
-    if (fields.size() != 15 && fields.size() != 17) {
+    if (fields.size() != 15 && fields.size() != 16
+        && fields.size() != 17 && fields.size() != 18
+        && fields.size() != 20 && fields.size() != 21
+        && fields.size() != 22 && fields.size() != 23) {
         throw std::runtime_error(
             "--profile needs name,lmr_base,lmr_divisor,lmr_min_depth,"
             "lmr_min_move,null_min_depth,null_reduction,rfp_enabled,"
             "rfp_max_depth,rfp_base_margin,rfp_margin_per_depth,"
             "lmp_enabled,lmp_max_depth,lmp_base,lmp_depth_multiplier"
-            "[,qsee_enabled,qsee_threshold]");
+            "[,qsee_enabled,qsee_threshold"
+            "[,main_see_enabled,main_see_max_depth,"
+            "main_see_margin_per_depth"
+            "[,lmr_enabled,null_move_enabled]]]"
+            "[,adaptive_aspiration]");
     }
     if (fields[0].empty()
         || fields[0].find_first_not_of(
@@ -703,18 +1110,99 @@ Profile parse_profile(std::string text) {
             parse_int(fields[13], "lmp_base"));
         result.late_move_pruning_depth_multiplier = static_cast<std::size_t>(
             parse_int(fields[14], "lmp_depth_multiplier"));
-        if (fields.size() == 17) {
+        if (fields.size() == 17 || fields.size() == 18
+            || fields.size() == 20 || fields.size() == 21
+            || fields.size() == 22 || fields.size() == 23) {
             result.enable_qsearch_see_pruning =
                 parse_bool01(fields[15], "qsee_enabled");
             result.qsearch_see_threshold =
                 parse_int(fields[16], "qsee_threshold");
         }
-        return {fields[0], result};
+        if (fields.size() == 20 || fields.size() == 21
+            || fields.size() == 22 || fields.size() == 23) {
+            result.enable_main_search_see_pruning =
+                parse_bool01(fields[17], "main_see_enabled");
+            result.main_search_see_max_depth =
+                parse_int(fields[18], "main_see_max_depth");
+            result.main_search_see_margin_per_depth =
+                parse_int(fields[19], "main_see_margin_per_depth");
+        }
+        if (fields.size() == 22 || fields.size() == 23) {
+            result.enable_lmr = parse_bool01(fields[20], "lmr_enabled");
+            result.enable_null_move =
+                parse_bool01(fields[21], "null_move_enabled");
+        }
+        Profile profile{fields[0], result};
+        if (fields.size() == 16) {
+            profile.aspiration.enabled =
+                parse_bool01(fields[15], "adaptive_aspiration");
+        } else if (fields.size() == 18) {
+            profile.aspiration.enabled =
+                parse_bool01(fields[17], "adaptive_aspiration");
+        } else if (fields.size() == 21) {
+            profile.aspiration.enabled =
+                parse_bool01(fields[20], "adaptive_aspiration");
+        } else if (fields.size() == 23) {
+            profile.aspiration.enabled =
+                parse_bool01(fields[22], "adaptive_aspiration");
+        }
+        return profile;
     } catch (const std::invalid_argument&) {
         throw std::runtime_error("invalid --profile");
     } catch (const std::out_of_range&) {
         throw std::runtime_error("out-of-range --profile");
     }
+}
+
+struct NamedAspirationConfig {
+    std::string profile_name;
+    MatchSearcher::AspirationConfig config;
+};
+
+NamedAspirationConfig parse_aspiration_profile(std::string text) {
+    std::replace(text.begin(), text.end(), ',', ' ');
+    const std::vector<std::string> fields = words(text);
+    if (fields.size() != 10) {
+        throw std::runtime_error(
+            "--aspiration-profile needs name,enabled,min_depth,delta_base_cp,"
+            "delta_divisor,expansion_factor_per_mille,"
+            "max_fail_high_reductions,mean_score_new_weight_per_mille,"
+            "max_researches,mean_score_clamp_cp");
+    }
+    if (fields[0].empty()
+        || fields[0].find_first_not_of(
+            "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-")
+            != std::string::npos) {
+        throw std::runtime_error(
+            "aspiration profile name may contain only letters, digits, '_' "
+            "and '-'");
+    }
+    MatchSearcher::AspirationConfig result;
+    result.enabled = parse_bool01(fields[1], "aspiration enabled");
+    result.min_depth = parse_int(fields[2], "aspiration min_depth");
+    result.delta_base_cp = parse_int(fields[3], "aspiration delta_base_cp");
+    result.delta_divisor = parse_int(fields[4], "aspiration delta_divisor");
+    result.expansion_factor_per_mille =
+        parse_int(fields[5], "aspiration expansion_factor_per_mille");
+    result.max_fail_high_reductions =
+        parse_int(fields[6], "aspiration max_fail_high_reductions");
+    result.mean_score_new_weight_per_mille =
+        parse_int(fields[7], "aspiration mean_score_new_weight_per_mille");
+    result.max_researches =
+        parse_int(fields[8], "aspiration max_researches");
+    result.mean_score_clamp_cp =
+        parse_int(fields[9], "aspiration mean_score_clamp_cp");
+    if (result.min_depth < 2 || result.delta_base_cp < 1
+        || result.delta_divisor < 1
+        || result.expansion_factor_per_mille < 1'000
+        || result.max_fail_high_reductions < 0
+        || result.mean_score_new_weight_per_mille < 0
+        || result.mean_score_new_weight_per_mille > 1'000
+        || result.max_researches < 1 || result.mean_score_clamp_cp < 1) {
+        throw std::runtime_error(
+            "invalid value in --aspiration-profile for " + fields[0]);
+    }
+    return {fields[0], result};
 }
 
 void disable_dirty_pruning(MatchSearcher::SelectiveConfig& config) {
@@ -723,6 +1211,38 @@ void disable_dirty_pruning(MatchSearcher::SelectiveConfig& config) {
     config.enable_reverse_futility = false;
     config.enable_late_move_pruning = false;
     config.enable_qsearch_see_pruning = false;
+    config.enable_main_search_see_pruning = false;
+}
+
+void configure_aspiration(
+    MatchSearcher& searcher,
+    const MatchSearcher::AspirationConfig& config
+) {
+    searcher.set_aspiration_config(config);
+}
+
+void configure_stale_tt_reuse(MatchSearcher& searcher, bool enabled) {
+#if defined(CHESS_NNUE_V43_TIME_GAUNTLET)
+    searcher.set_reuse_stale_tt_scores(enabled);
+#else
+    if (enabled) {
+        throw std::runtime_error(
+            "stale TT score reuse is available only in the V43 gauntlet");
+    }
+    static_cast<void>(searcher);
+#endif
+}
+
+void configure_deeper_tt_reuse(MatchSearcher& searcher, bool enabled) {
+#if defined(CHESS_NNUE_V43_TIME_GAUNTLET)
+    searcher.set_reuse_deeper_tt_scores(enabled);
+#else
+    if (enabled) {
+        throw std::runtime_error(
+            "deeper TT score reuse is available only in the V43 gauntlet");
+    }
+    static_cast<void>(searcher);
+#endif
 }
 
 } // namespace
@@ -771,6 +1291,28 @@ int main(int argc, char** argv) {
                 profiles.push_back(std::move(profile));
             }
         }
+        std::set<std::string> configured_aspiration_profiles;
+        for (const std::string& spec : options.aspiration_profile_specs) {
+            const NamedAspirationConfig parsed =
+                parse_aspiration_profile(spec);
+            if (!configured_aspiration_profiles.insert(parsed.profile_name)
+                     .second) {
+                throw std::runtime_error(
+                    "duplicate --aspiration-profile name: "
+                    + parsed.profile_name);
+            }
+            const auto profile = std::find_if(
+                profiles.begin(), profiles.end(),
+                [&](const Profile& candidate) {
+                    return candidate.name == parsed.profile_name;
+                });
+            if (profile == profiles.end()) {
+                throw std::runtime_error(
+                    "--aspiration-profile does not match a profile: "
+                    + parsed.profile_name);
+            }
+            profile->aspiration = parsed.config;
+        }
         if (options.clean_search) {
             for (Profile& profile : profiles) {
                 disable_dirty_pruning(profile.config);
@@ -788,8 +1330,35 @@ int main(int argc, char** argv) {
                 "--twofold-search-profile does not match a --profile: "
                 + *unmatched_twofold_profiles.begin());
         }
+        std::set<std::string> unmatched_stale_tt_profiles =
+            options.reuse_stale_tt_profiles;
+        for (Profile& profile : profiles) {
+            if (unmatched_stale_tt_profiles.erase(profile.name) != 0) {
+                profile.reuse_stale_tt_scores = true;
+            }
+        }
+        if (!unmatched_stale_tt_profiles.empty()) {
+            throw std::runtime_error(
+                "--reuse-stale-tt-profile does not match a --profile: "
+                + *unmatched_stale_tt_profiles.begin());
+        }
+        std::set<std::string> unmatched_deeper_tt_profiles =
+            options.reuse_deeper_tt_profiles;
+        for (Profile& profile : profiles) {
+            if (unmatched_deeper_tt_profiles.erase(profile.name) != 0) {
+                profile.reuse_deeper_tt_scores = true;
+            }
+        }
+        if (!unmatched_deeper_tt_profiles.empty()) {
+            throw std::runtime_error(
+                "--reuse-deeper-tt-profile does not match a --profile: "
+                + *unmatched_deeper_tt_profiles.begin());
+        }
+        const GauntletManifest manifest = make_gauntlet_manifest(
+            options, profiles, argv[0]);
+        ensure_gauntlet_manifest(options.output, manifest);
         const std::map<std::string, double> completed =
-            completed_games(options.output);
+            completed_games(options.output, manifest.run_fingerprint);
         std::ofstream output(options.output, std::ios::app);
         if (!output) throw std::runtime_error("failed to open output");
         int newly_completed = 0;
@@ -814,6 +1383,18 @@ int main(int argc, char** argv) {
                         *second_model, options.tt_mb, 4, 10, 14, 14'000,
                         MatchSearcher::MoveOrderingWeights{},
                         opponent.config);
+                    configure_aspiration(
+                        first_engine, profile.aspiration);
+                    configure_aspiration(
+                        second_engine, opponent.aspiration);
+                    configure_stale_tt_reuse(
+                        first_engine, profile.reuse_stale_tt_scores);
+                    configure_stale_tt_reuse(
+                        second_engine, opponent.reuse_stale_tt_scores);
+                    configure_deeper_tt_reuse(
+                        first_engine, profile.reuse_deeper_tt_scores);
+                    configure_deeper_tt_reuse(
+                        second_engine, opponent.reuse_deeper_tt_scores);
                     first_engine.set_twofold_search_draw_enabled(
                         profile.twofold_search_draw);
                     second_engine.set_twofold_search_draw_enabled(
@@ -823,9 +1404,11 @@ int main(int argc, char** argv) {
                         int pair_game_count = 0;
                         for (int color = 0; color < 2; ++color) {
                             const bool candidate_white = color == 0;
-                            const std::string key = profile.name + "_vs_"
+                            const std::string logical_key = profile.name + "_vs_"
                                 + opponent.name + ":" + std::to_string(index)
                                 + ":" + (candidate_white ? "w" : "b");
+                            const std::string key = manifest.run_fingerprint
+                                + ":" + logical_key;
                             const auto prior = completed.find(key);
                             if (prior != completed.end()) {
                                 current_pair_points += prior->second;
@@ -834,13 +1417,16 @@ int main(int argc, char** argv) {
                             }
                             if (!options.trace_key.empty()
                                 && (options.trace_key == "all"
-                                    || key == options.trace_key)) {
+                                    || key == options.trace_key
+                                    || logical_key == options.trace_key)) {
                                 setenv("CHESS_TRACE_V38_ROOT", "1", 1);
                             } else {
                                 unsetenv("CHESS_TRACE_V38_ROOT");
                             }
                             first_engine.clear_tt();
                             second_engine.clear_tt();
+                            first_engine.clear_search_heuristics();
+                            second_engine.clear_search_heuristics();
                             const GameResult game = play_game(
                                 openings[index], candidate_white, options,
                                 second_engine, first_engine);
@@ -848,12 +1434,17 @@ int main(int argc, char** argv) {
                                 game, candidate_white);
                             ++pair_game_count;
                             append_game(
-                                output, key, profile, opponent.name,
-                                openings[index], candidate_white, game);
+                                output, key, logical_key,
+                                manifest.run_fingerprint,
+                                profile, opponent.name,
+                                &opponent, openings[index], candidate_white,
+                                game);
                             ++newly_completed;
                             if (!options.stop_after_key.empty()
-                                && key == options.stop_after_key) {
-                                std::cerr << "complete stop_after_key=" << key
+                                && (key == options.stop_after_key
+                                    || logical_key == options.stop_after_key)) {
+                                std::cerr << "complete stop_after_key="
+                                          << logical_key
                                           << " new_games=" << newly_completed
                                           << '\n';
                                 return 0;
@@ -941,23 +1532,34 @@ int main(int argc, char** argv) {
                 model, options.tt_mb, 4, 10, 14, 14'000,
                 MatchSearcher::MoveOrderingWeights{},
                 profile.config);
+            configure_aspiration(
+                candidate, profile.aspiration);
+            configure_stale_tt_reuse(
+                candidate, profile.reuse_stale_tt_scores);
+            configure_deeper_tt_reuse(
+                candidate, profile.reuse_deeper_tt_scores);
             candidate.set_twofold_search_draw_enabled(
                 profile.twofold_search_draw);
             for (std::size_t index = 0; index < openings.size(); ++index) {
                 for (int color = 0; color < 2; ++color) {
                     const bool candidate_white = color == 0;
-                    const std::string key = profile.name + ":"
+                    const std::string logical_key = profile.name + ":"
                         + std::to_string(index) + ":"
                         + (candidate_white ? "w" : "b");
+                    const std::string key = manifest.run_fingerprint
+                        + ":" + logical_key;
                     if (completed.contains(key)) continue;
                     control.clear_tt();
                     candidate.clear_tt();
+                    control.clear_search_heuristics();
+                    candidate.clear_search_heuristics();
                     const GameResult game = play_game(
                         openings[index], candidate_white, options,
                         control, candidate);
                     append_game(
-                        output, key, profile, "v36", openings[index],
-                        candidate_white, game);
+                        output, key, logical_key, manifest.run_fingerprint,
+                        profile, "v36", nullptr,
+                        openings[index], candidate_white, game);
                     ++newly_completed;
                     if (newly_completed % 10 == 0) {
                         std::cerr << "progress new_games=" << newly_completed

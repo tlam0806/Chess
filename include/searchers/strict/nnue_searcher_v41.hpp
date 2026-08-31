@@ -16,6 +16,8 @@ public:
     using MoveOrderingWeights = NnueSearcherV40::MoveOrderingWeights;
     using SelectiveStats = NnueSearcherV40::SelectiveStats;
     using SelectiveConfig = NnueSearcherV40::SelectiveConfig;
+    using AspirationConfig = NnueSearcherV40::AspirationConfig;
+    using AspirationStats = NnueSearcherV40::AspirationStats;
 
     explicit NnueSearcherV41(
         const PhaseQuantizedNnueModel& model,
@@ -77,6 +79,10 @@ public:
     bool twofold_search_draw_enabled() const;
     void set_selective_config(SelectiveConfig config);
     const SelectiveConfig& selective_config() const;
+    void clear_aspiration_stats();
+    const AspirationStats& aspiration_stats() const;
+    void set_aspiration_config(AspirationConfig config);
+    const AspirationConfig& aspiration_config() const;
 
 private:
     NnueSearcherV40 searcher_;

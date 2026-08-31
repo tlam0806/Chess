@@ -163,4 +163,22 @@ NnueSearcherV40::selective_config() const {
     return selective_config_;
 }
 
+void NnueSearcherV40::clear_aspiration_stats() {
+    searcher_.clear_aspiration_stats();
+}
+
+const NnueSearcherV40::AspirationStats&
+NnueSearcherV40::aspiration_stats() const {
+    return searcher_.aspiration_stats();
+}
+
+void NnueSearcherV40::set_aspiration_config(AspirationConfig config) {
+    searcher_.set_aspiration_config(config);
+}
+
+const NnueSearcherV40::AspirationConfig&
+NnueSearcherV40::aspiration_config() const {
+    return searcher_.aspiration_config();
+}
+
 } // namespace chess

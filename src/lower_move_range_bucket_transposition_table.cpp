@@ -92,7 +92,7 @@ void store_lower_bound(
     }
     if (value.lower_depth == MissingDepth || depth >= static_cast<int>(value.lower_depth)) {
         value.lower_depth = depth_to_table(depth);
-        value.score.lower = score;
+        value.set_lower_score(score);
         value.lower_move = move;
     }
 }
@@ -109,16 +109,18 @@ void store_upper_bound(
     }
     if (value.upper_depth == MissingDepth || depth >= static_cast<int>(value.upper_depth)) {
         value.upper_depth = depth_to_table(depth);
-        value.score.upper = score;
+        value.set_upper_score(score);
     }
 }
 
 LowerMoveRangeBucketTranspositionTable::TTValue make_tt_value(
     int depth,
     ScoreRange score,
-    MoveRange move
+    MoveRange move,
+    std::uint8_t generation
 ) {
     LowerMoveRangeBucketTranspositionTable::TTValue value{};
+    value.set_generation(generation);
     store_lower_bound(value, depth, score.lower, move.lower);
     store_upper_bound(value, depth, score.upper, move.upper);
     return value;
@@ -146,13 +148,11 @@ LowerMoveRangeBucketTranspositionTable::LowerMoveRangeBucketTranspositionTable(
     const std::size_t entry_count = bucket_count_ * bucket_size_;
     keys_.resize(entry_count);
     values_.resize(entry_count);
-    generations_.resize(entry_count);
 }
 
 void LowerMoveRangeBucketTranspositionTable::clear() {
     std::fill(keys_.begin(), keys_.end(), HashKey{});
     std::fill(values_.begin(), values_.end(), TTValue{});
-    std::fill(generations_.begin(), generations_.end(), std::uint8_t{0});
     generation_ = 0;
 }
 
@@ -219,17 +219,18 @@ bool LowerMoveRangeBucketTranspositionTable::probe(
         // 50-move clock), which is not part of the Zobrist key.  Keep an old
         // entry's best move for ordering, but only use scores written during
         // the current search generation.
-        if (generations_[index] != generation_) {
+        if (value.generation() != generation_) {
             CHESS_TT_STAT(stats_.depth_misses);
             return false;
         }
 
+        // A missing bound always has MissingDepth, so reject depth misses
+        // before decoding either packed score.  Most failed probes avoid the
+        // masks and subtracts entirely, while one-sided hits decode one word.
         const bool lower_depth_matches =
-            value.score.lower != -Infinity
-            && depth_matches_policy(value.lower_depth, depth, depth_policy);
+            depth_matches_policy(value.lower_depth, depth, depth_policy);
         const bool upper_depth_matches =
-            value.score.upper != Infinity
-            && depth_matches_policy(value.upper_depth, depth, depth_policy);
+            depth_matches_policy(value.upper_depth, depth, depth_policy);
         if (!lower_depth_matches && !upper_depth_matches) {
             CHESS_TT_STAT(stats_.depth_misses);
             return false;
@@ -237,10 +238,10 @@ bool LowerMoveRangeBucketTranspositionTable::probe(
 
         stored_score = ScoreRange{};
         if (lower_depth_matches) {
-            stored_score.lower = score_from_table(value.score.lower, ply);
+            stored_score.lower = score_from_table(value.lower_score(), ply);
         }
         if (upper_depth_matches) {
-            stored_score.upper = score_from_table(value.score.upper, ply);
+            stored_score.upper = score_from_table(value.upper_score(), ply);
         }
 
         if (is_mate_score(stored_score.lower) || is_mate_score(stored_score.upper)) {
@@ -355,22 +356,20 @@ void LowerMoveRangeBucketTranspositionTable::store(
         const HashKey entry_key = keys_[index];
         if (entry_key == key) {
             CHESS_TT_STAT(stats_.same_key_updates);
-            if (generations_[index] == generation_) {
+            if (values_[index].generation() == generation_) {
                 merge_tt_value(values_[index], depth, score, move);
             } else {
-                values_[index] = make_tt_value(depth, score, move);
-                generations_[index] = generation_;
+                values_[index] = make_tt_value(depth, score, move, generation_);
             }
             return;
         }
         if (entry_key == 0) {
             CHESS_TT_STAT(stats_.new_stores);
             keys_[index] = key;
-            values_[index] = make_tt_value(depth, score, move);
-            generations_[index] = generation_;
+            values_[index] = make_tt_value(depth, score, move, generation_);
             return;
         }
-        if (generations_[index] != generation_) {
+        if (values_[index].generation() != generation_) {
             if (!found_stale_entry
                 || replacement_depth(values_[index])
                     < replacement_depth(values_[shallowest_stale_index])) {
@@ -387,16 +386,15 @@ void LowerMoveRangeBucketTranspositionTable::store(
     if (found_stale_entry) {
         CHESS_TT_STAT(stats_.replacement_collisions);
         keys_[shallowest_stale_index] = key;
-        values_[shallowest_stale_index] = make_tt_value(depth, score, move);
-        generations_[shallowest_stale_index] = generation_;
+        values_[shallowest_stale_index] = make_tt_value(
+            depth, score, move, generation_);
         return;
     }
 
     if (depth >= replacement_depth(values_[shallowest_index])) {
         CHESS_TT_STAT(stats_.replacement_collisions);
         keys_[shallowest_index] = key;
-        values_[shallowest_index] = make_tt_value(depth, score, move);
-        generations_[shallowest_index] = generation_;
+        values_[shallowest_index] = make_tt_value(depth, score, move, generation_);
     } else {
         CHESS_TT_STAT(stats_.skipped_shallow_replacements);
     }

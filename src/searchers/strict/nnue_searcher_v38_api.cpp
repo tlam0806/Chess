@@ -1,5 +1,7 @@
 #include "nnue_searcher_v38.hpp"
 
+#include <stdexcept>
+
 namespace chess {
 
 NnueSearcherV38::NnueSearcherV38(
@@ -134,6 +136,53 @@ void NnueSearcherV38::set_selective_config(SelectiveConfig config) {
 const NnueSearcherV38::SelectiveConfig&
 NnueSearcherV38::selective_config() const {
     return selective_config_;
+}
+
+void NnueSearcherV38::clear_aspiration_stats() {
+    aspiration_stats_ = AspirationStats{};
+}
+
+const NnueSearcherV38::AspirationStats&
+NnueSearcherV38::aspiration_stats() const {
+    return aspiration_stats_;
+}
+
+void NnueSearcherV38::set_aspiration_config(AspirationConfig config) {
+    if (config.min_depth < 2) {
+        throw std::invalid_argument("aspiration min depth must be >= 2");
+    }
+    if (config.delta_base_cp < 1) {
+        throw std::invalid_argument("aspiration base delta must be >= 1");
+    }
+    if (config.delta_divisor < 1) {
+        throw std::invalid_argument("aspiration delta divisor must be >= 1");
+    }
+    if (config.expansion_factor_per_mille < 1'000) {
+        throw std::invalid_argument(
+            "aspiration expansion factor must be >= 1000 per mille");
+    }
+    if (config.max_fail_high_reductions < 0) {
+        throw std::invalid_argument(
+            "aspiration max fail-high reductions must be >= 0");
+    }
+    if (config.mean_score_new_weight_per_mille < 0
+        || config.mean_score_new_weight_per_mille > 1'000) {
+        throw std::invalid_argument(
+            "aspiration mean-score weight must be in [0, 1000]");
+    }
+    if (config.max_researches < 1) {
+        throw std::invalid_argument("aspiration max researches must be >= 1");
+    }
+    if (config.mean_score_clamp_cp < 1) {
+        throw std::invalid_argument(
+            "aspiration mean-score clamp must be >= 1");
+    }
+    aspiration_config_ = config;
+}
+
+const NnueSearcherV38::AspirationConfig&
+NnueSearcherV38::aspiration_config() const {
+    return aspiration_config_;
 }
 
 } // namespace chess

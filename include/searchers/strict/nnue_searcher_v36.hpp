@@ -59,6 +59,11 @@ public:
         int qsearch_captured_value_weight = 486;
         int qsearch_capture_metric_weight = 160;
     };
+    struct ExactnessStats {
+        std::uint64_t full_window_fallbacks = 0;
+        std::uint64_t range_conflicts = 0;
+        std::uint64_t unresolved_ranges = 0;
+    };
     explicit NnueSearcherV36(
         const PhaseQuantizedNnueModel& model,
         std::size_t tt_mb = 64,
@@ -89,6 +94,8 @@ public:
     void clear_move_ordering_stats();
     const MoveOrderingStats& move_ordering_stats() const;
     void set_move_ordering_stats_enabled(bool enabled);
+    bool last_search_exact() const;
+    const ExactnessStats& exactness_stats() const;
 
 private:
     struct SearchState {
@@ -97,6 +104,8 @@ private:
         PhaseQuantizedNnueAccumulator accumulator;
         bool has_deadline = false;
         bool stopped = false;
+        bool tt_scores_enabled = true;
+        bool tt_range_conflict_detected = false;
     };
     enum class ScoringMode {
         MainSearch,
@@ -140,6 +149,7 @@ private:
     struct RootSearchResult {
         SearchResult result{};
         ScoreRange range{};
+        bool range_conflict = false;
     };
     struct TTProbeResult {
         ScoreRange range{};
@@ -292,7 +302,8 @@ private:
         int& alpha,
         int& beta,
         int ply,
-        bool allow_probe
+        bool allow_probe,
+        bool allow_score = true
     ) const;
     bool should_store_tt(ScoreRange range) const;
     int score_to_tt(int score, int ply) const;
@@ -311,7 +322,8 @@ private:
         ScoreRange range,
         Move best_lower_move,
         Move best_upper_move,
-        Move fallback_best_move
+        Move fallback_best_move,
+        bool allow_store = true
     );
     void reward_quiet_cutoff(
         Color side_to_move,
@@ -341,6 +353,8 @@ private:
     const PhaseQuantizedNnueModel& model_;
     MoveOrderingWeights move_ordering_weights_{};
     MoveOrderingStats move_ordering_stats_{};
+    ExactnessStats exactness_stats_{};
+    bool last_search_exact_ = false;
     bool move_ordering_stats_enabled_ = false;
 };
 

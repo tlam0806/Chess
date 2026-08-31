@@ -405,7 +405,14 @@ NnueSearcherV36::SearchValue NnueSearcherV36::negamax(
         return SearchValue{exact_range(0)};
     }
 
-    TTProbeResult tt_probe = probe_tt(pos.zobrist_key, depth, alpha, beta, ply, true);
+    TTProbeResult tt_probe = probe_tt(
+        pos.zobrist_key,
+        depth,
+        alpha,
+        beta,
+        ply,
+        true,
+        state.tt_scores_enabled);
     if (tt_probe.hit) {
         return SearchValue{tt_probe.range};
     }
@@ -491,8 +498,17 @@ NnueSearcherV36::SearchValue NnueSearcherV36::negamax(
                     CutoffStage::TtLower);
                 reward_quiet_cutoff(pos.side_to_move, depth, ply, scored_move, prev_move, prev_moved_piece);
                 node_range.upper = Infinity;
+                bool range_conflict = false;
                 if (tt_probe.has_score) {
-                    node_range = intersect_ranges(node_range, tt_probe.range);
+                    ScoreRange intersection =
+                        intersect_ranges(node_range, tt_probe.range);
+                    if (discard_conflicting_score_range(intersection)) {
+                        state.tt_range_conflict_detected = true;
+                        range_conflict = true;
+                        node_range = {};
+                    } else {
+                        node_range = intersection;
+                    }
                 }
                 assert(node_range.lower <= node_range.upper);
                 store_tt_if_needed(
@@ -502,7 +518,8 @@ NnueSearcherV36::SearchValue NnueSearcherV36::negamax(
                     node_range,
                     best_lower_move,
                     best_upper_move,
-                    fallback_best_move);
+                    fallback_best_move,
+                    state.tt_scores_enabled && !range_conflict);
                 return SearchValue{node_range};
             }
             ++searched_move_count;
@@ -733,12 +750,28 @@ NnueSearcherV36::SearchValue NnueSearcherV36::negamax(
         return SearchValue{exact_range(in_check(pos, pos.side_to_move) ? -CheckmateScore + ply : 0)};
     }
     assert(node_range.lower <= node_range.upper);
+    bool range_conflict = false;
     if (tt_probe.has_score) {
-        node_range = intersect_ranges(node_range, tt_probe.range);
+        ScoreRange intersection = intersect_ranges(node_range, tt_probe.range);
+        if (discard_conflicting_score_range(intersection)) {
+            state.tt_range_conflict_detected = true;
+            range_conflict = true;
+            node_range = {};
+        } else {
+            node_range = intersection;
+        }
     }
     assert(node_range.lower <= node_range.upper);
 
-    store_tt_if_needed(pos.zobrist_key, depth, ply, node_range, best_lower_move, best_upper_move, fallback_best_move);
+    store_tt_if_needed(
+        pos.zobrist_key,
+        depth,
+        ply,
+        node_range,
+        best_lower_move,
+        best_upper_move,
+        fallback_best_move,
+        state.tt_scores_enabled && !range_conflict);
 
     return SearchValue{node_range};
 }
@@ -766,6 +799,7 @@ NnueSearcherV36::RootSearchResult NnueSearcherV36::search_fixed_depth(
     bool allow_root_tt_probe
 ) {
     assert(depth >= 0);
+    state.tt_range_conflict_detected = false;
     state.accumulator.reset(model_, pos);
 
     RootSearchResult root_result;
@@ -779,7 +813,14 @@ NnueSearcherV36::RootSearchResult NnueSearcherV36::search_fixed_depth(
         return root_result;
     }
 
-    TTProbeResult tt_probe = probe_tt(pos.zobrist_key, depth, alpha, beta, 0, allow_root_tt_probe);
+    TTProbeResult tt_probe = probe_tt(
+        pos.zobrist_key,
+        depth,
+        alpha,
+        beta,
+        0,
+        allow_root_tt_probe,
+        state.tt_scores_enabled);
     if (tt_probe.hit) {
         const Move tt_best_move = preferred_tt_move(tt_probe.moves);
         if (is_valid_move(tt_best_move)) {
@@ -1037,11 +1078,23 @@ NnueSearcherV36::RootSearchResult NnueSearcherV36::search_fixed_depth(
         return root_result;
     }
 
-    if (root_range.lower != -Infinity && root_range.upper <= root_range.lower) {
-        root_range.upper = root_range.lower;
+    bool range_conflict = state.tt_range_conflict_detected;
+    range_conflict = range_conflict
+        || discard_conflicting_score_range(root_range);
+    if (!range_conflict && tt_probe.has_score) {
+        const ScoreRange intersection =
+            intersect_ranges(root_range, tt_probe.range);
+        ScoreRange checked_intersection = intersection;
+        if (discard_conflicting_score_range(checked_intersection)) {
+            range_conflict = true;
+        } else {
+            root_range = checked_intersection;
+        }
     }
-    if (tt_probe.has_score) {
-        root_range = intersect_ranges(root_range, tt_probe.range);
+    if (range_conflict) {
+        ++exactness_stats_.range_conflicts;
+        root_result.range_conflict = true;
+        root_range = {};
     }
     assert(root_range.lower <= root_range.upper);
 
@@ -1055,7 +1108,15 @@ NnueSearcherV36::RootSearchResult NnueSearcherV36::search_fixed_depth(
         result.best_move = make_fallback_result(pos).best_move;
     }
 
-    store_tt_if_needed(pos.zobrist_key, depth, 0, root_range, best_lower_move, best_upper_move, fallback_best_move);
+    store_tt_if_needed(
+        pos.zobrist_key,
+        depth,
+        0,
+        root_range,
+        best_lower_move,
+        best_upper_move,
+        fallback_best_move,
+        state.tt_scores_enabled && !range_conflict);
 
     result.nodes = state.nodes;
     return root_result;
@@ -1070,19 +1131,32 @@ SearchResult NnueSearcherV36::search_root_without_tt_probe(
 }
 
 SearchResult NnueSearcherV36::search_best_move(const Position& pos, int depth) {
+    exactness_stats_ = {};
+    last_search_exact_ = false;
     killer_table_.clear();
     counter_move_table_.clear();
     SearchState state;
     RootSearchResult current = search_fixed_depth(pos, depth, state);
     if (!current.result.stopped && !state.stopped && !is_exact_range(current.range)) {
-        current = search_fixed_depth(pos, depth, state, -Infinity, Infinity, false);
+        ++exactness_stats_.full_window_fallbacks;
+        tt_.advance_generation();
+        state.tt_scores_enabled = false;
+        current = search_fixed_depth(
+            pos, depth, state, -Infinity, Infinity, true);
+        state.tt_scores_enabled = true;
     }
+    last_search_exact_ = !current.result.stopped
+        && !state.stopped
+        && is_exact_range(current.range);
+    exactness_stats_.unresolved_ranges += !last_search_exact_;
     return ensure_legal_root_move(pos, current.result);
 }
 
 SearchResult NnueSearcherV36::search_best_move(const Position& pos, const SearchLimits& limits) {
     assert(limits.max_depth >= 0);
 
+    exactness_stats_ = {};
+    last_search_exact_ = false;
     killer_table_.clear();
     counter_move_table_.clear();
     SearchResult best = make_fallback_result(pos);
@@ -1094,16 +1168,37 @@ SearchResult NnueSearcherV36::search_best_move(const Position& pos, const Search
         state.deadline = Clock::now() + limits.move_time;
     }
 
+    auto recover_exact = [&](RootSearchResult current, int depth) {
+        if (current.result.stopped || state.stopped
+            || is_exact_range(current.range)) {
+            return current;
+        }
+        ++exactness_stats_.full_window_fallbacks;
+        tt_.advance_generation();
+        state.tt_scores_enabled = false;
+        current = search_fixed_depth(
+            pos, depth, state, -Infinity, Infinity, true);
+        state.tt_scores_enabled = true;
+        return current;
+    };
+
     const int aspiration_window_cp = 50;
 
     for (int depth = 1; depth <= limits.max_depth; ++depth) {
         if (depth == 1) {
-            RootSearchResult current = search_fixed_depth(pos, depth, state);
+            RootSearchResult current = recover_exact(
+                search_fixed_depth(pos, depth, state), depth);
             if (current.result.stopped || state.stopped) {
                 best.stopped = true;
                 best.nodes = state.nodes;
                 return ensure_legal_root_move(pos, best);
             }
+            if (!is_exact_range(current.range)) {
+                ++exactness_stats_.unresolved_ranges;
+                best.nodes = state.nodes;
+                return ensure_legal_root_move(pos, best);
+            }
+            last_search_exact_ = true;
             best = current.result;
         } else if (EnableAspirationWindow) {
             RootSearchResult current = search_fixed_depth(
@@ -1121,30 +1216,36 @@ SearchResult NnueSearcherV36::search_best_move(const Position& pos, const Search
                 // A fail-low and fail-high can meet at the same boundary and
                 // make two half-windows alternate forever. Retry once with a
                 // full window and no root TT cutoff instead.
-                current = search_fixed_depth(
-                    pos, depth, state, -Infinity, Infinity, false);
+                current = recover_exact(current, depth);
                 if (current.result.stopped || state.stopped) {
                     best.stopped = true;
                     best.nodes = state.nodes;
                     return ensure_legal_root_move(pos, best);
                 }
             }
+            if (!is_exact_range(current.range)) {
+                ++exactness_stats_.unresolved_ranges;
+                last_search_exact_ = false;
+                best.nodes = state.nodes;
+                return ensure_legal_root_move(pos, best);
+            }
+            last_search_exact_ = true;
             best = current.result;
         } else {
-            RootSearchResult current = search_fixed_depth(pos, depth, state);
+            RootSearchResult current = recover_exact(
+                search_fixed_depth(pos, depth, state), depth);
             if (current.result.stopped || state.stopped) {
                 best.stopped = true;
                 best.nodes = state.nodes;
                 return ensure_legal_root_move(pos, best);
             }
             if (!is_exact_range(current.range)) {
-                current = search_fixed_depth(pos, depth, state, -Infinity, Infinity, false);
-                if (current.result.stopped || state.stopped) {
-                    best.stopped = true;
-                    best.nodes = state.nodes;
-                    return ensure_legal_root_move(pos, best);
-                }
+                ++exactness_stats_.unresolved_ranges;
+                last_search_exact_ = false;
+                best.nodes = state.nodes;
+                return ensure_legal_root_move(pos, best);
             }
+            last_search_exact_ = true;
             best = current.result;
         }
     }

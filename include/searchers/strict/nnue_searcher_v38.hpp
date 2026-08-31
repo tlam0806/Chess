@@ -98,6 +98,51 @@ public:
         std::uint64_t main_search_see_evaluations = 0;
         std::uint64_t main_search_see_pruned_moves = 0;
     };
+    // Disabled by default so V38--V41 retain their validated aspiration
+    // behaviour. V42 enables this policy with an intentionally untuned seed
+    // configuration; promotion still requires selection and self-play.
+    struct AspirationConfig {
+        bool enabled = false;
+        int min_depth = 3;
+        int delta_base_cp = 30;
+        int delta_divisor = 10'000;
+        int expansion_factor_per_mille = 1'750;
+        int max_fail_high_reductions = 2;
+        int mean_score_new_weight_per_mille = 500;
+        int max_researches = 6;
+        int mean_score_clamp_cp = 1'500;
+    };
+    struct AspirationStats {
+        std::uint64_t completed_iterations = 0;
+        // Iterations which actually opened with the adaptive narrow window.
+        // The accepted-depth sums below cover exactly these iterations, so a
+        // tuner can detect node savings obtained by accepting a shallower
+        // fail-high retry instead of merely improving window accuracy.
+        std::uint64_t narrow_iterations = 0;
+        std::uint64_t narrow_attempts = 0;
+        std::uint64_t initial_window_successes = 0;
+        std::uint64_t fail_lows = 0;
+        std::uint64_t fail_highs = 0;
+        std::uint64_t reduced_depth_attempts = 0;
+        std::uint64_t accepted_reduced_depth_iterations = 0;
+        std::uint64_t accepted_narrow_nominal_depth_sum = 0;
+        std::uint64_t accepted_narrow_search_depth_sum = 0;
+        int max_accepted_depth_reduction = 0;
+        std::uint64_t full_window_fallbacks = 0;
+        // A retry returned a range which could not safely refine the current
+        // aspiration window, so the iteration was recovered with a full
+        // window. This is distinct from publishing/returning an unresolved
+        // final iteration, which is counted by unresolved_ranges.
+        std::uint64_t range_conflict_fallbacks = 0;
+        std::uint64_t unresolved_ranges = 0;
+        std::uint64_t retry_limit_fallbacks = 0;
+        std::int64_t initial_delta_sum_cp = 0;
+        int initial_delta_min_cp = 0;
+        int initial_delta_max_cp = 0;
+        int last_initial_delta_cp = 0;
+        int final_mean_score_cp = 0;
+        bool has_final_mean_score = false;
+    };
     explicit NnueSearcherV38(
         const PhaseQuantizedNnueModel& model,
         std::size_t tt_mb = 64,
@@ -155,6 +200,10 @@ public:
     bool twofold_search_draw_enabled() const;
     void set_selective_config(SelectiveConfig config);
     const SelectiveConfig& selective_config() const;
+    void clear_aspiration_stats();
+    const AspirationStats& aspiration_stats() const;
+    void set_aspiration_config(AspirationConfig config);
+    const AspirationConfig& aspiration_config() const;
 
 private:
     struct SearchState {
@@ -165,6 +214,8 @@ private:
         bool stopped = false;
         bool in_null_move = false;
         bool repetition_enabled = false;
+        bool tt_scores_enabled = true;
+        bool tt_range_conflict_detected = false;
         const std::atomic<bool>* stop_requested = nullptr;
         Move ply_one_best_move{};
         RepetitionStack repetition;
@@ -211,6 +262,7 @@ private:
     struct RootSearchResult {
         SearchResult result{};
         ScoreRange range{};
+        bool range_conflict = false;
     };
     struct TTProbeResult {
         ScoreRange range{};
@@ -343,7 +395,7 @@ private:
         PieceType moved_piece,
         PieceType captured_piece
     ) const;
-    bool should_stop(SearchState& state) const;
+    bool should_stop(SearchState& state, bool force_poll = false) const;
     KingSafetyContext current_king_safety_context(const Position& pos) const;
     int evaluate_current_position(const Position& pos, const SearchState& state) const;
     bool is_quiet_move(const ScoredMove& scored_move) const;
@@ -446,6 +498,8 @@ private:
     MoveOrderingStats move_ordering_stats_{};
     SelectiveConfig selective_config_{};
     SelectiveStats selective_stats_{};
+    AspirationConfig aspiration_config_{};
+    AspirationStats aspiration_stats_{};
     RepetitionStack::Stats repetition_stats_{};
     bool twofold_search_draw_enabled_ = false;
     bool move_ordering_stats_enabled_ = false;

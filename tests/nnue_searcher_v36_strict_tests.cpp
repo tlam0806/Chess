@@ -3,6 +3,10 @@
 #include "phase_quantized_nnue.hpp"
 #include "position.hpp"
 
+#if defined(NDEBUG)
+#undef NDEBUG
+#endif
+
 #include <cassert>
 #include <chrono>
 #include <iostream>
@@ -30,6 +34,8 @@ void assert_search_returns_legal_move(
     const chess::SearchResult result = searcher.search_best_move(pos, depth);
     assert(result.nodes > 0);
     assert(contains_move(moves, result.best_move));
+    assert(searcher.last_search_exact());
+    assert(searcher.exactness_stats().unresolved_ranges == 0);
 }
 
 void assert_iterative_returns_legal_move(
@@ -46,6 +52,8 @@ void assert_iterative_returns_legal_move(
     });
     assert(result.nodes > 0);
     assert(contains_move(moves, result.best_move));
+    assert(searcher.last_search_exact());
+    assert(searcher.exactness_stats().unresolved_ranges == 0);
 }
 
 } // namespace
@@ -75,6 +83,17 @@ int main(int argc, char** argv) {
     chess::Position tactical;
     assert(tactical.set_fen("rnb1kb1r/ppppqppp/5n2/4N3/4P3/8/PPPP1PPP/RNBQKB1R w KQkq - 1 4"));
     assert_search_returns_legal_move(tactical, 3, searcher);
+
+    // Transposition-rich roots which exposed contradictory score ranges in
+    // V42 must never be silently collapsed into an exact V36 teacher score.
+    for (const char* fen : {
+            "8/8/8/1pp5/k7/3K4/BP6/8 w - - 0 1",
+            "8/8/2k4p/7P/n7/3B4/8/6K1 w - - 0 1",
+        }) {
+        chess::Position conflict;
+        assert(conflict.set_fen(fen));
+        assert_search_returns_legal_move(conflict, 6, searcher);
+    }
 
     std::cout << "nnue strict v36 search returned legal moves\n";
 }

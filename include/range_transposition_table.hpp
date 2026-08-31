@@ -15,6 +15,17 @@ struct ScoreRange {
     int upper = Infinity;
 };
 
+// Contradictory bounds carry no safe score information.  Converting them to
+// the unknown range keeps them non-exact so a caller can recover with a clean
+// full-window search.  Equality is a legitimate exact score and is preserved.
+inline bool discard_conflicting_score_range(ScoreRange& range) {
+    if (range.lower <= range.upper) {
+        return false;
+    }
+    range = {};
+    return true;
+}
+
 struct MoveRange {
     Move lower{};
     Move upper{};
