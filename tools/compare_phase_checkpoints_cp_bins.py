@@ -46,6 +46,21 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--checkpoint-a", required=True, type=Path)
     parser.add_argument("--checkpoint-b", required=True, type=Path)
     parser.add_argument("--data", required=True, type=Path)
+    parser.add_argument(
+        "--sample-mode",
+        choices=("hash", "sequential"),
+        default="hash",
+        help=(
+            "hash reproduces a position-hash split; sequential reads an exact "
+            "contiguous slice from a pre-separated validation corpus"
+        ),
+    )
+    parser.add_argument(
+        "--skip-samples",
+        type=int,
+        default=0,
+        help="records to skip before a sequential validation slice",
+    )
     parser.add_argument("--split-arch", choices=("F2", "F2M"), default="F2M")
     parser.add_argument("--max-samples", type=int, default=500_000)
     parser.add_argument("--batch-size", type=int, default=8192)
@@ -55,6 +70,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--val-mod", type=int, default=98)
     parser.add_argument("--huber-delta", type=float, default=200.0)
     parser.add_argument("--progress-batches", type=int, default=20)
+    parser.add_argument("--output", type=Path)
     return parser.parse_args()
 
 
@@ -118,6 +134,56 @@ class PairedSplitDataset(IterableDataset):
                     return
 
 
+class PairedSequentialDataset(IterableDataset):
+    """Read the exact slice used by a pre-separated legacy validation corpus."""
+
+    def __init__(
+        self,
+        path: Path,
+        transform_a: str,
+        transform_b: str,
+        skip_samples: int,
+        max_samples: int,
+    ) -> None:
+        super().__init__()
+        self.path = path
+        self.transform_a = transform_a
+        self.transform_b = transform_b
+        self.skip_samples = skip_samples
+        self.max_samples = max_samples
+
+    def __iter__(self) -> Iterable[dict[str, Any]]:
+        if get_worker_info() is not None:
+            raise ValueError("sequential validation requires --workers 0")
+        seen = 0
+        yielded = 0
+        for path in compact_paths(self.path):
+            for sample in iter_compact_samples(path):
+                # Do not filter targets here: the legacy TotalLabelDataset counted
+                # every record before applying skip_samples and max_samples.
+                if seen < self.skip_samples:
+                    seen += 1
+                    continue
+                _board, _bits, features_a, aux_a = canonical_architecture_input(
+                    sample.board, sample.aux_bits, self.transform_a
+                )
+                _board, _bits, features_b, aux_b = canonical_architecture_input(
+                    sample.board, sample.aux_bits, self.transform_b
+                )
+                yield {
+                    "features_a": features_a,
+                    "aux_a": aux_a,
+                    "features_b": features_b,
+                    "aux_b": aux_b,
+                    "score": sample.score,
+                    "ply": sample.ply,
+                    "result": sample.result,
+                }
+                yielded += 1
+                if yielded >= self.max_samples:
+                    return
+
+
 def model_batch(samples: list[dict[str, Any]], suffix: str) -> list[dict[str, Any]]:
     return [
         {
@@ -145,6 +211,12 @@ def empty_stats() -> dict[str, Any]:
 @torch.no_grad()
 def main() -> None:
     args = parse_args()
+    if args.max_samples <= 0:
+        raise ValueError("--max-samples must be positive")
+    if args.skip_samples < 0:
+        raise ValueError("--skip-samples must be non-negative")
+    if args.sample_mode == "sequential" and args.workers != 0:
+        raise ValueError("--sample-mode sequential requires --workers 0")
     torch.set_num_threads(args.torch_threads)
     device = torch.device("cpu")
     model_a, checkpoint_a = load_phase_model(args.checkpoint_a, device)
@@ -152,8 +224,17 @@ def main() -> None:
     config_a = QUANTIZED_ARCHITECTURES[str(checkpoint_a["architecture"])]
     config_b = QUANTIZED_ARCHITECTURES[str(checkpoint_b["architecture"])]
     split_config = QUANTIZED_ARCHITECTURES[args.split_arch]
-    loader = DataLoader(
-        PairedSplitDataset(
+    dataset: IterableDataset
+    if args.sample_mode == "sequential":
+        dataset = PairedSequentialDataset(
+            args.data,
+            config_a.transform,
+            config_b.transform,
+            args.skip_samples,
+            args.max_samples,
+        )
+    else:
+        dataset = PairedSplitDataset(
             args.data,
             config_a.transform,
             config_b.transform,
@@ -161,7 +242,9 @@ def main() -> None:
             args.split_mod,
             args.val_mod,
             args.max_samples,
-        ),
+        )
+    loader = DataLoader(
+        dataset,
         batch_size=args.batch_size,
         num_workers=args.workers,
         collate_fn=identity_collate,
@@ -243,19 +326,33 @@ def main() -> None:
                     "min_abs_target_cp": lower,
                     "max_abs_target_cp": upper,
                     "samples": item["samples"],
-                    "loss": item["loss_sum"] / item["samples"],
-                    "cp_mae": item["mae_sum"] / item["samples"],
+                    "loss": (
+                        item["loss_sum"] / item["samples"]
+                        if item["samples"]
+                        else None
+                    ),
+                    "cp_mae": (
+                        item["mae_sum"] / item["samples"]
+                        if item["samples"]
+                        else None
+                    ),
                 }
                 for (lower, upper), item in zip(CP_BINS, model_stats["bins"])
             ],
         })
-    print(json.dumps({
+    payload = {
         "event": "cp_bin_comparison",
         "samples": total_samples,
         "elapsed_sec": time.monotonic() - started,
-        "split_arch": args.split_arch,
+        "sample_mode": args.sample_mode,
+        "skip_samples": args.skip_samples,
+        "split_arch": args.split_arch if args.sample_mode == "hash" else None,
         "results": results,
-    }, separators=(",", ":")), flush=True)
+    }
+    if args.output is not None:
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        args.output.write_text(json.dumps(payload, indent=2) + "\n")
+    print(json.dumps(payload, separators=(",", ":")), flush=True)
 
 
 if __name__ == "__main__":
