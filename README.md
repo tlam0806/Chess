@@ -4,6 +4,11 @@ A learning-oriented C++20 chess engine built from bitboards upward. The project
 now includes a long classical-search lineage, phase-aware quantized NNUE,
 selective V41 search, a UCI adapter, and a documented Lichess deployment.
 
+V41 remains the production engine. V42 (adaptive aspiration windows) and V43
+(a single-bound transposition table) are tracked experimental searchers; their
+tuning and self-play pipelines are included for reproducible evaluation, but
+neither version is claimed as promoted here.
+
 The project goal is not to clone Stockfish directly. It is a staged engine
 project for learning the core systems work behind chess engines: bitboards,
 legal move generation, perft, search, evaluation, neural evaluation, profiling,
@@ -69,14 +74,13 @@ The initial engine established:
 - material and piece-square evaluation;
 - plain negamax alpha-beta search.
 
-At this stage search copied a `Position` for each child. In-place undo state and
-RAII make/unmake guards came much later, during the V20-V27 optimization wave.
-That distinction matters: the first milestone proved rules and state
-transitions before trying to make them cheap.
+The code deliberately favored simple, easy-to-check implementations.
+Performance optimizations came only after move generation and board updates
+consistently passed perft and chess-rule tests.
 
 The evaluator was intentionally understandable:
 
-> **Heuristic score** = material balance + piece-square terms
+**Heuristic score = material balance + piece-square terms**
 
 One chess point is represented as 100 centipawns (`cp`). The base material
 values in the original evaluator were:
@@ -117,11 +121,11 @@ tables happened to encode. Alpha-beta search supplied tactical correction by
 looking ahead; the heuristic supplied the leaf score when that lookahead
 stopped.
 
-It was fast, deterministic, and expressive enough to be a useful teacher and
-control. The simple alpha-beta tests compared its score with a small full
-negamax reference suite and checked that the returned move realized that
-score. They did not establish identical node counts or a unique best move when
-several moves tied.
+It was fast and deterministic enough to be a useful correctness baseline and
+search-control oracle. The simple alpha-beta tests compared its score with a
+small full-negamax reference suite and checked that the returned move realized
+that score. They did not establish identical node counts or a unique best move
+when several moves tied.
 
 This correctness-first core remains the foundation under every later Strict,
 NNUE, and selective searcher.
@@ -235,7 +239,24 @@ training a model with lower loss. It was the combination of:
 - quantized arithmetic;
 - architecture-specific dot-product intrinsics.
 
-The result was substantially stronger than I expected.
+Those changes made NNUE fast enough to use, but it was still much more
+expensive per searched node than the heuristic evaluator. The remaining
+question was whether better leaf evaluations could repay that cost.
+
+#### The throughput trade-off
+
+On the local Apple M4, a clean Release + ThinLTO benchmark used 12 fixed
+positions at depth 6, eight order-balanced processes per engine, and 15
+repetitions per process. With a fresh 64 MiB searcher for every timed position,
+heuristic V35 reached **19.62M NPS** while the historical `hs2x8_os128` V36
+NNUE reached **7.37M NPS**. NNUE therefore retained 37.6% of the throughput: a
+**62.4% drop**, or 2.66× as much time per searched node.
+
+This is end-to-end search throughput, not an isolated evaluator benchmark:
+the two evaluators assign different scores and therefore explore different
+trees. NPS measures how many positions are visited, not how useful each leaf
+evaluation is. The match below tested whether the richer NNUE evaluations
+could compensate for searching fewer positions.
 
 #### First match win over the heuristic engine
 
@@ -245,10 +266,12 @@ Across 200 games, the historical `hs2x8_os128` NNUE at depth 3 scored
 29.0M nodes in total, compared with 79.2M for the heuristic engine.
 
 That result changed the project direction: the NN won while searching one ply
-less. The ordinary interval was inspected every five pairs and the run used an
-early-stop rule, so it is directional historical promotion evidence, not a
-modern sequential Elo proof. The winning model was also an older artifact, not
-the current production model described below.
+less and visiting only 36.7% as many total nodes. Under this protocol, its
+better leaf evaluations more than compensated for the lower throughput. The
+ordinary interval was inspected every five pairs and the run used an early-stop
+rule, so it is directional historical promotion evidence, not a modern
+sequential Elo proof. The winning model was also an older artifact, not the
+current production model described below.
 
 See [the full NNUE-vs-heuristic result](docs/nnue_vs_heuristic_result.md).
 
@@ -324,157 +347,114 @@ slower because they increased dependency chains or forced accumulator spills.
 That negative evidence is useful engineering history, but the main milestone
 is the resulting bit-exact NEON kernel rather than every intermediate rewrite.
 
-### 4. Controlled selective (“dirty”) pruning
+#### Training data
 
-Strict search asks, “what result does this finite-depth search define?”
-Selective search asks, “which work is unlikely to change the move enough to be
-worth its cost?” The second question is deliberately approximate. In this
-README, **dirty pruning** means a heuristic can skip or reduce work without a
-mathematical guarantee that the finite-depth score remains identical.
+Each training position needed a target evaluation score. I first tried
+generating those labels with the classical evaluator plus shallow search. That
+approach failed on both scale and label quality. Training at a useful scale
+required hundreds of millions of labeled positions, and search would have to
+be repeated independently for every label. As a rough scale, the V35 depth-7
+benchmark took 20.334 seconds for 400 searches on the local M4, or about
+50.8 ms per position. At that rate, labeling 100 million positions would take
+about 59 days of uninterrupted single-process search; 200 million would take
+118 days, and 500 million about 294 days. Position difficulty varies, but the
+order of magnitude made laptop-generated search labels impractical.
 
-#### Pruning mechanisms
+The classical teacher also struggled to express long-term benefits such as
+castling, open files, and sound pawn structure. I therefore switched to the
+RobotMoon Stockfish binpack corpus, whose positions already carried raw
+Stockfish search scores from the side-to-move perspective. This provided a
+much stronger teacher without spending months generating labels on the laptop.
 
-| Mechanism | What it does | Main failure mode |
-|---|---|---|
-| LMR | Reduces only sufficiently late, quiet, non-capture, non-promotion, non-checking moves while not in check; a reduced score range that may exceed alpha is re-searched at full depth | A genuinely strong late move may look harmless at reduced depth and never earn the re-search. |
-| Null-move pruning (NMP) | Gives the side to move a synthetic pass and makes a null-window search; it is disabled in check, inside another null search, and when the side has no non-pawn material | Zugzwang and positions where the obligation to move is itself harmful. This implementation has no verification search. |
-| Reverse futility pruning (RFP) | At shallow non-PV nodes, outside check, null searches, and mate windows, cuts off when static evaluation exceeds beta by a depth-dependent margin; it is also disabled when the side to move has no non-pawn material | Tactical resources can invalidate the static margin. |
-| Late-move pruning (LMP) | At shallow null-window nodes, skips ordinary quiet moves after `base + multiplier × depth²`; captures, promotions, and earlier priority stages have already been handled | A late quiet tactic or only move can be discarded. |
-| Quiescence SEE pruning (QSEE) | Skips a non-checking, non-promotion capture only when `SEE < threshold`; checking captures, promotions, and evasions remain | A superficially losing sacrifice can be positionally or tactically correct. |
+### 4. Selective (“dirty”) pruning
 
-#### Evaluation was a pipeline, not one benchmark
+Strict search skips a subtree only when alpha-beta bounds prove that it cannot
+change the fixed-depth result. **Dirty pruning** also skips or reduces work
+that merely looks unlikely to matter. This can make the engine much faster,
+but it can also change the score or miss the best move.
 
-The V38/V39 tuner compared each candidate with the finite-depth V36 Strict
-control over thousands of positions. When a candidate selected a different
-root move, that control re-searched the move and measured **root regret**:
+#### What was pruned
 
-> **Root regret** is the score lost relative to the Strict move:
-> `max(0, best Strict score − candidate-move Strict score)`.
-
-This is disagreement with a pinned finite-depth teacher, not objective chess
-error. V36 itself ends in a finite capture quiescence search, so a low regret
-is useful selection evidence rather than proof that the move is best chess.
-
-The active adversarial LMR/NMP pipeline was organized into six stages:
-
-| Stage | Evaluation step |
+| Technique | Plain-language idea |
 |---|---|
-| Prepare data | Mine and deduplicate the historical safety bank; create 16,000 fresh positions: 8k tune, 4k selection, and 4k holdout. |
-| Core safety | Run the visible safety gate at depths 5–8 and a fixed 2,000-position tune-split gate at depth 6. |
-| Build the frontier | Keep the per-lineage Pareto frontier over node count and root regret. |
-| Sealed selection | Evaluate candidates against the sealed adversarial set at depth 7. |
-| Fresh validation | Use a fresh 4,000-position selection set and a fresh 4,000-position holdout set, then re-audit at most eight spread points at depth 8. |
-| Final promotion | Apply the later WDL and RFP/LMP selection, then decide by paired, color-reversed self-play. |
+| LMR | Search late quiet moves at a lower depth, then search them fully if the reduced result looks promising. |
+| Null-move pruning (NMP) | Pretend the side to move passes; if the position still looks good enough, cut off the node. |
+| Reverse futility pruning (RFP) | At shallow nodes, stop when the static evaluation is already far above the required bound. |
+| Late-move pruning (LMP) | After enough moves have been tried, skip the remaining ordinary quiet moves. |
+| Quiescence SEE pruning (QSEE) | Skip captures that appear to lose too much material, while retaining checks, promotions, and evasions. |
 
-Safety was not reduced to average CP loss:
+These shortcuts can miss late quiet tactics, sacrifices, or zugzwang. They
+therefore could not be accepted from an NPS improvement alone.
 
-- a Strict score of at least `+500cp` becoming `[-100,+100]` was win-to-draw;
-- a Strict score of at least `+500cp` becoming less than `-100cp` was
-  win-to-loss;
-- a candidate move becoming mate-losing while the control was above `-100cp`
-  was self-mate;
-- any of those three events was a hard rejection, not an averaged penalty;
-- six known critical rows plus 32 mined `>=250cp` near misses formed a
-  38-position hash-deduplicated bank: 24 mutation-visible `core` rows and 14
-  sealed rows; 41 configurations failed the core gate;
-- mean regret was ranked only where the direct static NNUE target satisfied
-  `|static_target_cp| < 1500`, but every position remained eligible for the
-  hard safety checks;
-- p95 regret, the fraction above `100cp`, move agreement, and prune counters
-  were reported alongside the mean;
-- tune, selection, and holdout sets were kept separate.
+#### How candidates were selected
 
-Those numerical hard thresholds belong to this adversarial CP-regret
-pipeline. Later WDL/all-position experiments used different objectives, so the
-README does not present them as universal definitions of chess safety.
-The exact 38-row/41-rejection counts come from a locally retained historical
-run; the tracked repository preserves the method and definitions more durably
-than it preserves every raw intermediate artifact.
+Each candidate was compared with the V36 Strict teacher over thousands of
+positions. The teacher first searched the position at a fixed depth, chose its
+best move, and assigned that move a score. If the candidate chose another
+move, the same teacher forced that move, searched the resulting line to the
+same fixed-depth horizon, and returned the score from the original side's
+perspective. The candidate's own reported score was not used.
 
-#### Depth-8 re-audit of selected node/regret trade-offs
+**Root regret** was the score gap between Strict's preferred move and the
+candidate's move, with both judged by the same Strict teacher at the same
+search horizon.
 
-The rows below were selected as spread points earlier in the pipeline and then
-re-audited at depth 8 on 4,000 paired holdout positions. They are not all a
-freshly recomputed depth-8 Pareto set: one can become dominated when the depth
-changes. Control nodes vary slightly because each candidate was paired with
-its own Strict run. Node totals and the critical gate use all 4,000 positions;
-mean regret, p95, and above-100cp use the 3,743 ranking positions that passed
-the static-target filter. The other 257 positions still participate in safety
-checking. “Critical” is the hard self-mate/win-to-draw/win-to-loss gate.
+Lower node count was better for speed; lower regret meant that the candidate
+stayed closer to Strict. Any candidate was rejected immediately if the Strict
+re-search found one of these critical failures:
 
-| Candidate | Candidate / control nodes | Node ratio | Mean regret | P95 regret | Above 100cp | Critical |
-|---|---:|---:|---:|---:|---:|---:|
-| LMR `.45/2.65`, d5/i5 + NMP d3/r1 | 2.886B / 11.224B | 25.71% | 7.96cp | 46cp | 1.95% | 0 |
-| LMR `.45/2.45`, d5/i3 | 3.517B / 11.242B | 31.29% | 6.90cp | 40cp | 1.68% | 0 |
-| LMR `.50/2.55`, d5/i7 + NMP d5/r2 | 3.154B / 11.285B | 27.94% | 6.74cp | 40cp | 1.52% | 0 |
-| LMR `.55/2.80`, d5/i8 + NMP d6/r2 | 3.884B / 11.309B | 34.35% | 5.55cp | 30cp | 1.26% | 0 |
-| NMP d4/r1 | 7.257B / 11.190B | 64.85% | 1.55cp | 2cp | 0.27% | 0 |
-| NMP d5/r1 | 8.951B / 11.224B | 79.75% | 0.93cp | 0cp | 0.08% | 0 |
-| Strict control | 11.317B / 11.317B | 100.00% | 0.00cp | 0cp | 0.00% | 0 |
-
-This table explains why there is no single “best pruning score.” The aggressive
-end saves roughly three quarters of the nodes at the cost of more teacher
-disagreement; the conservative end preserves the Strict decision more often
-but saves less. The frontier process exists to keep those trade-offs visible,
-while the final decision still belongs to direct play.
-
-This table is directional historical evidence. Its raw summary is local and
-Git-ignored, lacks a complete source/binary identity, and predates the tracked
-per-sample heuristic-reset marker; independent heuristic reset for this run is
-therefore not proven.
-
-#### Selection and self-play
-
-The historically promoted V39 `Fast` profile was:
-
-| Mechanism | Promoted settings |
+| Critical failure | Rejection threshold |
 |---|---|
-| LMR | Base `0.45`; divisor `2.9`; minimum depth `3`; minimum move index `6` |
-| NMP | Minimum depth `2`; reduction `3` |
-| RFP | Maximum depth `2`; base margin `175`; margin per depth `275` |
-| LMP | Maximum depth `3`; base `4`; depth multiplier `2` |
+| Win becomes draw | Strict is at least `+500cp`, but the candidate move falls into `[-100,+100]cp`. |
+| Win becomes loss | Strict is at least `+500cp`, but the candidate move falls below `-100cp`. |
+| Self-mate | The candidate move becomes mate-losing while Strict is above `-100cp`. |
 
-The LMR move index is zero-based, so index `6` means the seventh searched move.
-For LMP, the searched-move threshold is `4 + 2 × depth²`; captures,
-promotions, and priority quiets can already have advanced that counter before
-the ordinary quiet stage is considered for pruning.
+Selection happened in several rounds:
 
-Its final decision came from paired, color-reversed games rather than the
-offline frontier alone:
+1. Tune on thousands of positions and known safety cases.
+2. Keep the Pareto frontier: configurations that were not simultaneously
+   worse in both node count and regret.
+3. Recheck the survivors on sealed adversarial positions, fresh selection and
+   holdout sets, and finally at depth 8.
+4. Promote only after paired, color-reversed self-play.
 
-| Match | Fast W-D-L | Fast score | Historical decision |
+The depth-8 holdout illustrates the trade-off. These are representative points
+from 4,000 paired positions, not a claim that one row is universally optimal:
+
+| Profile | Nodes versus Strict | Mean regret | P95 regret | Critical failures |
+|---|---:|---:|---:|---:|
+| Aggressive LMR + NMP | 25.71% | 7.96cp | 46cp | 0 |
+| Safer LMR + NMP | 34.35% | 5.55cp | 30cp | 0 |
+| Conservative NMP | 64.85% | 1.55cp | 2cp | 0 |
+| Strict control | 100.00% | 0.00cp | 0cp | 0 |
+
+Aggressive pruning removed roughly three quarters of the nodes, but disagreed
+with Strict more often. Conservative pruning saved less work but stayed much
+closer to the control. The frontier exposed that choice; it did not decide
+which engine played better.
+
+#### Self-play made the final decision
+
+| Match | Fast W-D-L | Fast score | Decision |
 |---|---:|---:|---|
 | Fast vs Balanced | 21-59-10 | 56.11% | Favor Fast |
-| Fast vs baseline7 | 20-55-9 | 56.55% | Favor Fast |
-| Fast vs later all-four offline winner | 21-59-10 | 56.11% | Reject the offline winner; keep Fast |
+| Fast vs LMR/NMP without RFP/LMP | 20-55-9 | 56.55% | Favor Fast |
+| Fast vs the later offline winner | 21-59-10 | 56.11% | Reject the offline winner; keep Fast |
 
-`baseline7` kept the tuned LMR/NMP base but disabled RFP and LMP, isolating the
-newer pruning pair. The final row is reported from Fast's perspective; it is
-the reciprocal of the raw all-four candidate result `10-59-21`.
+The last row is the important warning: the candidate that looked best in the
+offline selection still lost its direct match. Offline regret and safety gates
+were filters; self-play remained the final promotion test. These historical
+matches used repeated confidence-interval checks and early stopping, so they
+are directional promotion evidence rather than modern Elo estimates.
 
-Those matches repeatedly inspected an ordinary confidence interval and stopped
-when it first excluded 50%; search heuristics also leaked between games. They
-record the project's historical promotion decision, but are directional rather
-than confirmatory statistics.
-
-The all-four candidate is the useful warning here: it won the offline
-selection and fixed-time holdout, then lost its direct match to Fast. The
-Strict teacher, regret frontier, and safety bank are powerful filters; none
-replaces self-play as the final promotion gate.
-
-V40 then tuned QSEE over `OFF, -600, ... , -75, -50, -25, 0`. On a fresh
-6,000-position depth-8 holdout, QSEE-off had the lowest WDL loss, `0` used the
-fewest nodes, and the project chose `-75cp` as an interior frontier compromise.
-At `-75cp`, nodes fell by `15.50%` and time by `11.36%`. The 600-game match
-scored `52.0%` with CI `49.71%-54.29%`, so QSEE was adopted for measured
-efficiency, not a proven strength win or a uniquely optimal scalar threshold.
-
-V41 added in-search threefold and 50-move handling, plus TT-score suppression
-when the score depends on reversible history. Those are correctness guardrails
-around the selected search, not another pruning-strength claim.
+V40 later added QSEE at `-75cp`. On its depth-8 holdout this reduced nodes by
+`15.50%` and time by `11.36%`; a 600-game match scored `52.0%` with an interval
+that still included 50%, so it was adopted for efficiency rather than proven
+strength. V41 then added repetition, 50-move, and history-sensitive TT
+correctness guardrails around the selected search.
 
 See the [selective-search pipeline](docs/nnue_selective_adversarial_pipeline.md)
-for the tracked candidate flow and safety-bank method.
+for the full tuning protocol and parameter-level results.
 
 ### Evidence discipline and negative results
 
@@ -493,58 +473,44 @@ The model-scaling experiments remain documented in the
 [model-scaling report](docs/benchmarks/nnue_model_scaling_20260825.md), but they
 are not a project milestone because they did not improve the deployed engine.
 
-## Current engine architecture
+## Running on Lichess 24/7
 
-The production path now looks like this:
+I chose Heroku so the bot could keep accepting Lichess games without depending
+on my laptop being awake. That deployment exposed a new portability problem:
+the local Apple M4 used the ARM NEON/I8MM kernel, while Heroku ran on an x86
+Xeon host and could not execute those instructions.
 
-```mermaid
-flowchart TB
-    U["Lichess / UCI client"] --> A["UCI adapter<br/>ChessNNUEV41"]
-    A --> W["V41 wrapper"]
-    W --> S["V40 QSEE + V39 selective-search core"]
-    S --> C["Move generation · make/unmake · TT · repetition"]
-    C --> N["Incremental phase-aware quantized NNUE"]
-    N --> K["ARM NEON/I8MM or x86 VNNI/AVX2/scalar"]
-```
+The first x86 release therefore fell back to scalar NNUE inference. It reached
+only about `0.24M` fixed-depth NPS, and the NNUE forward pass consumed 89.15%
+of sampled search CPU. To make the hosted bot practical, I added separate,
+bit-exact AVX2 and AVX-512 VNNI kernels. A single binary now selects VNNI when
+available, then AVX2, and finally the scalar fallback.
 
-Key implementation properties:
+On the same Heroku dynos, the x86 backends produced identical fixed-depth
+scores, moves, and node counts:
 
-- C++20, bitboards and magic sliding attacks;
-- legal noisy/quiet generators and staged move ordering;
-- iterative deepening, alpha-beta/PVS, quiescence, null-move pruning, LMR,
-  history, killer and counter-history heuristics;
-- bucketed transposition tables;
-- incremental NNUE accumulator state with phase and PSQT terms;
-- UCI options for move overhead and selective-search controls;
-- a containerized Lichess worker that starts a fresh UCI engine per game.
+| Heroku backend | Depth-7 NPS | Depth-8 NPS |
+|---|---:|---:|
+| Scalar | 0.241M | 0.243M |
+| AVX2 | 1.022M | 1.053M |
+| AVX-512 VNNI | 1.467M | 1.558M |
 
-In the last documented committed UCI lifecycle, both `ucinewgame` and every
-`position` command clear TT. `ucinewgame` does not perform a complete reset of
-all learned search heuristics. Clearing on each `position` is safe for
-history-dependent draw scores but prevents cross-move TT reuse. The working
-tree contains an experimental generation-tag design in which older entries may
-provide move hints but not score cutoffs; it is not a committed or benchmarked
-production milestone.
+VNNI was **6.1–6.4× faster than scalar** and **1.44–1.48× faster than AVX2**.
+Even after optimizing the x86 path with AVX2 and VNNI, Heroku remained
+significantly slower than the local Mac. This was not pure Heroku overhead:
+the remaining gap combined differences in CPU per-core performance,
+instruction sets, compilers, caches, memory systems, and the shared hosting
+environment. After enabling LTO, the canonical same-source, same-model
+comparison showed the size of that gap:
 
-### Last documented production snapshot
+| Fixed-depth search | Depth-7 NPS | Depth-8 NPS |
+|---|---:|---:|
+| Apple M4, NEON/I8MM + LTO | 4.71M | 4.94M |
+| Heroku Basic, VNNI + LTO | 1.48M | 1.58M |
 
-The last documented production snapshot is V41 at commit `634b2d4`; the
-retained deployment observation records Heroku release v12 on 2026-08-25.
-This README does not treat that observation as proof of live state on a later
-date without a fresh provider query.
-
-- V39 Fast selective-search baseline
-- V40 quiescence SEE pruning at `-75cp`
-- V41 in-search threefold-repetition and 50-move rules
-- phase-aware quantized F2 NNUE model
-- native-build ARM I8MM/NEON and runtime-dispatched x86 AVX2/AVX-512 VNNI
-- Release plus LTO Heroku build
-
-The documented production model is 7,944,336 bytes; its SHA-256 is
-`a1a52891f95db9a1bacc48557325b0c5904da4b3c9f8a333eb2ec090b1bb9c02`.
-The canonical same-signature benchmark measures 4.71-4.94M fixed-depth NPS on
-the local Apple M4 and 1.48-1.58M NPS on the Heroku LTO release. This ratio is a
-cross-platform operational comparison, not isolated hosting overhead.
+The M4 remained **3.19× faster at depth 7** and **3.12× faster at depth 8**.
+Even so, the x86 intrinsics turned the Heroku build from roughly `0.24M` into
+a roughly `1.5M` NPS engine, making continuous Lichess hosting viable.
 
 ## Repository guide
 
@@ -557,53 +523,6 @@ cross-platform operational comparison, not isolated hosting overhead.
 | `benchmarks/` | Versioned canonical position suites. |
 | `deploy/` | Heroku/Lichess packaging and staging workflows. |
 | `docs/benchmarks/` | Curated benchmark reports, protocol and compact evidence manifests. |
-
-## Historical parallel branch: dense neural value evaluation
-
-This section preserves the first dense value-network pipeline. It is useful
-project history, but it does **not** describe the current production NNUE. The
-production architecture is the phase-aware quantized `256 -> 32 -> 32 -> 1`
-network described in the milestone and benchmark reports.
-
-The prototype NN was a value model that mapped each position to a scalar score
-from the side-to-move perspective. It did not output policy or move
-probabilities.
-
-### NN Architecture
-
-The prototype used an earlier form of the sparse encoding above. It stored the
-friendly-king and enemy-king contexts as separate groups, giving
-`6 × 2 × 2 × 64 × 64 = 98,304` possible feature indices. Its network was
-intentionally small:
-
-- `EmbeddingBag`: 98,304 sparse features → a 256-dimensional embedding;
-- concatenate the auxiliary features;
-- `Linear` → ReLU → `Linear` → scalar output.
-
-This was a pipeline test model, not the final NNUE.
-
-### Training Target
-
-The prototype model learned from the classical engine itself.
-
-Dataset labels came from `search_best_move(position, depth).score`. That score
-combined the classical heuristic evaluation with tactical correction from
-shallow alpha-beta search. The prototype therefore learned the heuristic
-evaluation together with shallow-search behavior.
-
-It is not expected to exceed the teacher automatically. A stronger model must be accepted only after match testing against the previous model.
-
-### Self-Play Training Loop
-
-The intended promotion loop was:
-
-1. Freeze the current model as `model_old`.
-2. Generate games using `model_old` plus search.
-3. Train `model_new`.
-4. Match `model_new` against `model_old`.
-5. Promote `model_new` only if it wins clearly.
-
-This prevents blindly replacing the engine with a model that only has lower training loss.
 
 ## Build
 
@@ -655,6 +574,9 @@ Start the current UCI engine with its default model path:
 ```sh
 build/uci_nnue_v41
 ```
+
+The experimental V42/V43 adapters can be built explicitly as
+`uci_nnue_v42` and `uci_nnue_v43` without changing the production target.
 
 Or pass a model explicitly:
 
@@ -793,20 +715,3 @@ build/nn_engine \
 ```
 
 Without `--go-once`, it starts an interactive CLI where the NN engine plays Black.
-
-## Current Direction
-
-The next serious milestones are:
-
-- benchmark a register-fused x86 VNNI forward candidate against the current
-  kernel on the same dynos, with forced-backend parity before changing `auto`;
-- finish and benchmark safe cross-search TT reuse with a persistent UCI process;
-- make the self-play harness reset all search state and pin every artifact hash;
-- run a provenance-complete V41-versus-V39 strength match if that historical
-  comparison is still needed;
-- re-run the full clean suite after the V21-V23 TT-range repair, and fix the
-  optional TT-profile build wiring;
-- archive selected raw benchmark bundles outside ignored local directories.
-
-New models are promoted only after distinct parity, offline-quality,
-throughput, and paired playing-strength gates.

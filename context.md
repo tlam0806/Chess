@@ -1,6 +1,6 @@
 # Chess NNUE optimization context
 
-Updated: 2026-08-25
+Updated: 2026-08-31
 
 This file is a handoff for continuing the current NNUE optimization work in a
 new Codex tab. The relevant repository is:
@@ -23,9 +23,10 @@ lower-level optimization history.
   explicit intrinsics.
 - Judge optimizations with fixed-node paired benchmarks, not one sequential
   before/after run.
-- The worktree is very dirty and many NNUE files are currently untracked.
-  Preserve unrelated user changes. `git diff` will not show changes to
-  untracked files.
+- V41 remains the deployed production searcher. V42 adaptive aspiration and
+  V43 single-bound TT/search are experimental, with immutable tuning and
+  self-play pipelines kept in the repository for evaluation before promotion.
+- Preserve unrelated user changes when continuing optimization work.
 
 ## Current model and inference architecture
 
