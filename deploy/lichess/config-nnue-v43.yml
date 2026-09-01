@@ -125,7 +125,7 @@ matchmaking:
     - 2
     - 3
     - 5
-  opponent_rating_difference: 300
+  opponent_rating_difference: 150
   rating_preference: "none"
   challenge_mode: "rated"
   challenge_filter: none
