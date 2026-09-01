@@ -1,0 +1,49 @@
+{
+  "kind": "nnue_v43_selfplay_race_pool",
+  "schema_version": 1,
+  "source_stage": "selection",
+  "expected_sha256": {
+    "binary": "e64130925f490d696e0b87f241733ab6bc8a7ebe5225875ebb55681ea564d795",
+    "model": "a1a52891f95db9a1bacc48557325b0c5904da4b3c9f8a333eb2ec090b1bb9c02",
+    "master_book": "36befd4ebaee60ab9be6697dc96e2b1ac53c5797dae35a0ea79f1ee5117c51d4",
+    "source_results": "2b75b9faf8ceeb046d6c98e6a2a9c4c7b67b1d8e91cbcdd0c1049af84666f167",
+    "source_summary": "f66da5c080d5dabb399dbac2958c20ae9bd2a9ce088760f203da2eb28af699cb"
+  },
+  "selection_candidate_hashes": [
+    "aebce36cd1de2271fe2d69e8832fe0f71319015556a7934534fddd4d6c2011f6",
+    "98b7732c9587da35554cc274a072a0a5b5f55902aaa77605e78c1ae13e88b4f2",
+    "9cee4e5437b834d1d2dbb48749a116d7129b5f1d239bdd16a9e7a1939497589b",
+    "9c70ffcd173db634f6a027aa4c647cc2472f205fdb05a4263d89067e04747163",
+    "627e3a2447e06ef53d7922d639a3a59f985079ccbd5fa1372c325ef232d86b5e",
+    "0a5ca96d582b4348f8272da75e4c270baddafb9f6d29cec34751d75c61149595",
+    "84698f238d20af68c5d014bf1d9b2f5c93b06c424e094b01c64965dd61cfbed5",
+    "7cd5b3d616635c927f86e7136a604c2b27eeffcf42d296dd119a99d1d38244cb",
+    "2c433c730770d6e9a165aa9a863c0a7ea816851f3dd227679c820ec364cc4a5d",
+    "f5c7651f321a17c5f586b3800d10f516aed8257d8b408011f719b2843233bf10",
+    "f464e19dc45de278b6ddb002a0ccc2c9ebb22677ce3d3af74fc29759d7ef4714",
+    "ddd0ed36ebc9f118d59a54b4478550311fe7e648d45c989bcc154c040be7d25b",
+    "836ef98c2f464e5872614657530b3f840a050a4ccfcd126e53f5c5d3bb468b34",
+    "45a7fb1ecc169d6a234e0bbef15d85b9c2f4db483dcdaeb4332611a737a559e6",
+    "1042e3b86502974b47ec68f0ea40cdd417a99219a41f7a3fba73c7cf2f850a4a",
+    "e94db37b3bdc2b8a83a6276ed9eeaac3ba66d45700862ba21b149ca49b3a5fab",
+    "2ca830e0e8287bdbfbbaf5c16f18fc5493fa2e2f496fb0528dc8f6367ce877c7",
+    "ad92a585ad4e4ae8fee845b4dc024e912035068ed9e7cddec8c6ba19d9817ff7",
+    "02ddef452c089e1ad268ea6a06b59a3ba63a0e2e4a467eff924c76bc29577c60",
+    "4a7d4b238a30491cf25b0eec371955710020ed733fbe45350da7b511b56e6976",
+    "d9aa50c1cff115136238b38292953462457d8de68ee62a622c5a23777c429b0f",
+    "587fe795dec8d78191ffeabda71157b7e84fdc3abc4452ef09817e48daf115c0"
+  ],
+  "pre_refresh_fast_hash": "f92eec7370daf63e37c7455ac452b5b233437fba3d6512326b46380cc808bc82",
+  "production_control_hash": "e770be6261511ed0bc391852c27d69cbe203204c3b5db96e8cc329daf7772d48",
+  "balanced_aspiration": {
+    "enabled": true,
+    "min_depth": 2,
+    "delta_base_cp": 68,
+    "delta_divisor": 33700,
+    "expansion_factor_per_mille": 2290,
+    "max_fail_high_reductions": 1,
+    "mean_score_new_weight_per_mille": 370,
+    "max_researches": 6,
+    "mean_score_clamp_cp": 1500
+  }
+}
