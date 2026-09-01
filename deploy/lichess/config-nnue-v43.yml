@@ -115,7 +115,7 @@ matchmaking:
   allow_matchmaking: true
   allow_during_games: false
   challenge_variant: "standard"
-  challenge_timeout: 15
+  challenge_timeout: 1
   challenge_initial_time:
     - 60
     - 180
