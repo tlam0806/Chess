@@ -87,6 +87,7 @@ challenge:
   sort_by: "first"
   preference: "none"
   accept_bot: true
+  rating_difference: 150
   only_bot: false
   max_increment: 10
   min_increment: 0
