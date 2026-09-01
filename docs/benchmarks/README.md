@@ -20,6 +20,7 @@ New runs should follow the [benchmark protocol and evidence policy](PROTOCOL.md)
 | 2026-08-25 | [V41 NNUE forward stages: M4 versus Heroku](nnue_v41_forward_stage_arm_vs_x86_20260825.md) | Validated isolated-stage diagnostic | Full kernel core was 79.95 ns on M4 versus 227.11 ns on Heroku (2.84x); S1 was the largest isolated absolute gap, while S3 was large only as a ratio. |
 | 2026-08-25 | [NNUE model scaling](nnue_model_scaling_20260825.md) | Rejected/inconclusive candidates | 500M F2 lost to an older 200M reference; F2M won offline but the 600-game epoch-5 match was inconclusive. |
 | 2026-08-29 | [Strict architecture-milestone fixed-depth benchmark](strict_milestone_benchmark_20260829.md) | Validated current-tree reconstruction | Architecture checkpoints V15/V19/V23/V25/V27/V29/V30/V35 had zero score mismatches at D6-D8; V35 used 7.520% of V15's depth-7 time (13.30x faster). |
+| 2026-09-01 | [V43 tuning and production promotion](nnue_v43_production_promotion_20260901.md) | Deployed production release; incomplete strength confirmation | V43 won the staged race and led the partial final 55.238% over 210 complete pairs while using 95.607% of production nodes; the operator promoted it and stopped the planned 600-game final after 421 games. |
 
 The status labels are deliberate:
 

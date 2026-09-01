@@ -1,6 +1,6 @@
 # Project milestone ledger
 
-Updated: 2026-08-29
+Updated: 2026-09-01
 
 This is the chronological index for the chess-engine project. It separates two
 questions which older notes often mixed together:
@@ -40,6 +40,7 @@ New promotion claims follow the
 | M08 | 2026-08-23 to 2026-08-25 | Heroku diagnosis, x86 SIMD/VNNI, and LTO | Production runtime | Validated | Scalar Heroku was about 200k NPS and spent 89.15% of sampled CPU in NNUE forward. VNNI raised fixed-depth throughput to 1.47-1.56M NPS; LTO then added 6.15-6.77%. See the [runtime reports](../benchmarks/README.md). |
 | M09 | 2026-08-25 | Canonical Mac/Heroku comparison and component profile | Operational baseline and diagnostic | Validated with caveats | On exact fixed-depth signatures, Apple M4 measured 4.71-4.94M NPS and Heroku LTO measured 1.48-1.58M NPS. Cross-host sampling found TT at 10.50% versus 2.89%; accumulator was 23.03% on Heroku versus 15.62% leaf-only or 19.20% after caller-informed `memmove` attribution on M4. The aggregate ratio combines hardware, ISA, compiler and hosting effects; local thermal drift makes component `ns/node` conditional. See the [component profile](../benchmarks/nnue_v41_cross_host_component_profile_20260825.md). |
 | M10 | 2026-08-23 to 2026-08-25 | Larger F2 and horizontally mirrored F2M model experiments | Experimental | Mixed | A 500M F2 candidate was rejected against an older 200M reference. F2M improved sealed offline error at 50M, but the current 600-game epoch-5 self-play was inconclusive. No F2M model is promoted. See [model-scaling evidence](../benchmarks/nnue_model_scaling_20260825.md). |
+| M11 | 2026-08-30 to 2026-09-01 | V43 scalar single-bound TT, adaptive aspiration, joint pruning tune and deployment | Production search | Deployed with incomplete strength confirmation | V43 removed dual-range bound merging, passed clean-search parity and targeted tactical regressions, and won the staged race. The partial final scored 55.238% over 210 complete pairs while using 95.607% of production nodes. The operator explicitly promoted it before the planned 600-game final completed, then stopped that match at 421 games. See [V43 production promotion](../benchmarks/nnue_v43_production_promotion_20260901.md). |
 
 ## Source anchors
 
@@ -53,25 +54,26 @@ New promotion claims follow the
 | M06-M08 | `803aeb5` V41/SIMD production; `36b85a8` release report; `634b2d4` LTO production |
 | M09 | clean `634b2d4` local rerun, engine SHA `ecd723c2...`; Heroku LTO SHA `2b9bedd0...` |
 | M10 | production F2 SHA `a1a52891...`; F2M work remains uncommitted and is identified by checkpoint/binary hashes in its report |
+| M11 | `de3b5ab` V43 production source; combined config SHA `98b7732c...`; model SHA remains `a1a52891...` |
 
 ## Current production snapshot
 
-The last committed engine snapshot is `634b2d481925abc4b5ebf6da9129ade2edf3a24f`:
+The current production source snapshot is
+`de3b5ab7bacdd6bf96a7f130f5f9176d8bc4f256`:
 
-- UCI engine: `ChessNNUEV41`
-- search: V41, including V40 QSEE `-75cp` and in-search draw rules
+- UCI engine: `ChessNNUEV43`
+- search: V43 scalar single-bound TT, tuned selective policy and adaptive
+  aspiration; combined config SHA `98b7732c...`
 - model SHA-256: `a1a52891f95db9a1bacc48557325b0c5904da4b3c9f8a333eb2ec090b1bb9c02`
 - Heroku x86 backend: `x86_avx512vnni_256`
 - build policy: Release plus LTO
-- observed Heroku release on 2026-08-25: `v12`
+- observed Heroku release on 2026-09-01: `v17`
 
-The retained production smoke identifies source label `release-634b2d4-lto`
-and engine SHA-256
-`2b9bedd073bc6d15464567cc9a716a1b7e0b3f7227ed7b293b9f9bb2b7ba8128`.
-The smoke artifact does not itself retain the Heroku release number, so the
-release observation and binary-level evidence are recorded separately. A
-sanitized `deployment_observation` in the tracked evidence manifest preserves
-the observed `v12` lifecycle fact without account credentials.
+The V43 release phase verified the exact deployment configuration, V43 engine
+identity, ponder protocol and the `Ahm5kxQZ` tactical regression before the
+worker resumed. Release `v16` is retained as the V41 rollback anchor. Strength
+evidence remains explicitly incomplete because the operator stopped the final
+confirmation after 421 of 600 games.
 
 ## Benchmark coverage and open gates
 

@@ -1,6 +1,6 @@
 # Chess NNUE optimization context
 
-Updated: 2026-08-31
+Updated: 2026-09-01
 
 This file is a handoff for continuing the current NNUE optimization work in a
 new Codex tab. The relevant repository is:
@@ -26,7 +26,10 @@ lower-level optimization history.
 - V43 is the deployed production searcher, using combined tuning config
   `98b7732c9587...`; V41 remains the previous production anchor and V42 is an
   experimental adaptive-aspiration branch. The operator explicitly authorized
-  promotion before the frozen 600-game V43 confirmation finished.
+  promotion before the frozen 600-game V43 confirmation finished. The race was
+  then stopped at 421 games: 210 complete pairs scored 55.238%, paired CI95
+  52.059%-58.417%, with a 95.607% aggregate node ratio. Heroku release `v17`
+  deployed source `de3b5ab`; `v16` is the V41 rollback anchor.
 - Preserve unrelated user changes when continuing optimization work.
 
 ## Current model and inference architecture
@@ -905,7 +908,7 @@ Relevant tune result:
 logs/nnue_v40_qsee_tune_20260817_005158/summary.json
 ```
 
-## Production V41: in-search draw rules
+## Historical production V41: in-search draw rules
 
 V41 wraps the V40/QSEE `-75cp` search profile and moves draw handling into the
 search tree. The UCI adapter replays the real game moves into a hash history;
@@ -935,9 +938,9 @@ depth 8: node ratio 94.5019%, aggregate NPS ratio 99.7464%, time ratio 94.7422%
 See `docs/benchmarks/nnue_v41_draw_rules_20260825.md` for the protocol,
 bootstrap intervals and limitations.
 
-The production Lichess deployment uses `uci_nnue_v41`, the current F2 Huber
-model, and no external `AvoidDraw` options. Release v11 first deployed the x86
-SIMD engine from commit `803aeb5`. Release v12 then enabled LTO from commit
+The former production Lichess deployment used `uci_nnue_v41`, the current F2
+Huber model, and no external `AvoidDraw` options. Release v11 first deployed
+the x86 SIMD engine from commit `803aeb5`. Release v12 then enabled LTO from commit
 `634b2d4`; its retained smoke engine SHA-256 is
 `2b9bedd073bc6d15464567cc9a716a1b7e0b3f7227ed7b293b9f9bb2b7ba8128`.
 The smoke reported `x86_avx512vnni_256` and reproduced the canonical

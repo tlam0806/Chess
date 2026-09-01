@@ -10,8 +10,11 @@ a scalar single-bound table and uses promoted config
 V41 remains the previous production anchor and V42 remains an experimental
 adaptive-aspiration branch. The V43 tuning and staged self-play race are kept
 in the repository for reproducibility. The operator explicitly promoted V43
-before the frozen 600-game confirmation had completed, so the provisional
-snapshot available at promotion time is not a completed strength proof.
+before the frozen 600-game confirmation had completed, then stopped it at 421
+games. The 210 complete pairs scored 55.238% with a paired 95% interval of
+52.059%-58.417% while using 95.607% of production nodes. This is favorable
+partial evidence, not a completed 600-game strength proof; see the
+[V43 promotion report](docs/benchmarks/nnue_v43_production_promotion_20260901.md).
 
 The project goal is not to clone Stockfish directly. It is a staged engine
 project for learning the core systems work behind chess engines: bitboards,
