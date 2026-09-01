@@ -534,7 +534,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--remote-engine",
-        default="/app/chess-engine/build-release/uci_nnue_v41",
+        default="/app/chess-engine/build-release/uci_nnue_v43",
     )
     parser.add_argument(
         "--remote-model",
@@ -545,7 +545,7 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
-        "--remote-config", default="/app/lichess-bot/config-nnue-v41.yml"
+        "--remote-config", default="/app/lichess-bot/config-nnue-v43.yml"
     )
     parser.add_argument("--remote-engine-cwd", default="/app/chess-engine")
     return parser

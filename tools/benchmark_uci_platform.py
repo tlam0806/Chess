@@ -2,9 +2,10 @@
 """Reproducible wall-clock benchmark for a UCI chess engine.
 
 The harness deliberately starts a fresh engine process for every measured
-position.  The current V41 UCI adapter clears its transposition table between
-positions but retains history and counter-history, so reusing a process would
-make fixed-depth node counts depend on the preceding cases.
+position.  Production V43 may retain TT and search-heuristic state across
+searches until ``ucinewgame``; the harness uses both a fresh process and an
+explicit new-game reset so fixed-depth measurements cannot depend on a
+preceding case.
 
 Only the interval from sending ``go`` to receiving ``bestmove`` is timed.  The
 engine startup, model load, UCI handshake, and host/CLI startup are excluded.

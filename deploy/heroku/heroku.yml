@@ -4,6 +4,6 @@ build:
 release:
   image: worker
   command:
-    - python /app/chess-engine/tools/test_uci_ponder_protocol.py /app/chess-engine/build-release/uci_nnue_v41 /app/chess-engine/models/quantized_scale_grid/old_score_huber200_lr_sweep_then_5ep_20260724_142758/best/phase_quantized_nnue.bin
+    - python /app/chess-engine/tools/test_uci_ponder_protocol.py /app/chess-engine/build-release/uci_nnue_v43 /app/chess-engine/models/quantized_scale_grid/old_score_huber200_lr_sweep_then_5ep_20260724_142758/best/phase_quantized_nnue.bin /app/lichess-bot/config-nnue-v43.yml
 run:
-  worker: python /app/lichess-bot/lichess-bot.py --config /app/lichess-bot/config-nnue-v41.yml
+  worker: python /app/lichess-bot/lichess-bot.py --config /app/lichess-bot/config-nnue-v43.yml

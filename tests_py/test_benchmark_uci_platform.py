@@ -19,6 +19,10 @@ from tools.run_heroku_uci_platform_benchmark import (
     cross_run_integrity,
     remote_command,
 )
+from tools.nnue_v43_production_profile import (
+    PRODUCTION_CONFIG_HASH,
+    config_profile_hash,
+)
 
 
 class UciPlatformBenchmarkTests(unittest.TestCase):
@@ -158,11 +162,19 @@ class UciPlatformBenchmarkTests(unittest.TestCase):
     def test_deployment_config_options_are_parseable(self) -> None:
         repo_root = Path(__file__).resolve().parents[1]
         options = read_config_uci_options(
-            repo_root / "deploy/lichess/config-nnue-v41.yml"
+            repo_root / "deploy/lichess/config-nnue-v43.yml"
         )
         self.assertEqual(options["LmrBase"], "0.45")
-        self.assertEqual(options["QseeThreshold"], -75)
+        self.assertEqual(options["QseeThreshold"], -25)
         self.assertTrue(options["QseeEnabled"])
+        self.assertTrue(options["TwofoldSearchDraw"])
+        self.assertFalse(options["ReuseStaleTtScores"])
+        self.assertFalse(options["ReuseDeeperTtScores"])
+
+        self.assertEqual(
+            config_profile_hash(repo_root / "deploy/lichess/config-nnue-v43.yml"),
+            PRODUCTION_CONFIG_HASH,
+        )
 
     def test_rejected_uci_option_fails_handshake(self) -> None:
         fake_engine = r"""import sys

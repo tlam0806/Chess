@@ -62,6 +62,8 @@ public:
         int qsearch_capture_metric_weight = 160;
     };
     struct SelectiveConfig {
+        // Selective half of combined production V43 config 98b7732c9587,
+        // promoted from the frozen balanced-aspiration all-prunes race.
         bool enable_lmr = true;
         double lmr_base = 0.45;
         double lmr_divisor = 2.9;
@@ -69,17 +71,17 @@ public:
         std::size_t lmr_min_move_index = 6;
         bool enable_null_move = true;
         int null_move_min_depth = 2;
-        int null_move_reduction = 3;
+        int null_move_reduction = 4;
         bool enable_reverse_futility = true;
-        int reverse_futility_max_depth = 2;
-        int reverse_futility_base_margin = 175;
-        int reverse_futility_margin_per_depth = 275;
+        int reverse_futility_max_depth = 4;
+        int reverse_futility_base_margin = 50;
+        int reverse_futility_margin_per_depth = 100;
         bool enable_late_move_pruning = true;
         int late_move_pruning_max_depth = 3;
         std::size_t late_move_pruning_base = 4;
-        std::size_t late_move_pruning_depth_multiplier = 2;
+        std::size_t late_move_pruning_depth_multiplier = 1;
         bool enable_qsearch_see_pruning = true;
-        int qsearch_see_threshold = -75;
+        int qsearch_see_threshold = -25;
         bool enable_main_search_see_pruning = false;
         int main_search_see_max_depth = 5;
         int main_search_see_margin_per_depth = 100;
@@ -98,17 +100,16 @@ public:
         std::uint64_t main_search_see_evaluations = 0;
         std::uint64_t main_search_see_pruned_moves = 0;
     };
-    // V43 keeps V42's adaptive aspiration policy enabled so the experiment
-    // isolates the score/TT representation rather than silently reverting to
-    // the legacy fixed 50 cp policy.
+    // Balanced aspiration profile 906570ae8ede, paired with the selective
+    // settings above in combined production config 98b7732c9587.
     struct AspirationConfig {
         bool enabled = true;
-        int min_depth = 3;
-        int delta_base_cp = 30;
-        int delta_divisor = 10'000;
-        int expansion_factor_per_mille = 1'750;
-        int max_fail_high_reductions = 2;
-        int mean_score_new_weight_per_mille = 500;
+        int min_depth = 2;
+        int delta_base_cp = 68;
+        int delta_divisor = 33'700;
+        int expansion_factor_per_mille = 2'290;
+        int max_fail_high_reductions = 1;
+        int mean_score_new_weight_per_mille = 370;
         int max_researches = 6;
         int mean_score_clamp_cp = 1'500;
     };

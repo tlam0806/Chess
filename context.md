@@ -23,9 +23,10 @@ lower-level optimization history.
   explicit intrinsics.
 - Judge optimizations with fixed-node paired benchmarks, not one sequential
   before/after run.
-- V41 remains the deployed production searcher. V42 adaptive aspiration and
-  V43 single-bound TT/search are experimental, with immutable tuning and
-  self-play pipelines kept in the repository for evaluation before promotion.
+- V43 is the deployed production searcher, using combined tuning config
+  `98b7732c9587...`; V41 remains the previous production anchor and V42 is an
+  experimental adaptive-aspiration branch. The operator explicitly authorized
+  promotion before the frozen 600-game V43 confirmation finished.
 - Preserve unrelated user changes when continuing optimization work.
 
 ## Current model and inference architecture

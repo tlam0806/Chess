@@ -5,6 +5,8 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 BOT_SOURCE="${LICHESS_BOT_SOURCE:-/Users/tunglamnguyen/lichess-bot}"
 TOKEN_FILE="${LICHESS_TOKEN_FILE:-$BOT_SOURCE/.token.env}"
 MODEL_REL="models/quantized_scale_grid/old_score_huber200_lr_sweep_then_5ep_20260724_142758/best/phase_quantized_nnue.bin"
+ENGINE_TARGET="uci_nnue_v43"
+PRODUCTION_CONFIG_HASH="98b7732c9587da35554cc274a072a0a5b5f55902aaa77605e78c1ae13e88b4f2"
 APP_NAME="${1:-}"
 SOURCE_REF="${CHESS_DEPLOY_SOURCE_REF:-HEAD}"
 SET_LICHESS_TOKEN="${CHESS_SET_LICHESS_TOKEN:-0}"
@@ -76,7 +78,7 @@ mkdir -p "$STAGE_DIR/lichess-bot" "$STAGE_DIR/$(dirname "$MODEL_REL")"
 git -C "$REPO_ROOT" archive --format=tar "$SOURCE_COMMIT" -- \
   CMakeLists.txt include src tools tests benchmarks \
   deploy/heroku/Dockerfile deploy/heroku/heroku.yml \
-  deploy/lichess/config-nnue-v41.yml \
+  deploy/lichess/config-nnue-v43.yml \
   | tar -xf - -C "$STAGE_DIR"
 cp "$STAGE_DIR/deploy/heroku/Dockerfile" "$STAGE_DIR/Dockerfile"
 cp "$STAGE_DIR/deploy/heroku/heroku.yml" "$STAGE_DIR/heroku.yml"
@@ -88,11 +90,15 @@ git -C "$BOT_SOURCE" archive --format=tar "$BOT_COMMIT" \
   | tar -xf - -C "$STAGE_DIR/lichess-bot"
 
 MODEL_SHA256="$(sha256_file "$STAGE_DIR/$MODEL_REL")"
-CONFIG_SHA256="$(sha256_file "$STAGE_DIR/deploy/lichess/config-nnue-v41.yml")"
+CONFIG_SHA256="$(sha256_file "$STAGE_DIR/deploy/lichess/config-nnue-v43.yml")"
 SUITE_SHA256="$(sha256_file "$STAGE_DIR/benchmarks/uci_platform_v1.json")"
+python3 "$STAGE_DIR/tools/nnue_v43_production_profile.py" \
+  "$STAGE_DIR/deploy/lichess/config-nnue-v43.yml" \
+  --expect "$PRODUCTION_CONFIG_HASH" >/dev/null
 python3 - "$STAGE_DIR/release-manifest.json" \
   "$SOURCE_COMMIT" "$SOURCE_TREE" "$BOT_COMMIT" \
-  "$MODEL_REL" "$MODEL_SHA256" "$CONFIG_SHA256" "$SUITE_SHA256" <<'PY'
+  "$MODEL_REL" "$MODEL_SHA256" "$CONFIG_SHA256" "$SUITE_SHA256" \
+  "$ENGINE_TARGET" "$PRODUCTION_CONFIG_HASH" <<'PY'
 import json
 import sys
 
@@ -105,12 +111,16 @@ import sys
     model_sha256,
     config_sha256,
     suite_sha256,
+    engine_target,
+    production_config_hash,
 ) = sys.argv[1:]
 payload = {
-    "schema_version": 1,
+    "schema_version": 2,
     "source_commit": source_commit,
     "source_tree": source_tree,
     "lichess_bot_commit": lichess_bot_commit,
+    "engine_target": engine_target,
+    "production_config_hash": production_config_hash,
     "model_path": model_path,
     "model_sha256": model_sha256,
     "config_sha256": config_sha256,
@@ -131,7 +141,7 @@ if git -C "$STAGE_DIR" ls-files \
   exit 2
 fi
 
-git -C "$STAGE_DIR" commit -qm "Deploy NNUE V41 Lichess bot"
+git -C "$STAGE_DIR" commit -qm "Deploy NNUE V43 Lichess bot"
 
 APP_CREATED=0
 if [[ -z "$APP_NAME" ]]; then

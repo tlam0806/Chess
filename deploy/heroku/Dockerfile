@@ -13,7 +13,7 @@ COPY tools ./tools
 COPY tests ./tests
 RUN cmake -S . -B build-release -DCMAKE_BUILD_TYPE=Release \
        -DCHESS_ENABLE_LTO=ON \
-    && cmake --build build-release --target uci_nnue_v41 -j 2
+    && cmake --build build-release --target uci_nnue_v43 -j 2
 
 FROM python:3.12-slim
 
@@ -24,25 +24,28 @@ WORKDIR /app
 COPY lichess-bot ./lichess-bot
 RUN python -m pip install --no-cache-dir -r /app/lichess-bot/requirements.txt
 
-COPY --from=engine-build /src/build-release/uci_nnue_v41 \
-    /app/chess-engine/build-release/uci_nnue_v41
+COPY --from=engine-build /src/build-release/uci_nnue_v43 \
+    /app/chess-engine/build-release/uci_nnue_v43
 COPY models /app/chess-engine/models
 COPY tools/benchmark_uci_platform.py \
     /app/chess-engine/tools/benchmark_uci_platform.py
+COPY tools/nnue_v43_production_profile.py \
+    /app/chess-engine/tools/nnue_v43_production_profile.py
 COPY tools/test_uci_ponder_protocol.py \
     /app/chess-engine/tools/test_uci_ponder_protocol.py
 COPY benchmarks/uci_platform_v1.json \
     /app/chess-engine/benchmarks/uci_platform_v1.json
 COPY release-manifest.json /app/chess-engine/release-manifest.json
-COPY deploy/lichess/config-nnue-v41.yml /tmp/config-nnue-v41.yml
+COPY deploy/lichess/config-nnue-v43.yml /tmp/config-nnue-v43.yml
 RUN sed 's#__ENGINE_ROOT__#/app/chess-engine#g' \
-      /tmp/config-nnue-v41.yml \
-      > /app/lichess-bot/config-nnue-v41.yml \
-    && rm /tmp/config-nnue-v41.yml \
+      /tmp/config-nnue-v43.yml \
+      > /app/lichess-bot/config-nnue-v43.yml \
+    && rm /tmp/config-nnue-v43.yml \
     && chmod +x \
-      /app/chess-engine/build-release/uci_nnue_v41 \
+      /app/chess-engine/build-release/uci_nnue_v43 \
       /app/chess-engine/tools/benchmark_uci_platform.py \
+      /app/chess-engine/tools/nnue_v43_production_profile.py \
       /app/chess-engine/tools/test_uci_ponder_protocol.py
 
 WORKDIR /app/lichess-bot
-CMD ["python", "lichess-bot.py", "--config", "config-nnue-v41.yml"]
+CMD ["python", "lichess-bot.py", "--config", "config-nnue-v43.yml"]

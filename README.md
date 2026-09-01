@@ -2,12 +2,16 @@
 
 A learning-oriented C++20 chess engine built from bitboards upward. The project
 now includes a long classical-search lineage, phase-aware quantized NNUE,
-selective V41 search, a UCI adapter, and a documented Lichess deployment.
+selective V43 search, a UCI adapter, and a documented Lichess deployment.
 
-V41 remains the production engine. V42 (adaptive aspiration windows) and V43
-(a single-bound transposition table) are tracked experimental searchers; their
-tuning and self-play pipelines are included for reproducible evaluation, but
-neither version is claimed as promoted here.
+V43 is the production engine. It replaces the old dual-range TT contract with
+a scalar single-bound table and uses promoted config
+`98b7732c9587da35554cc274a072a0a5b5f55902aaa77605e78c1ae13e88b4f2`.
+V41 remains the previous production anchor and V42 remains an experimental
+adaptive-aspiration branch. The V43 tuning and staged self-play race are kept
+in the repository for reproducibility. The operator explicitly promoted V43
+before the frozen 600-game confirmation had completed, so the provisional
+snapshot available at promotion time is not a completed strength proof.
 
 The project goal is not to clone Stockfish directly. It is a staged engine
 project for learning the core systems work behind chess engines: bitboards,
@@ -531,9 +535,9 @@ With CMake:
 ```sh
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build --target \
-  uci_nnue_v41 \
+  uci_nnue_v43 \
   search_tests \
-  nnue_searcher_v41_repetition_tests \
+  nnue_searcher_v43_single_bound_tests \
   phase_quantized_nnue_tests \
   -j
 ```
@@ -543,9 +547,9 @@ On this machine, if `cmake` is not on `PATH`, use:
 ```sh
 /opt/homebrew/Cellar/cmake/4.2.0/bin/cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 /opt/homebrew/Cellar/cmake/4.2.0/bin/cmake --build build --target \
-  uci_nnue_v41 \
+  uci_nnue_v43 \
   search_tests \
-  nnue_searcher_v41_repetition_tests \
+  nnue_searcher_v43_single_bound_tests \
   phase_quantized_nnue_tests \
   -j
 ```
@@ -554,7 +558,7 @@ Run tests:
 
 ```sh
 ctest --test-dir build --output-on-failure \
-  -R '^(search_tests|nnue_searcher_v41_repetition_tests|phase_quantized_nnue_tests)$'
+  -R '^(search_tests|nnue_searcher_v43_single_bound_tests|phase_quantized_nnue_tests)$'
 ```
 
 The default all-target build currently also includes optional TT-stat profiling
@@ -572,16 +576,16 @@ reproduction.
 Start the current UCI engine with its default model path:
 
 ```sh
-build/uci_nnue_v41
+build/uci_nnue_v43
 ```
 
-The experimental V42/V43 adapters can be built explicitly as
-`uci_nnue_v42` and `uci_nnue_v43` without changing the production target.
+The previous V41 and experimental V42 adapters remain available as
+`uci_nnue_v41` and `uci_nnue_v42`.
 
 Or pass a model explicitly:
 
 ```sh
-build/uci_nnue_v41 \
+build/uci_nnue_v43 \
   models/quantized_scale_grid/old_score_huber200_lr_sweep_then_5ep_20260724_142758/best/phase_quantized_nnue.bin
 ```
 
