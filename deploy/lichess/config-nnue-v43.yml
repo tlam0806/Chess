@@ -21,10 +21,10 @@ engine:
     AspirationMeanWeightPermille: 370
     AspirationMaxResearches: 6
     AspirationMeanClampCp: 1500
-    LmrBase: "0.45"
+    LmrBase: "0.6"
     LmrDivisor: "2.9"
     LmrMinDepth: 3
-    LmrMinMoveIndex: 6
+    LmrMinMoveIndex: 5
     NullMoveMinDepth: 2
     NullMoveReduction: 4
     RfpEnabled: true
@@ -34,10 +34,10 @@ engine:
     LmpEnabled: true
     LmpMaxDepth: 3
     LmpBase: 4
-    LmpDepthMultiplier: 1
+    LmpDepthMultiplier: 0
     QseeEnabled: true
-    QseeThreshold: -25
-    MainSeeEnabled: false
+    QseeThreshold: 25
+    MainSeeEnabled: true
     MainSeeMaxDepth: 5
     MainSeeMarginPerDepth: 100
 
@@ -106,9 +106,9 @@ challenge:
   max_simultaneous_games_per_user: 1
 
 greeting:
-  hello: "Hi, I'm running the promoted NNUE V43 single-bound search."
+  hello: "Hi, I'm running the provisional NNUE V45 pruning profile."
   goodbye: "Good game."
-  hello_spectators: "NNUE V43: tuned pruning, adaptive aspiration, and history-aware draws."
+  hello_spectators: "NNUE V45 candidate: Pareto-tuned pruning on the V43 search core."
   goodbye_spectators: "Thanks for watching."
 
 matchmaking:

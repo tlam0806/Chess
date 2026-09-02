@@ -15,7 +15,7 @@ except ModuleNotFoundError:  # Direct execution from a staged tools directory.
 
 
 PRODUCTION_CONFIG_HASH = (
-    "98b7732c9587da35554cc274a072a0a5b5f55902aaa77605e78c1ae13e88b4f2"
+    "28c848b51bd93c402e873a0154e1fc61c953efa683898dc4a67d1fecd5a76aa8"
 )
 
 

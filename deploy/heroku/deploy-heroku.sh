@@ -6,7 +6,7 @@ BOT_SOURCE="${LICHESS_BOT_SOURCE:-/Users/tunglamnguyen/lichess-bot}"
 TOKEN_FILE="${LICHESS_TOKEN_FILE:-$BOT_SOURCE/.token.env}"
 MODEL_REL="models/quantized_scale_grid/old_score_huber200_lr_sweep_then_5ep_20260724_142758/best/phase_quantized_nnue.bin"
 ENGINE_TARGET="uci_nnue_v43"
-PRODUCTION_CONFIG_HASH="98b7732c9587da35554cc274a072a0a5b5f55902aaa77605e78c1ae13e88b4f2"
+PRODUCTION_CONFIG_HASH="28c848b51bd93c402e873a0154e1fc61c953efa683898dc4a67d1fecd5a76aa8"
 APP_NAME="${1:-}"
 SOURCE_REF="${CHESS_DEPLOY_SOURCE_REF:-HEAD}"
 SET_LICHESS_TOKEN="${CHESS_SET_LICHESS_TOKEN:-0}"
@@ -141,7 +141,7 @@ if git -C "$STAGE_DIR" ls-files \
   exit 2
 fi
 
-git -C "$STAGE_DIR" commit -qm "Deploy NNUE V43 Lichess bot"
+git -C "$STAGE_DIR" commit -qm "Deploy provisional NNUE V45 pruning profile"
 
 APP_CREATED=0
 if [[ -z "$APP_NAME" ]]; then
