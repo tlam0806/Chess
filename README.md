@@ -4,17 +4,23 @@ A learning-oriented C++20 chess engine built from bitboards upward. The project
 now includes a long classical-search lineage, phase-aware quantized NNUE,
 selective V43 search, a UCI adapter, and a documented Lichess deployment.
 
-V43 is the production engine. It replaces the old dual-range TT contract with
-a scalar single-bound table and uses promoted config
-`98b7732c9587da35554cc274a072a0a5b5f55902aaa77605e78c1ae13e88b4f2`.
-V41 remains the previous production anchor and V42 remains an experimental
-adaptive-aspiration branch. The V43 tuning and staged self-play race are kept
-in the repository for reproducibility. The operator explicitly promoted V43
-before the frozen 600-game confirmation had completed, then stopped it at 421
-games. The 210 complete pairs scored 55.238% with a paired 95% interval of
-52.059%-58.417% while using 95.607% of production nodes. This is favorable
-partial evidence, not a completed 600-game strength proof; see the
+V43 remains the production search core. Heroku release v20 provisionally uses
+the V45 tournament-winning pruning profile
+`28c848b51bd93c402e873a0154e1fc61c953efa683898dc4a67d1fecd5a76aa8`.
+The operator promoted it on 2026-09-02 while its frozen 600-game confirmation
+against the previous profile was still running. Heroku release v19, with
+profile `98b7732c9587da35554cc274a072a0a5b5f55902aaa77605e78c1ae13e88b4f2`,
+is the rollback anchor if the completed evidence reverses the result. This is
+a provisional deployment, not a completed strength claim.
+
+The earlier V43 promotion was also made before its frozen confirmation had
+completed; that run was stopped at 421 games. Its 210 complete pairs scored
+55.238% with a paired 95% interval of 52.059%-58.417% while using 95.607% of
+the prior production nodes. See the
 [V43 promotion report](docs/benchmarks/nnue_v43_production_promotion_20260901.md).
+V41 remains an older production anchor, and V42 remains an experimental
+adaptive-aspiration branch. The tuning and staged self-play artifacts are kept
+for reproducibility.
 
 The project goal is not to clone Stockfish directly. It is a staged engine
 project for learning the core systems work behind chess engines: bitboards,
@@ -55,7 +61,7 @@ than another incremental version.
 | 1. Correctness, simple search, heuristic evaluation | Can the engine represent chess correctly and return a defensible move? | A legal bitboard engine, perft/tests, plain alpha-beta, and a material-plus-piece-square evaluator. |
 | 2. Range-correct Strict search and clean optimization | How much search work can be removed while preserving the same fixed-depth score or a mathematically valid alpha-beta bound? | Bound-correct TT, PVS/re-search, ordering, fixed move storage, magic attacks, lazy/staged legality, make/unmake, and cache/layout work, with per-position score/move/node gates where evidence survives. |
 | 3. Neural evaluation becomes both stronger and practical | Can an NN evaluator justify its much higher cost? | The historical NNUE beat the heuristic engine while searching one ply less; incremental accumulators and SIMD kernels then made NN inference production-viable. |
-| 4. Controlled selective or “dirty” pruning | How aggressively can the engine prune unlikely moves without causing tactical blunders? | LMR, null move, RFP, LMP, and QSEE were evaluated on large position sets, safety banks, Pareto frontiers, and finally paired self-play. |
+| 4. Controlled selective or “dirty” pruning | How aggressively can the engine prune unlikely moves without causing tactical blunders? | LMR, null move, RFP, LMP, and QSEE are filtered by cached Strict-teacher samples, two-stage Pareto selection, and progressively longer round-robin self-play. |
 
 This README uses those four thematic milestones. The version names remain in
 the source tree and Git history for finer-grained reconstruction; the four
@@ -395,73 +401,65 @@ therefore could not be accepted from an NPS improvement alone.
 
 #### How candidates were selected
 
-Each candidate was compared with the V36 Strict teacher over thousands of
-positions. The teacher first searched the position at a fixed depth, chose its
-best move, and assigned that move a score. If the candidate chose another
-move, the same teacher forced that move, searched the resulting line to the
-same fixed-depth horizon, and returned the score from the original side's
-perspective. The candidate's own reported score was not used.
+V45 replaces the older fixed candidate funnel with a steady-state pipeline.
+It deliberately does not reserve a separate “safe” configuration: production
+V43 is the control, while the search budget is spent exploring mutations that
+can improve the active frontier.
 
-**Root regret** was the score gap between Strict's preferred move and the
-candidate's move, with both judged by the same Strict teacher at the same
-search horizon.
+1. **Mutate and screen.** Start from the production configuration, uniformly
+   choose a parent from the current tune Pareto frontier, and mutate one grid
+   step (normally one parameter block, occasionally two). Run a cheap fixed
+   sample first. The current run rejects an offspring immediately if its total
+   node count exceeds `2.0x` production V43.
+2. **Update the tune frontier in both directions.** Evaluate each survivor on
+   the full tune split using mean Strict-teacher WDL loss and total candidate
+   nodes as the two objectives. Reject the offspring if any active member
+   dominates it. Otherwise insert it and remove every active member that it
+   dominates. Every evaluated configuration is still archived, so rejection
+   does not destroy evidence.
+3. **Reselect on fresh data.** Freeze the Stage 1 frontier, evaluate every
+   member once on a fresh selection split, apply the node cap again, and build
+   a new Pareto frontier. This split is never fed back into mutation; keeping
+   it one-way prevents the “fresh” sample from quietly becoming more tune
+   data.
+4. **Let self-play choose.** Put the Stage 2 frontier, including production
+   V43, into a serial round-robin tournament. Approximately half the field is
+   removed after each round. Later rounds use more games per pair and longer
+   time controls because the remaining decisions are closer and more
+   important.
 
-Lower node count was better for speed; lower regret meant that the candidate
-stayed closer to Strict. Any candidate was rejected immediately if the Strict
-re-search found one of these critical failures:
+The current tournament contract is:
 
-| Critical failure | Rejection threshold |
-|---|---|
-| Win becomes draw | Strict is at least `+500cp`, but the candidate move falls into `[-100,+100]cp`. |
-| Win becomes loss | Strict is at least `+500cp`, but the candidate move falls below `-100cp`. |
-| Self-mate | The candidate move becomes mate-losing while Strict is above `-100cp`. |
-
-Selection happened in several rounds:
-
-1. Tune on thousands of positions and known safety cases.
-2. Keep the Pareto frontier: configurations that were not simultaneously
-   worse in both node count and regret.
-3. Recheck the survivors on sealed adversarial positions, fresh selection and
-   holdout sets, and finally at depth 8.
-4. Promote only after paired, color-reversed self-play.
-
-The depth-8 holdout illustrates the trade-off. These are representative points
-from 4,000 paired positions, not a claim that one row is universally optimal:
-
-| Profile | Nodes versus Strict | Mean regret | P95 regret | Critical failures |
+| Round | Entrants -> survivors | Games per pair | Time control | Round games |
 |---|---:|---:|---:|---:|
-| Aggressive LMR + NMP | 25.71% | 7.96cp | 46cp | 0 |
-| Safer LMR + NMP | 34.35% | 5.55cp | 30cp | 0 |
-| Conservative NMP | 64.85% | 1.55cp | 2cp | 0 |
-| Strict control | 100.00% | 0.00cp | 0cp | 0 |
+| 1 | 17 -> 9 | 8 | `1s + 0.01s` | 1,088 |
+| 2 | 9 -> 5 | 16 | `3s + 0.03s` | 576 |
+| 3 | 5 -> 3 | 32 | `5s + 0.05s` | 320 |
+| 4 | 3 -> 2 | 64 | `7s + 0.07s` | 192 |
+| 5 | 2 -> 1 | 128 | `10s + 0.10s` | 128 |
 
-Aggressive pruning removed roughly three quarters of the nodes, but disagreed
-with Strict more often. Conservative pruning saved less work but stayed much
-closer to the control. The frontier exposed that choice; it did not decide
-which engine played better.
+That is 2,304 tournament games. Each opening is played with reversed colors,
+and every round receives a fresh, disjoint opening set. If a challenger wins,
+it then plays a separate 600-game confirmation against production V43. Neither
+the tournament nor confirmation promotes a configuration automatically; the
+artifacts are left for human review.
 
-#### Self-play made the final decision
-
-| Match | Fast W-D-L | Fast score | Decision |
-|---|---:|---:|---|
-| Fast vs Balanced | 21-59-10 | 56.11% | Favor Fast |
-| Fast vs LMR/NMP without RFP/LMP | 20-55-9 | 56.55% | Favor Fast |
-| Fast vs the later offline winner | 21-59-10 | 56.11% | Reject the offline winner; keep Fast |
-
-The last row is the important warning: the candidate that looked best in the
-offline selection still lost its direct match. Offline regret and safety gates
-were filters; self-play remained the final promotion test. These historical
-matches used repeated confidence-interval checks and early stopping, so they
-are directional promotion evidence rather than modern Elo estimates.
+The implementation is designed for unattended laptop runs. Immutable
+Strict-teacher root caches are fingerprinted and reused once per evaluation
+rung instead of regenerated for each candidate. Evaluations omit large detail
+sidecars and bootstrap matrices, reduce worker count when free memory is low,
+enforce a disk-space floor, and retry an isolated evaluation failure once with
+a single worker. Batch plans, decisions, games, manifests, and status are
+written incrementally, making both tuning and self-play resumable without
+silently changing their inputs. The entry points are
+`tools/run_nnue_v45_pareto_tune.sh` and
+`tools/run_nnue_v45_round_robin.sh`.
 
 V40 later added QSEE at `-75cp`. On its depth-8 holdout this reduced nodes by
 `15.50%` and time by `11.36%`; a 600-game match scored `52.0%` with an interval
 that still included 50%, so it was adopted for efficiency rather than proven
 strength. V41 then added repetition, 50-move, and history-sensitive TT
 correctness guardrails around the selected search.
-
-See the [selective-search pipeline](docs/nnue_selective_adversarial_pipeline.md)
-for the full tuning protocol and parameter-level results.
 
 ### Evidence discipline and negative results
 
