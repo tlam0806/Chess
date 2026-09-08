@@ -521,7 +521,8 @@ a roughly `1.5M` NPS engine, making continuous Lichess hosting viable.
 
 | Path | Purpose |
 |---|---|
-| `include/`, `src/` | Chess core, versioned searchers, TT implementations and NNUE runtime. |
+| `include/`, `src/` | Chess core, NNUE runtime, and the current V43/V44 search line. |
+| `experiments/` | Retained classical, Fast, and earlier NNUE searchers used by milestone benchmarks and regression tests. |
 | `tests/cpp/`, `tests/python/` | C++ correctness/parity tests and Python harness/analyzer tests. |
 | `tools/` | Dataset export, tuning, UCI adapters, matches, benchmarks, profilers and evidence analyzers. |
 | `python/chess_nnue/` | Training architectures, loaders, targets and quantization/export support. |

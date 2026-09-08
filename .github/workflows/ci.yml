@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CMAKE_BUILD_PARALLEL_LEVEL: 2
+      PYTHONPATH: python:.
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Configure CMake
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build representative engine targets
+        run: >-
+          cmake --build build --target
+          uci_nnue_v43
+          perft_tests
+          movegen_regression_tests
+          search_tests
+          v43_single_bound_transposition_table_tests
+
+      - name: Run model-independent C++ tests
+        run: >-
+          ctest --test-dir build --output-on-failure
+          -R '^(perft_tests|movegen_regression_tests|search_tests|v43_single_bound_transposition_table_tests)$'
+
+      - name: Compile Python sources
+        run: python -m compileall -q python tools tests/python apps/dataset-viewer/server.py
+
+      - name: Run dependency-free Python tests
+        run: |
+          python tests/python/test_analyze_v40_v41_benchmark.py
+          python tests/python/test_generate_stockfish_balanced_openings.py

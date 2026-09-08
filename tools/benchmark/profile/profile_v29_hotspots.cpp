@@ -1,4 +1,4 @@
-#include "searchers/strict/heuristic_searcher_v29.hpp"
+#include "heuristic_searcher_v29.hpp"
 #include "move.hpp"
 #include "position.hpp"
 

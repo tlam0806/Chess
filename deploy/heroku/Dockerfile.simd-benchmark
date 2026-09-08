@@ -10,6 +10,7 @@ COPY CMakeLists.txt ./
 COPY cmake ./cmake
 COPY include ./include
 COPY src ./src
+COPY experiments ./experiments
 COPY tools ./tools
 COPY tests ./tests
 RUN cmake -S . -B build-release -DCMAKE_BUILD_TYPE=Release \

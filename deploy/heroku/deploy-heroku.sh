@@ -76,7 +76,7 @@ mkdir -p "$STAGE_DIR/lichess-bot" "$STAGE_DIR/$(dirname "$MODEL_REL")"
 # Package the exact committed engine tree, never the surrounding dirty
 # working tree. The ignored production model is copied separately below.
 git -C "$REPO_ROOT" archive --format=tar "$SOURCE_COMMIT" -- \
-  CMakeLists.txt cmake include src tools tests benchmarks \
+  CMakeLists.txt cmake include src experiments tools tests benchmarks \
   deploy/heroku/Dockerfile deploy/heroku/heroku.yml \
   deploy/lichess/config-nnue-v43.yml \
   | tar -xf - -C "$STAGE_DIR"

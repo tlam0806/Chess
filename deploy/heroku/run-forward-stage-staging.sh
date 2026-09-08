@@ -139,7 +139,7 @@ if [[ ! -f "$SOURCE_ROOT/$MODEL_REL" || ! -f "$SOURCE_ROOT/$PARITY_REL" ]]; then
   exit 2
 fi
 for required_path in \
-  CMakeLists.txt cmake include src tools tests \
+  CMakeLists.txt cmake include src experiments tools tests \
   benchmarks/uci_platform_v1.json \
   deploy/heroku/benchmark-config-v41.yml; do
   if [[ ! -e "$SOURCE_ROOT/$required_path" ]]; then
@@ -186,6 +186,7 @@ cp "$SOURCE_ROOT/CMakeLists.txt" "$STAGE_DIR/"
 rsync -a "$SOURCE_ROOT/cmake/" "$STAGE_DIR/cmake/"
 rsync -a "$SOURCE_ROOT/include/" "$STAGE_DIR/include/"
 rsync -a "$SOURCE_ROOT/src/" "$STAGE_DIR/src/"
+rsync -a "$SOURCE_ROOT/experiments/" "$STAGE_DIR/experiments/"
 rsync -a "$SOURCE_ROOT/tools/" "$STAGE_DIR/tools/"
 rsync -a "$SOURCE_ROOT/tests/" "$STAGE_DIR/tests/"
 cp "$SOURCE_ROOT/benchmarks/uci_platform_v1.json" "$STAGE_DIR/benchmarks/"

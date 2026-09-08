@@ -1,13 +1,10 @@
-# Strict searchers
+# Current NNUE searchers
 
-Searchers in this folder are the correctness/debug line.
+This directory contains the current V43 production implementation and the V44
+candidate line. Their corresponding source files live under
+`src/searchers/strict`.
 
-Rules:
-- Require exact-depth TT score reuse (`entry.depth == requested_depth`) for
-  versions classified as Strict.
-- Keep behavior easier to compare against fixed-depth search.
-- Add new search features here first when debugging score or move mismatches.
-
-V34 is intentionally excluded from this folder because its `AtLeast` TT policy
-can change the score requested at a shallower fixed depth. V35 returns to
-exact-depth TT score reuse and remains in the Strict line.
+The older correctness-first search lineage is retained under `experiments/`:
+classical Strict V15-V35 and NNUE V36-V42. Those implementations remain part of
+the build because milestone benchmarks and regression tests compare them
+directly with later versions.

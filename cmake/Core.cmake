@@ -26,95 +26,95 @@ add_library(chess_core
     src/nnue_v37_transposition_table.cpp
     src/range_transposition_table.cpp
     src/range_bucket_transposition_table.cpp
-    src/searchers/fast/heuristic_searcher.cpp
-    src/searchers/fast/heuristic_searcher_v2.cpp
-    src/searchers/fast/heuristic_searcher_v3.cpp
-    src/searchers/fast/heuristic_searcher_v4.cpp
-    src/searchers/fast/heuristic_searcher_v5.cpp
-    src/searchers/fast/heuristic_searcher_v6.cpp
-    src/searchers/fast/heuristic_searcher_v7.cpp
-    src/searchers/fast/heuristic_searcher_v8.cpp
-    src/searchers/fast/heuristic_searcher_v9.cpp
-    src/searchers/fast/heuristic_searcher_v10.cpp
-    src/searchers/fast/heuristic_searcher_v11.cpp
-    src/searchers/fast/heuristic_searcher_v12.cpp
-    src/searchers/fast/heuristic_searcher_v13.cpp
-    src/searchers/fast/heuristic_searcher_v14.cpp
-    src/searchers/fast/heuristic_searcher_v14_experimental.cpp
-    src/searchers/fast/heuristic_searcher_fast_v32.cpp
-    src/searchers/fast/heuristic_searcher_fast_v32_api.cpp
-    src/searchers/fast/heuristic_searcher_fast_v32_ordering.cpp
-    src/searchers/fast/heuristic_searcher_fast_v32_tt.cpp
-    src/searchers/fast/heuristic_searcher_fast_v35.cpp
-    src/searchers/fast/heuristic_searcher_fast_v35_api.cpp
-    src/searchers/fast/heuristic_searcher_fast_v35_ordering.cpp
-    src/searchers/fast/heuristic_searcher_fast_v35_tt.cpp
-    src/searchers/fast/heuristic_searcher_v34.cpp
-    src/searchers/fast/heuristic_searcher_v34_api.cpp
-    src/searchers/fast/heuristic_searcher_v34_ordering.cpp
-    src/searchers/fast/heuristic_searcher_v34_tt.cpp
-    src/searchers/strict/heuristic_searcher_v15.cpp
-    src/searchers/strict/heuristic_searcher_v16.cpp
-    src/searchers/strict/heuristic_searcher_v17.cpp
-    src/searchers/strict/heuristic_searcher_v18.cpp
-    src/searchers/strict/heuristic_searcher_v19.cpp
-    src/searchers/strict/heuristic_searcher_v20.cpp
-    src/searchers/strict/heuristic_searcher_v21.cpp
-    src/searchers/strict/heuristic_searcher_v22.cpp
-    src/searchers/strict/heuristic_searcher_v23.cpp
-    src/searchers/strict/heuristic_searcher_v23_api.cpp
-    src/searchers/strict/heuristic_searcher_v24.cpp
-    src/searchers/strict/heuristic_searcher_v24_api.cpp
-    src/searchers/strict/heuristic_searcher_v25.cpp
-    src/searchers/strict/heuristic_searcher_v25_api.cpp
-    src/searchers/strict/heuristic_searcher_v26.cpp
-    src/searchers/strict/heuristic_searcher_v26_api.cpp
-    src/searchers/strict/heuristic_searcher_v27.cpp
-    src/searchers/strict/heuristic_searcher_v27_api.cpp
-    src/searchers/strict/heuristic_searcher_v28.cpp
-    src/searchers/strict/heuristic_searcher_v28_api.cpp
-    src/searchers/strict/heuristic_searcher_v28_ordering.cpp
-    src/searchers/strict/heuristic_searcher_v28_tt.cpp
-    src/searchers/strict/heuristic_searcher_v29.cpp
-    src/searchers/strict/heuristic_searcher_v29_api.cpp
-    src/searchers/strict/heuristic_searcher_v29_ordering.cpp
-    src/searchers/strict/heuristic_searcher_v29_tt.cpp
-    src/searchers/strict/heuristic_searcher_v30.cpp
-    src/searchers/strict/heuristic_searcher_v30_api.cpp
-    src/searchers/strict/heuristic_searcher_v30_ordering.cpp
-    src/searchers/strict/heuristic_searcher_v30_tt.cpp
-    src/searchers/strict/heuristic_searcher_v31.cpp
-    src/searchers/strict/heuristic_searcher_v31_api.cpp
-    src/searchers/strict/heuristic_searcher_v31_ordering.cpp
-    src/searchers/strict/heuristic_searcher_v31_tt.cpp
-    src/searchers/strict/heuristic_searcher_v32.cpp
-    src/searchers/strict/heuristic_searcher_v32_api.cpp
-    src/searchers/strict/heuristic_searcher_v32_ordering.cpp
-    src/searchers/strict/heuristic_searcher_v32_tt.cpp
-    src/searchers/strict/heuristic_searcher_v33.cpp
-    src/searchers/strict/heuristic_searcher_v33_api.cpp
-    src/searchers/strict/heuristic_searcher_v33_ordering.cpp
-    src/searchers/strict/heuristic_searcher_v33_tt.cpp
-    src/searchers/strict/heuristic_searcher_v35.cpp
-    src/searchers/strict/heuristic_searcher_v35_api.cpp
-    src/searchers/strict/heuristic_searcher_v35_ordering.cpp
-    src/searchers/strict/heuristic_searcher_v35_tt.cpp
-    src/searchers/strict/nnue_searcher_v36.cpp
-    src/searchers/strict/nnue_searcher_v36_api.cpp
-    src/searchers/strict/nnue_searcher_v36_ordering.cpp
-    src/searchers/strict/nnue_searcher_v36_tt.cpp
-    src/searchers/strict/nnue_searcher_v37.cpp
-    src/searchers/strict/nnue_searcher_v37_api.cpp
-    src/searchers/strict/nnue_searcher_v37_ordering.cpp
-    src/searchers/strict/nnue_searcher_v37_tt.cpp
-    src/searchers/strict/nnue_searcher_v38.cpp
-    src/searchers/strict/nnue_searcher_v38_api.cpp
-    src/searchers/strict/nnue_searcher_v38_ordering.cpp
-    src/searchers/strict/nnue_searcher_v38_tt.cpp
-    src/searchers/strict/nnue_searcher_v39.cpp
-    src/searchers/strict/nnue_searcher_v40.cpp
-    src/searchers/strict/nnue_searcher_v41.cpp
-    src/searchers/strict/nnue_searcher_v42.cpp
+    experiments/src/searchers/fast/heuristic_searcher.cpp
+    experiments/src/searchers/fast/heuristic_searcher_v2.cpp
+    experiments/src/searchers/fast/heuristic_searcher_v3.cpp
+    experiments/src/searchers/fast/heuristic_searcher_v4.cpp
+    experiments/src/searchers/fast/heuristic_searcher_v5.cpp
+    experiments/src/searchers/fast/heuristic_searcher_v6.cpp
+    experiments/src/searchers/fast/heuristic_searcher_v7.cpp
+    experiments/src/searchers/fast/heuristic_searcher_v8.cpp
+    experiments/src/searchers/fast/heuristic_searcher_v9.cpp
+    experiments/src/searchers/fast/heuristic_searcher_v10.cpp
+    experiments/src/searchers/fast/heuristic_searcher_v11.cpp
+    experiments/src/searchers/fast/heuristic_searcher_v12.cpp
+    experiments/src/searchers/fast/heuristic_searcher_v13.cpp
+    experiments/src/searchers/fast/heuristic_searcher_v14.cpp
+    experiments/src/searchers/fast/heuristic_searcher_v14_experimental.cpp
+    experiments/src/searchers/fast/heuristic_searcher_fast_v32.cpp
+    experiments/src/searchers/fast/heuristic_searcher_fast_v32_api.cpp
+    experiments/src/searchers/fast/heuristic_searcher_fast_v32_ordering.cpp
+    experiments/src/searchers/fast/heuristic_searcher_fast_v32_tt.cpp
+    experiments/src/searchers/fast/heuristic_searcher_fast_v35.cpp
+    experiments/src/searchers/fast/heuristic_searcher_fast_v35_api.cpp
+    experiments/src/searchers/fast/heuristic_searcher_fast_v35_ordering.cpp
+    experiments/src/searchers/fast/heuristic_searcher_fast_v35_tt.cpp
+    experiments/src/searchers/fast/heuristic_searcher_v34.cpp
+    experiments/src/searchers/fast/heuristic_searcher_v34_api.cpp
+    experiments/src/searchers/fast/heuristic_searcher_v34_ordering.cpp
+    experiments/src/searchers/fast/heuristic_searcher_v34_tt.cpp
+    experiments/src/searchers/strict/heuristic_searcher_v15.cpp
+    experiments/src/searchers/strict/heuristic_searcher_v16.cpp
+    experiments/src/searchers/strict/heuristic_searcher_v17.cpp
+    experiments/src/searchers/strict/heuristic_searcher_v18.cpp
+    experiments/src/searchers/strict/heuristic_searcher_v19.cpp
+    experiments/src/searchers/strict/heuristic_searcher_v20.cpp
+    experiments/src/searchers/strict/heuristic_searcher_v21.cpp
+    experiments/src/searchers/strict/heuristic_searcher_v22.cpp
+    experiments/src/searchers/strict/heuristic_searcher_v23.cpp
+    experiments/src/searchers/strict/heuristic_searcher_v23_api.cpp
+    experiments/src/searchers/strict/heuristic_searcher_v24.cpp
+    experiments/src/searchers/strict/heuristic_searcher_v24_api.cpp
+    experiments/src/searchers/strict/heuristic_searcher_v25.cpp
+    experiments/src/searchers/strict/heuristic_searcher_v25_api.cpp
+    experiments/src/searchers/strict/heuristic_searcher_v26.cpp
+    experiments/src/searchers/strict/heuristic_searcher_v26_api.cpp
+    experiments/src/searchers/strict/heuristic_searcher_v27.cpp
+    experiments/src/searchers/strict/heuristic_searcher_v27_api.cpp
+    experiments/src/searchers/strict/heuristic_searcher_v28.cpp
+    experiments/src/searchers/strict/heuristic_searcher_v28_api.cpp
+    experiments/src/searchers/strict/heuristic_searcher_v28_ordering.cpp
+    experiments/src/searchers/strict/heuristic_searcher_v28_tt.cpp
+    experiments/src/searchers/strict/heuristic_searcher_v29.cpp
+    experiments/src/searchers/strict/heuristic_searcher_v29_api.cpp
+    experiments/src/searchers/strict/heuristic_searcher_v29_ordering.cpp
+    experiments/src/searchers/strict/heuristic_searcher_v29_tt.cpp
+    experiments/src/searchers/strict/heuristic_searcher_v30.cpp
+    experiments/src/searchers/strict/heuristic_searcher_v30_api.cpp
+    experiments/src/searchers/strict/heuristic_searcher_v30_ordering.cpp
+    experiments/src/searchers/strict/heuristic_searcher_v30_tt.cpp
+    experiments/src/searchers/strict/heuristic_searcher_v31.cpp
+    experiments/src/searchers/strict/heuristic_searcher_v31_api.cpp
+    experiments/src/searchers/strict/heuristic_searcher_v31_ordering.cpp
+    experiments/src/searchers/strict/heuristic_searcher_v31_tt.cpp
+    experiments/src/searchers/strict/heuristic_searcher_v32.cpp
+    experiments/src/searchers/strict/heuristic_searcher_v32_api.cpp
+    experiments/src/searchers/strict/heuristic_searcher_v32_ordering.cpp
+    experiments/src/searchers/strict/heuristic_searcher_v32_tt.cpp
+    experiments/src/searchers/strict/heuristic_searcher_v33.cpp
+    experiments/src/searchers/strict/heuristic_searcher_v33_api.cpp
+    experiments/src/searchers/strict/heuristic_searcher_v33_ordering.cpp
+    experiments/src/searchers/strict/heuristic_searcher_v33_tt.cpp
+    experiments/src/searchers/strict/heuristic_searcher_v35.cpp
+    experiments/src/searchers/strict/heuristic_searcher_v35_api.cpp
+    experiments/src/searchers/strict/heuristic_searcher_v35_ordering.cpp
+    experiments/src/searchers/strict/heuristic_searcher_v35_tt.cpp
+    experiments/src/searchers/strict/nnue_searcher_v36.cpp
+    experiments/src/searchers/strict/nnue_searcher_v36_api.cpp
+    experiments/src/searchers/strict/nnue_searcher_v36_ordering.cpp
+    experiments/src/searchers/strict/nnue_searcher_v36_tt.cpp
+    experiments/src/searchers/strict/nnue_searcher_v37.cpp
+    experiments/src/searchers/strict/nnue_searcher_v37_api.cpp
+    experiments/src/searchers/strict/nnue_searcher_v37_ordering.cpp
+    experiments/src/searchers/strict/nnue_searcher_v37_tt.cpp
+    experiments/src/searchers/strict/nnue_searcher_v38.cpp
+    experiments/src/searchers/strict/nnue_searcher_v38_api.cpp
+    experiments/src/searchers/strict/nnue_searcher_v38_ordering.cpp
+    experiments/src/searchers/strict/nnue_searcher_v38_tt.cpp
+    experiments/src/searchers/strict/nnue_searcher_v39.cpp
+    experiments/src/searchers/strict/nnue_searcher_v40.cpp
+    experiments/src/searchers/strict/nnue_searcher_v41.cpp
+    experiments/src/searchers/strict/nnue_searcher_v42.cpp
     src/searchers/strict/nnue_searcher_v43.cpp
     src/searchers/strict/nnue_searcher_v43_api.cpp
     src/searchers/strict/nnue_searcher_v43_ordering.cpp
@@ -125,12 +125,12 @@ add_library(chess_core
     src/searchers/strict/nnue_searcher_v44_ordering.cpp
     src/searchers/strict/nnue_searcher_v44_tt.cpp
     src/v44_single_bound_transposition_table.cpp
-    src/searchers/fast/heuristic_searcher_v15_pvs.cpp
-    src/searchers/fast/nn_searcher.cpp
-    src/searchers/fast/nn_searcher_v6.cpp
-    src/searchers/fast/nn_searcher_v7.cpp
-    src/searchers/fast/nn_searcher_v10.cpp
-    src/searchers/fast/nnue_searcher_v10.cpp
+    experiments/src/searchers/fast/heuristic_searcher_v15_pvs.cpp
+    experiments/src/searchers/fast/nn_searcher.cpp
+    experiments/src/searchers/fast/nn_searcher_v6.cpp
+    experiments/src/searchers/fast/nn_searcher_v7.cpp
+    experiments/src/searchers/fast/nn_searcher_v10.cpp
+    experiments/src/searchers/fast/nnue_searcher_v10.cpp
     src/searcher.cpp
     src/transposition_table.cpp
     src/zobrist.cpp
@@ -186,8 +186,10 @@ endif()
 
 target_include_directories(chess_core PUBLIC
     include
-    include/searchers/fast
     include/searchers/strict
+    experiments/include
+    experiments/include/searchers/fast
+    experiments/include/searchers/strict
 )
 
 if(CHESS_ENABLE_NNUE_STAGE_BENCHMARK)

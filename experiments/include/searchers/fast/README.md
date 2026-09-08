@@ -1,6 +1,8 @@
-# Fast searchers
+# Historical Fast searchers
 
-Searchers in this folder are the performance line.
+Searchers in this folder are the retained performance line. They remain
+buildable for historical comparisons; current V43/V44 development lives under
+the repository's main `include/` and `src/` trees.
 
 Rules:
 - Allow practical engine shortcuts such as deeper TT reuse (`entry.depth >= requested_depth`).

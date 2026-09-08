@@ -1,15 +1,16 @@
 # V19 search optimization notes
 
-This note documents the current V19 search changes and the validation used before
-committing them.
+This note documents the V19 search changes and the validation used before
+committing them at that point in the project.
 
 ## Searcher layout
 
-- Older fast searchers and NN searchers are grouped under `include/searchers/fast`
-  and `src/searchers/fast`.
-- Strict searchers are grouped under `include/searchers/strict` and
-  `src/searchers/strict`.
-- `HeuristicSearcherV19` is the current strict searcher used for performance work.
+- Retained Fast searchers and early NN searchers live under
+  `experiments/include/searchers/fast` and `experiments/src/searchers/fast`.
+- Retained Strict milestone searchers live under
+  `experiments/include/searchers/strict` and
+  `experiments/src/searchers/strict`.
+- `HeuristicSearcherV19` was the Strict searcher used for this performance work.
 
 ## Move generation and legality
 
@@ -72,4 +73,3 @@ v19_vs_v18_time=0.464284
 score_mismatches=0
 move_mismatches=0
 ```
-
