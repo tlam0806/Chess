@@ -226,18 +226,28 @@ def block_mutations(
 
 
 def mutate_parent(
-    parent: legacy.SelectiveConfig, rng: random.Random
+    parent: legacy.SelectiveConfig,
+    rng: random.Random,
+    local_probability: float = 0.85,
+    cross_probability: float = 0.15,
 ) -> tuple[legacy.SelectiveConfig, str]:
-    """Mostly local, with a small cross-block mutation share."""
+    """Mix local steps, cross-block steps, and multi-block restarts."""
     blocks = tuple(legacy.BLOCKS)
-    if rng.random() < 0.85:
+    draw = rng.random()
+    if draw < local_probability:
         block = rng.choice(blocks)
         child, detail = rng.choice(block_mutations(parent, block))
         return child, f"single:{block}:{detail}"
-    first, second = rng.sample(blocks, 2)
-    child, first_detail = rng.choice(block_mutations(parent, first))
-    child, second_detail = rng.choice(block_mutations(child, second))
-    return child, f"cross:{first}:{first_detail}|{second}:{second_detail}"
+    if draw < local_probability + cross_probability:
+        first, second = rng.sample(blocks, 2)
+        child, first_detail = rng.choice(block_mutations(parent, first))
+        child, second_detail = rng.choice(block_mutations(child, second))
+        return child, f"cross:{first}:{first_detail}|{second}:{second_detail}"
+    restart_blocks = rng.sample(blocks, rng.randint(2, 4))
+    child = legacy.random_selective_config(
+        rng, mutable_blocks=restart_blocks, base=parent.normalized()
+    )
+    return child, f"restart:{'+'.join(sorted(restart_blocks))}"
 
 
 def generate_batch(
@@ -245,6 +255,8 @@ def generate_batch(
     seen_behaviors: set[tuple],
     count: int,
     seed: int,
+    local_probability: float = 0.85,
+    cross_probability: float = 0.15,
 ) -> list[dict]:
     rng = random.Random(seed)
     proposals: list[dict] = []
@@ -252,7 +264,9 @@ def generate_batch(
     for _ in range(count):
         for _attempt in range(20_000):
             parent = rng.choice(frontier)
-            selective, mutation = mutate_parent(parent.selective, rng)
+            selective, mutation = mutate_parent(
+                parent.selective, rng, local_probability, cross_probability
+            )
             child = legacy.Candidate(
                 selective, legacy.PRODUCTION_BASELINE_ASPIRATION
             )
@@ -309,6 +323,40 @@ def source_result_index(source_run: Path) -> dict[tuple[str, int, str], dict]:
         ):
             raise RuntimeError(f"conflicting source result cache for {key}")
         result[key] = value
+    return result
+
+
+def extend_result_index_from_v45_runs(
+    result: dict[tuple[str, int, str], dict],
+    cache_runs: Sequence[Path],
+) -> dict[tuple[str, int, str], dict]:
+    """Add immutable candidate-level evaluations from earlier V45 runs."""
+    for cache_run in cache_runs:
+        for path in sorted((cache_run / "evaluations").glob("*/*.json")):
+            value = json.loads(path.read_text())
+            if value.get("kind") != "v45_candidate_evaluation":
+                continue
+            cached = {
+                "config": value["config"],
+                "config_hash": value["config_hash"],
+                "dataset_sha256": value["dataset_sha256"],
+                "depth": int(value["depth"]),
+                "result": value["result"],
+                "wall_sec": float(value.get("wall_sec", 0.0)),
+                "stage": f"external:{cache_run.name}:{value.get('rung')}",
+            }
+            key = (
+                cached["dataset_sha256"], cached["depth"],
+                cached["config_hash"],
+            )
+            previous = result.get(key)
+            if previous is not None and (
+                previous.get("config") != cached["config"]
+                or legacy.result_metrics(previous)
+                    != legacy.result_metrics(cached)
+            ):
+                raise RuntimeError(f"conflicting external result cache for {key}")
+            result[key] = cached
     return result
 
 
@@ -621,6 +669,13 @@ def initialize_manifest(
         "experiment": EXPERIMENT,
         "source_run": fingerprint(args.source_run / "results.jsonl"),
         "source_summary": fingerprint(args.source_run / "summary.json"),
+        "evaluation_cache_runs": [
+            {
+                "path": str(path),
+                "summary": fingerprint(path / "summary.json"),
+            }
+            for path in args.evaluation_cache_runs
+        ],
         "binary": fingerprint(binary),
         "model": fingerprint(model),
         "tuner": fingerprint(Path(__file__)),
@@ -635,8 +690,12 @@ def initialize_manifest(
         "minimum_disk_free_bytes": args.minimum_disk_free_bytes,
         "mutation_policy": {
             "parent": "uniform_active_pareto_frontier",
-            "single_grid_step_probability": 0.85,
-            "two_block_grid_step_probability": 0.15,
+            "single_grid_step_probability": args.local_mutation_probability,
+            "two_block_grid_step_probability": args.cross_mutation_probability,
+            "multi_block_restart_probability": (
+                1.0 - args.local_mutation_probability
+                - args.cross_mutation_probability
+            ),
             "safe_profile_anchor": False,
         },
         "pareto_policy": {
@@ -762,6 +821,8 @@ def run_stage1(
                 seen_behavior_signatures(args.run_dir, baseline),
                 batch_count,
                 args.seed ^ (batch_number * 0x9E3779B1),
+                args.local_mutation_probability,
+                args.cross_mutation_probability,
             )
             plan = {
                 "kind": "nnue_v45_mutation_batch_plan",
@@ -1056,6 +1117,10 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--run-dir", type=Path, required=True)
     parser.add_argument("--source-run", type=Path, default=DEFAULT_SOURCE_RUN)
+    parser.add_argument(
+        "--evaluation-cache-run", dest="evaluation_cache_runs",
+        action="append", type=Path, default=[],
+    )
     parser.add_argument("--mutation-count", type=int, default=360)
     parser.add_argument("--workers", type=int, default=3)
     parser.add_argument("--duration-sec", type=int, default=28_800)
@@ -1067,6 +1132,12 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--hard-node-ratio", type=float, default=2.0)
     parser.add_argument(
+        "--local-mutation-probability", type=float, default=0.85
+    )
+    parser.add_argument(
+        "--cross-mutation-probability", type=float, default=0.15
+    )
+    parser.add_argument(
         "--minimum-disk-free-bytes", type=int, default=5 * 1024**3
     )
     parser.add_argument("--smoke-test", action="store_true")
@@ -1075,6 +1146,12 @@ def parse_args() -> argparse.Namespace:
         parser.error("mutation count, workers, and duration must be positive")
     if args.hard_node_ratio <= 1.0:
         parser.error("hard node ratio must exceed 1.0")
+    if (
+        args.local_mutation_probability < 0
+        or args.cross_mutation_probability < 0
+        or args.local_mutation_probability + args.cross_mutation_probability > 1
+    ):
+        parser.error("mutation probabilities must be nonnegative and sum to <= 1")
     if args.minimum_disk_free_bytes < 0:
         parser.error("minimum disk headroom cannot be negative")
     if args.smoke_test:
@@ -1088,6 +1165,9 @@ def main() -> None:
     args.run_dir.mkdir(parents=True, exist_ok=True)
     args.run_dir = args.run_dir.resolve()
     args.source_run = args.source_run.resolve(strict=True)
+    args.evaluation_cache_runs = [
+        path.resolve(strict=True) for path in args.evaluation_cache_runs
+    ]
     lock_path = args.run_dir / ".tuner.lock"
     with lock_path.open("a+") as lock:
         try:
@@ -1120,6 +1200,9 @@ def _main_locked(args: argparse.Namespace) -> None:
     initialize_manifest(args, binary, model, rungs)
     verify_disk_headroom(args.run_dir, args.minimum_disk_free_bytes)
     source_index = source_result_index(args.source_run)
+    extend_result_index_from_v45_runs(
+        source_index, args.evaluation_cache_runs
+    )
     deadline_monotonic = time.monotonic() + args.duration_sec
     (args.run_dir / "RUNNING").write_text(f"{os.getpid()}\n")
     for marker in ("PAUSED", "FAILED"):
@@ -1145,6 +1228,22 @@ def _main_locked(args: argparse.Namespace) -> None:
             key: value for key, value in payload.items() if key != "state"
         })
         print(json.dumps(payload, sort_keys=True), flush=True)
+    except (KeyboardInterrupt, InterruptedError) as error:
+        payload = {
+            "state": "PAUSED",
+            "stage": json.loads(
+                (args.run_dir / "state.json").read_text()
+            )["stage"],
+            "reason": str(error) or "tuner interrupted",
+            "duration_sec": args.duration_sec,
+            "updated_at": utc_now(),
+        }
+        atomic_json(args.run_dir / "PAUSED", payload)
+        update_status(args.run_dir, "PAUSED", **{
+            key: value for key, value in payload.items() if key != "state"
+        })
+        print(json.dumps(payload, sort_keys=True), flush=True)
+        raise
     except BaseException as error:
         payload = {
             "state": "FAILED", "error_type": type(error).__name__,

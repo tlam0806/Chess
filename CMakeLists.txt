@@ -145,6 +145,11 @@ add_library(chess_core
     src/searchers/strict/nnue_searcher_v43_ordering.cpp
     src/searchers/strict/nnue_searcher_v43_tt.cpp
     src/v43_single_bound_transposition_table.cpp
+    src/searchers/strict/nnue_searcher_v44.cpp
+    src/searchers/strict/nnue_searcher_v44_api.cpp
+    src/searchers/strict/nnue_searcher_v44_ordering.cpp
+    src/searchers/strict/nnue_searcher_v44_tt.cpp
+    src/v44_single_bound_transposition_table.cpp
     src/searchers/fast/heuristic_searcher_v15_pvs.cpp
     src/searchers/fast/nn_searcher.cpp
     src/searchers/fast/nn_searcher_v6.cpp
@@ -575,6 +580,10 @@ add_executable(uci_nnue_v43 tools/uci_nnue_v38.cpp)
 target_compile_definitions(uci_nnue_v43 PRIVATE CHESS_UCI_NNUE_V43)
 target_link_libraries(uci_nnue_v43 PRIVATE chess_core Threads::Threads)
 
+add_executable(uci_nnue_v44 tools/uci_nnue_v38.cpp)
+target_compile_definitions(uci_nnue_v44 PRIVATE CHESS_UCI_NNUE_V44)
+target_link_libraries(uci_nnue_v44 PRIVATE chess_core Threads::Threads)
+
 add_executable(nnue_v38_time_gauntlet tools/nnue_v38_time_gauntlet.cpp)
 target_link_libraries(nnue_v38_time_gauntlet PRIVATE chess_core)
 
@@ -602,6 +611,12 @@ add_executable(nnue_v43_time_gauntlet tools/nnue_v38_time_gauntlet.cpp)
 target_compile_definitions(
     nnue_v43_time_gauntlet PRIVATE CHESS_NNUE_V43_TIME_GAUNTLET)
 target_link_libraries(nnue_v43_time_gauntlet PRIVATE chess_core)
+
+add_executable(
+    nnue_v43_v44_time_match
+    tools/nnue_v43_v44_time_match.cpp
+)
+target_link_libraries(nnue_v43_v44_time_match PRIVATE chess_core)
 
 add_executable(collect_nnue_wdl_calibration tools/collect_nnue_wdl_calibration.cpp)
 target_link_libraries(collect_nnue_wdl_calibration PRIVATE chess_core)
@@ -834,6 +849,56 @@ endif()
 add_test(
     NAME nnue_searcher_v43_single_bound_tests
     COMMAND nnue_searcher_v43_single_bound_tests
+        ${CMAKE_SOURCE_DIR}/models/quantized_scale_grid/old_score_huber200_lr_sweep_then_5ep_20260724_142758/best/phase_quantized_nnue.bin
+)
+
+add_executable(
+    nnue_searcher_v44_lifecycle_tests
+    tests/nnue_searcher_v44_lifecycle_tests.cpp
+)
+target_link_libraries(nnue_searcher_v44_lifecycle_tests PRIVATE chess_core)
+if(MSVC)
+    target_compile_options(nnue_searcher_v44_lifecycle_tests PRIVATE /UNDEBUG)
+else()
+    target_compile_options(nnue_searcher_v44_lifecycle_tests PRIVATE -UNDEBUG)
+endif()
+add_test(
+    NAME nnue_searcher_v44_lifecycle_tests
+    COMMAND nnue_searcher_v44_lifecycle_tests
+        ${CMAKE_SOURCE_DIR}/models/quantized_scale_grid/old_score_huber200_lr_sweep_then_5ep_20260724_142758/best/phase_quantized_nnue.bin
+)
+
+add_executable(
+    nnue_searcher_v44_sable_tt_regression_tests
+    tests/nnue_searcher_v44_sable_tt_regression_tests.cpp
+)
+# Exact production-depth replay: keep it as an opt-in regression target rather
+# than adding its substantially slower assertion build to the default CTest.
+target_link_libraries(
+    nnue_searcher_v44_sable_tt_regression_tests PRIVATE chess_core)
+if(MSVC)
+    target_compile_options(
+        nnue_searcher_v44_sable_tt_regression_tests PRIVATE /UNDEBUG)
+else()
+    target_compile_options(
+        nnue_searcher_v44_sable_tt_regression_tests PRIVATE -UNDEBUG)
+endif()
+
+add_chess_test(v44_single_bound_transposition_table_tests)
+
+add_executable(
+    uci_nnue_v44_cli_tests
+    tests/uci_nnue_v44_cli_tests.cpp
+)
+target_link_libraries(uci_nnue_v44_cli_tests PRIVATE chess_core Threads::Threads)
+if(MSVC)
+    target_compile_options(uci_nnue_v44_cli_tests PRIVATE /UNDEBUG)
+else()
+    target_compile_options(uci_nnue_v44_cli_tests PRIVATE -UNDEBUG)
+endif()
+add_test(
+    NAME uci_nnue_v44_cli_tests
+    COMMAND uci_nnue_v44_cli_tests
         ${CMAKE_SOURCE_DIR}/models/quantized_scale_grid/old_score_huber200_lr_sweep_then_5ep_20260724_142758/best/phase_quantized_nnue.bin
 )
 

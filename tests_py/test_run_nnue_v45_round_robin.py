@@ -5,9 +5,12 @@ import json
 from tools import run_nnue_v45_round_robin as runner
 
 
-def profile(name: str, candidate_hash: str, loss: float, nodes: float) -> dict:
+def profile(
+    name: str, candidate_hash: str, loss: float, nodes: float,
+    role: str = "challenger",
+) -> dict:
     return {
-        "name": name,
+        "name": name, "role": role,
         "config_hash": candidate_hash,
         "source_selection_metrics": {
             "mean_wdl_loss": loss, "node_ratio": nodes,
@@ -25,10 +28,12 @@ def game(first: str, second: str, outcome: str) -> dict:
 
 
 def test_frozen_schedule_has_expected_halving_and_game_budget() -> None:
-    assert [value["entrants"] for value in runner.ROUNDS] == [17, 9, 5, 3, 2]
-    assert [value["survivors"] for value in runner.ROUNDS] == [9, 5, 3, 2, 1]
-    assert [value["games_per_pair"] for value in runner.ROUNDS] == [8, 16, 32, 64, 128]
-    assert runner.EXPECTED_TOURNAMENT_GAMES == 2_304
+    assert [value["challengers"] for value in runner.ROUNDS] == [13, 6]
+    assert [value["survivors"] for value in runner.ROUNDS] == [6, 3]
+    assert [value["games_per_pair"] for value in runner.ROUNDS] == [8, 24]
+    assert runner.GAUNTLET["games_per_pair"] == 128
+    assert runner.EXPECTED_TOURNAMENT_GAMES == 1_616
+    assert runner.EXPECTED_TOTAL_GAMES == 2_216
 
 
 def test_round_ranking_uses_points_before_offline_tiebreaks() -> None:
@@ -56,6 +61,23 @@ def test_exact_point_tie_uses_head_to_head_then_selection_metrics() -> None:
     assert [row["name"] for row in ranked] == ["b", "a"]
 
 
+def test_production_is_not_in_challenger_ranking() -> None:
+    profiles = [
+        profile("challenger", "a" * 64, 0.004, 0.9),
+        profile("production", "b" * 64, 0.003, 1.0, "production"),
+    ]
+    games = [
+        game("challenger", "production", "loss"),
+        game("challenger", "production", "loss"),
+    ]
+    setting = {"games_per_pair": 2}
+    standings = runner.rank_round(games, profiles, setting)
+    ranked = runner.rank_challengers(standings)
+
+    assert [row["name"] for row in ranked] == ["challenger"]
+    assert ranked[0]["direct_production_score"] == 0.0
+
+
 def test_completed_round_reloads_saved_resource_on_resume(
     tmp_path, monkeypatch
 ) -> None:
@@ -63,7 +85,7 @@ def test_completed_round_reloads_saved_resource_on_resume(
     output.parent.mkdir()
     output.write_text("{}\n")
     resource = {"wall_sec": 10.0, "child_cpu_sec": 9.5}
-    (output.parent / "resource.json").write_text(json.dumps(resource))
+    (output.parent / "games.jsonl.resource.json").write_text(json.dumps(resource))
     monkeypatch.setattr(runner, "expected_round_games", lambda setting, count: 1)
     monkeypatch.setattr(runner, "read_complete_games", lambda path: [{}])
     monkeypatch.setattr(

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Immutable, serial, resumable halving tournament for the V45 frontier."""
+"""Immutable, serial, resumable protected-production V45 tournament."""
 
 from __future__ import annotations
 
@@ -23,38 +23,41 @@ else:
     import run_nnue_v43_selfplay_race as infra  # type: ignore
 
 
-SCHEMA_VERSION = 1
-EXPERIMENT = "nnue-v45-pareto-halving-round-robin-v1"
+SCHEMA_VERSION = 2
+EXPERIMENT = "nnue-v45-protected-production-tournament-v2"
 PRODUCTION_V43_HASH = (
-    "98b7732c9587da35554cc274a072a0a5b5f55902aaa77605e78c1ae13e88b4f2"
+    "28c848b51bd93c402e873a0154e1fc61c953efa683898dc4a67d1fecd5a76aa8"
 )
 POINTS = {"win": 1.0, "draw": 0.5, "loss": 0.0}
 ROUNDS = (
-    {"name": "r1", "entrants": 17, "survivors": 9, "openings": 4,
+    {"name": "r1", "challengers": 13, "survivors": 6, "openings": 4,
      "games_per_pair": 8, "base_ms": 1_000, "increment_ms": 10,
      "seed": 2026090211},
-    {"name": "r2", "entrants": 9, "survivors": 5, "openings": 8,
-     "games_per_pair": 16, "base_ms": 3_000, "increment_ms": 30,
+    {"name": "r2", "challengers": 6, "survivors": 3, "openings": 12,
+     "games_per_pair": 24, "base_ms": 3_000, "increment_ms": 30,
      "seed": 2026090222},
-    {"name": "r3", "entrants": 5, "survivors": 3, "openings": 16,
-     "games_per_pair": 32, "base_ms": 5_000, "increment_ms": 50,
-     "seed": 2026090233},
-    {"name": "r4", "entrants": 3, "survivors": 2, "openings": 32,
-     "games_per_pair": 64, "base_ms": 7_000, "increment_ms": 70,
-     "seed": 2026090244},
-    {"name": "r5", "entrants": 2, "survivors": 1, "openings": 64,
-     "games_per_pair": 128, "base_ms": 10_000, "increment_ms": 100,
-     "seed": 2026090255},
 )
+GAUNTLET = {
+    "name": "r3", "challengers": 3, "survivors": 1, "openings": 64,
+    "games_per_pair": 128, "base_ms": 7_000, "increment_ms": 70,
+    "seed": 2026090233,
+}
+GAUNTLET_TIEBREAK = {
+    "name": "r3_tiebreak", "challengers": 2, "survivors": 1,
+    "openings": 64, "games_per_pair": 128, "base_ms": 7_000,
+    "increment_ms": 70, "seed": 2026090244,
+}
 CONFIRMATION = {
     "name": "confirmation", "openings": 300, "games_per_pair": 600,
-    "base_ms": 10_000, "increment_ms": 100, "seed": 2026090266,
+    "base_ms": 10_000, "increment_ms": 100, "seed": 2026090255,
 }
 EXPECTED_TOURNAMENT_GAMES = sum(
-    math.comb(value["entrants"], 2) * value["games_per_pair"]
+    math.comb(value["challengers"] + 1, 2) * value["games_per_pair"]
     for value in ROUNDS
-)
-assert EXPECTED_TOURNAMENT_GAMES == 2_304
+) + GAUNTLET["challengers"] * GAUNTLET["games_per_pair"]
+assert EXPECTED_TOURNAMENT_GAMES == 1_616
+EXPECTED_TOTAL_GAMES = EXPECTED_TOURNAMENT_GAMES + CONFIRMATION["games_per_pair"]
+assert EXPECTED_TOTAL_GAMES == 2_216
 
 
 def utc_now() -> str:
@@ -107,8 +110,8 @@ def config_hash(config: dict) -> str:
 def load_profiles(frontier_path: Path) -> list[dict]:
     payload = json.loads(frontier_path.read_text())
     candidates = payload.get("candidates")
-    if not isinstance(candidates, list) or len(candidates) != 17:
-        raise RuntimeError("V45 tournament requires exactly 17 finalists")
+    if not isinstance(candidates, list) or len(candidates) != 13:
+        raise RuntimeError("V45 tournament requires exactly 13 challengers")
     profiles = []
     seen = set()
     aspirations = set()
@@ -141,7 +144,7 @@ def load_production_profile(v45_run: Path) -> dict:
     value = json.loads(path.read_text())
     config = value["config"]
     if config_hash(config) != PRODUCTION_V43_HASH:
-        raise RuntimeError("production V43 evaluation identity mismatch")
+        raise RuntimeError("production evaluation identity mismatch")
     return {
         "role": "production",
         "name": f"production_{PRODUCTION_V43_HASH[:12]}",
@@ -165,9 +168,11 @@ def split_books(master: Path, run_dir: Path, smoke_test: bool) -> dict[str, dict
     import random
     random.Random(2026090201).shuffle(lines)
     settings = (
-        [("r1", 1), ("confirmation", 1)] if smoke_test else
+        [("r1", 1)] if smoke_test else
         [(value["name"], value["openings"]) for value in ROUNDS]
-        + [(CONFIRMATION["name"], CONFIRMATION["openings"])]
+        + [(GAUNTLET["name"], GAUNTLET["openings"]),
+           (GAUNTLET_TIEBREAK["name"], GAUNTLET_TIEBREAK["openings"]),
+           (CONFIRMATION["name"], CONFIRMATION["openings"])]
     )
     required = sum(count for _, count in settings)
     if len(lines) < required:
@@ -196,11 +201,13 @@ def initialize(args: argparse.Namespace) -> dict:
         return contract
     profiles = load_profiles(args.frontier)
     production = load_production_profile(args.v45_run)
-    if production["config_hash"] not in {item["config_hash"] for item in profiles}:
-        raise RuntimeError("production V43 must be one of the 17 finalists")
+    if production["config_hash"] in {item["config_hash"] for item in profiles}:
+        raise RuntimeError("production must be separate from the 13 challengers")
+    if production["config"]["aspiration"] != profiles[0]["config"]["aspiration"]:
+        raise RuntimeError("production and challengers must share frozen aspiration")
     books = split_books(args.book, args.run_dir, args.smoke_test)
     rounds = (
-        ({**ROUNDS[0], "entrants": 2, "survivors": 1, "openings": 1,
+        ({**ROUNDS[0], "challengers": 1, "survivors": 1, "openings": 1,
           "games_per_pair": 2},)
         if args.smoke_test else ROUNDS
     )
@@ -217,20 +224,26 @@ def initialize(args: argparse.Namespace) -> dict:
         "master_book": fingerprint(args.book),
         "runner": fingerprint(Path(__file__)),
         "infra_runner": fingerprint(Path(infra.__file__)),
-        "profiles": profiles[:2] if args.smoke_test else profiles,
+        "profiles": profiles[:1] if args.smoke_test else profiles,
         "production": production,
         "aspiration": profiles[0]["config"]["aspiration"],
         "books": books,
         "rounds": list(rounds),
+        "gauntlet": None if args.smoke_test else GAUNTLET,
+        "gauntlet_tiebreak": None if args.smoke_test else GAUNTLET_TIEBREAK,
         "confirmation": None if args.smoke_test else CONFIRMATION,
         "protocol": {
             "serial_execution": True,
             "round_robin": True,
             "paired_color_reversed": True,
             "fresh_disjoint_openings_per_round": True,
-            "eliminate_approximately_half": True,
+            "production_is_protected": True,
+            "production_participates_in_all_screening_rounds": True,
+            "gauntlet_is_direct_against_production": True,
+            "gauntlet_tiebreak_threshold": 0.02,
             "ranking": [
-                "legal_desc", "score_desc", "tied_head_to_head_desc",
+                "legal_desc", "score_desc", "direct_production_score_desc",
+                "tied_head_to_head_desc",
                 "selection_wdl_loss_asc", "selection_node_ratio_asc",
                 "config_hash_asc",
             ],
@@ -245,6 +258,13 @@ def initialize(args: argparse.Namespace) -> dict:
                 2 if args.smoke_test else EXPECTED_TOURNAMENT_GAMES
             ),
             "confirmation_games": 0 if args.smoke_test else 600,
+            "expected_total_games_without_optional_tiebreak": (
+                2 if args.smoke_test else EXPECTED_TOTAL_GAMES
+            ),
+            "optional_tiebreak_games": (
+                0 if args.smoke_test else
+                2 * GAUNTLET_TIEBREAK["games_per_pair"]
+            ),
         },
     }
     atomic_json(contract_path, contract)
@@ -348,7 +368,7 @@ def child_cpu_seconds() -> float:
 
 def count_games(run_dir: Path) -> int:
     total = 0
-    for path in sorted(run_dir.glob("rounds/*/games.jsonl")):
+    for path in sorted(run_dir.glob("rounds/**/*.jsonl")):
         total += len(read_complete_games(path))
     confirmation = run_dir / "confirmation" / "games.jsonl"
     if confirmation.exists():
@@ -387,9 +407,9 @@ def run_round_process(
     output: Path,
 ) -> dict:
     expected = expected_round_games(setting, len(profiles))
+    resource_path = Path(str(output) + ".resource.json")
     if output.exists() and len(read_complete_games(output)) == expected:
         games, manifest = validate_round_games(output, profiles, setting)
-        resource_path = output.parent / "resource.json"
         resource = (
             json.loads(resource_path.read_text())
             if resource_path.is_file() else None
@@ -430,17 +450,20 @@ def run_round_process(
         "single_core_cpu_utilization": cpu / wall if wall else None,
         "measured_at": utc_now(),
     }
-    write_once_json(output.parent / "resource.json", resource_payload)
+    write_once_json(resource_path, resource_payload)
     return {"games": games, "manifest": manifest, "resource": resource_payload}
 
 
 def rank_round(
     games: Sequence[dict], profiles: Sequence[dict], setting: dict
 ) -> list[dict]:
-    del setting
+    production = next(
+        (profile for profile in profiles if profile["role"] == "production"), None
+    )
     standings = {
         profile["name"]: {
             "name": profile["name"], "config_hash": profile["config_hash"],
+            "role": profile["role"],
             "points": 0.0, "games": 0, "wins": 0, "draws": 0, "losses": 0,
             "nodes": 0, "time_ms": 0, "illegal_games": 0,
             "opponent_points": defaultdict(float),
@@ -485,16 +508,131 @@ def rank_round(
         )
         row["score"] = row["points"] / row["games"]
         row["eligible"] = row["illegal_games"] == 0
+        if production is not None and row["role"] == "challenger":
+            row["direct_production_points"] = row["opponent_points"].get(
+                production["name"], 0.0
+            )
+            row["direct_production_games"] = setting["games_per_pair"]
+            row["direct_production_score"] = (
+                row["direct_production_points"] / row["direct_production_games"]
+            )
+        else:
+            row["direct_production_points"] = None
+            row["direct_production_games"] = 0
+            row["direct_production_score"] = None
         row["opponent_points"] = dict(row["opponent_points"])
         rows.append(row)
     rows.sort(key=lambda row: (
-        not row["eligible"], -row["score"], -row["tied_head_to_head_points"],
+        not row["eligible"], -row["score"],
+        -(row["direct_production_score"] if row["direct_production_score"] is not None
+          else -1.0),
+        -row["tied_head_to_head_points"],
         row["selection_mean_wdl_loss"], row["selection_node_ratio"],
         row["config_hash"],
     ))
     for index, row in enumerate(rows, 1):
         row["rank"] = index
     return rows
+
+
+def rank_challengers(rows: Sequence[dict]) -> list[dict]:
+    challengers = [dict(row) for row in rows if row["role"] == "challenger"]
+    challengers.sort(key=lambda row: (
+        not row["eligible"], -row["score"], -row["direct_production_score"],
+        -row["tied_head_to_head_points"], row["selection_mean_wdl_loss"],
+        row["selection_node_ratio"], row["config_hash"],
+    ))
+    for index, row in enumerate(challengers, 1):
+        row["challenger_rank"] = index
+    return challengers
+
+
+def run_direct_matches(
+    contract: dict, run_dir: Path, setting: dict,
+    challengers: Sequence[dict], production: dict,
+) -> list[dict]:
+    rows = []
+    for challenger in challengers:
+        output = (
+            run_dir / "rounds" / setting["name"] / "matches" /
+            f"{challenger['config_hash']}.jsonl"
+        )
+        profiles = [challenger, production]
+        executed = run_round_process(
+            contract, run_dir, setting, profiles, output
+        )
+        row = infra.paired_summary(
+            output, challenger, production, setting["games_per_pair"]
+        )
+        row["resource"] = executed["resource"]
+        row["selection_mean_wdl_loss"] = (
+            challenger["source_selection_metrics"]["mean_wdl_loss"]
+        )
+        row["selection_node_ratio"] = (
+            challenger["source_selection_metrics"]["node_ratio"]
+        )
+        row["eligible"] = row["first_illegal_games"] == 0
+        if row["second_illegal_games"]:
+            raise RuntimeError(
+                f"production made an illegal move in {setting['name']}"
+            )
+        rows.append(row)
+    return rank_direct(rows)
+
+
+def rank_direct(rows: Sequence[dict]) -> list[dict]:
+    ranked = [dict(row) for row in rows]
+    ranked.sort(key=lambda row: (
+        not row["eligible"], -row["first_score"], -row["ci95"][0],
+        row["selection_mean_wdl_loss"], row["selection_node_ratio"],
+        row["first_hash"],
+    ))
+    for index, row in enumerate(ranked, 1):
+        row["rank"] = index
+    return ranked
+
+
+def combine_direct_rows(first: dict, second: dict) -> dict:
+    if first["first_hash"] != second["first_hash"]:
+        raise RuntimeError("cannot combine direct rows for different challengers")
+    games = first["games"] + second["games"]
+    points = first["first_points"] + second["first_points"]
+    outcomes = Counter(first["first_outcomes"])
+    outcomes.update(second["first_outcomes"])
+    reasons = Counter(first["termination_reasons"])
+    reasons.update(second["termination_reasons"])
+    combined = {
+        **first,
+        "games": games,
+        "complete_pairs": first["complete_pairs"] + second["complete_pairs"],
+        "first_outcomes": dict(outcomes),
+        "termination_reasons": dict(reasons),
+        "first_points": points,
+        "first_score": points / games,
+        "first_nodes": first["first_nodes"] + second["first_nodes"],
+        "second_nodes": first["second_nodes"] + second["second_nodes"],
+        "first_time_ms": first["first_time_ms"] + second["first_time_ms"],
+        "second_time_ms": first["second_time_ms"] + second["second_time_ms"],
+        "first_illegal_games": (
+            first["first_illegal_games"] + second["first_illegal_games"]
+        ),
+        "second_illegal_games": (
+            first["second_illegal_games"] + second["second_illegal_games"]
+        ),
+        "components": [first, second],
+    }
+    combined["node_ratio"] = (
+        combined["first_nodes"] / combined["second_nodes"]
+        if combined["second_nodes"] else None
+    )
+    combined["eligible"] = combined["first_illegal_games"] == 0
+    # The component intervals remain in the immutable record. This conservative
+    # envelope is descriptive only; the fixed-sample score determines ranking.
+    combined["ci95"] = [
+        min(first["ci95"][0], second["ci95"][0]),
+        max(first["ci95"][1], second["ci95"][1]),
+    ]
+    return combined
 
 
 def execute(contract: dict, args: argparse.Namespace) -> dict:
@@ -504,23 +642,32 @@ def execute(contract: dict, args: argparse.Namespace) -> dict:
     profiles_by_hash = {
         profile["config_hash"]: profile for profile in contract["profiles"]
     }
+    production = contract["production"]
     active = list(contract["profiles"])
     round_summaries = []
     for setting in contract["rounds"]:
-        if len(active) != setting["entrants"]:
-            raise RuntimeError(f"{setting['name']} entrant-count mismatch")
+        if len(active) != setting["challengers"]:
+            raise RuntimeError(f"{setting['name']} challenger-count mismatch")
         active = sorted(active, key=lambda profile: profile["config_hash"])
+        entrants = [*active, production]
         round_dir = args.run_dir / "rounds" / setting["name"]
         update_status(
             args.run_dir, state="running", stage=setting["name"],
-            entrants=len(active), expected_stage_games=expected_round_games(
-                setting, len(active)
+            challengers=len(active), entrants=len(entrants),
+            expected_stage_games=expected_round_games(
+                setting, len(entrants)
             ),
         )
         executed = run_round_process(
-            contract, args.run_dir, setting, active, round_dir / "games.jsonl"
+            contract, args.run_dir, setting, entrants, round_dir / "games.jsonl"
         )
-        ranking = rank_round(executed["games"], active, setting)
+        standings = rank_round(executed["games"], entrants, setting)
+        production_row = next(
+            row for row in standings if row["role"] == "production"
+        )
+        if not production_row["eligible"]:
+            raise RuntimeError(f"production made an illegal move in {setting['name']}")
+        ranking = rank_challengers(standings)
         survivors = ranking[:setting["survivors"]]
         if any(not row["eligible"] for row in survivors):
             raise RuntimeError(f"{setting['name']} has too few legal survivors")
@@ -529,7 +676,11 @@ def execute(contract: dict, args: argparse.Namespace) -> dict:
             "kind": "nnue_v45_round_robin_round",
             "schema_version": SCHEMA_VERSION,
             "stage": setting["name"], "setting": setting,
-            "ranking": ranking, "selected_hashes": selected_hashes,
+            "production_protected": True,
+            "production_standing": production_row,
+            "standings": standings,
+            "challenger_ranking": ranking,
+            "selected_hashes": selected_hashes,
             "resource": executed["resource"],
             "artifacts": {
                 "games": fingerprint(round_dir / "games.jsonl"),
@@ -545,9 +696,82 @@ def execute(contract: dict, args: argparse.Namespace) -> dict:
             f"survivors={len(active)} leader={selected_hashes[0][:12]}",
             flush=True,
         )
-    winner = active[0]
+    gauntlet_summary = None
+    if contract["gauntlet"] is not None:
+        setting = contract["gauntlet"]
+        if len(active) != setting["challengers"]:
+            raise RuntimeError("r3 challenger-count mismatch")
+        update_status(
+            args.run_dir, state="running", stage=setting["name"],
+            challengers=len(active), entrants=len(active) + 1,
+            expected_stage_games=(
+                len(active) * setting["games_per_pair"]
+            ),
+        )
+        base_ranking = run_direct_matches(
+            contract, args.run_dir, setting, active, production
+        )
+        if not base_ranking[0]["eligible"]:
+            raise RuntimeError("r3 has no legal challenger")
+        final_ranking = base_ranking
+        tiebreak_ranking = None
+        tiebreak_used = (
+            len(base_ranking) > 1 and base_ranking[1]["eligible"] and
+            base_ranking[0]["first_score"] - base_ranking[1]["first_score"]
+            <= contract["protocol"]["gauntlet_tiebreak_threshold"]
+        )
+        if tiebreak_used:
+            tiebreak_setting = contract["gauntlet_tiebreak"]
+            tied_hashes = [row["first_hash"] for row in base_ranking[:2]]
+            tied_profiles = [profiles_by_hash[value] for value in tied_hashes]
+            update_status(
+                args.run_dir, state="running", stage=tiebreak_setting["name"],
+                challengers=2, entrants=3,
+                expected_stage_games=(
+                    2 * tiebreak_setting["games_per_pair"]
+                ),
+            )
+            tiebreak_ranking = run_direct_matches(
+                contract, args.run_dir, tiebreak_setting,
+                tied_profiles, production,
+            )
+            base_by_hash = {row["first_hash"]: row for row in base_ranking}
+            combined = [
+                combine_direct_rows(base_by_hash[row["first_hash"]], row)
+                for row in tiebreak_ranking
+            ]
+            final_ranking = rank_direct(combined)
+        winner_hash = final_ranking[0]["first_hash"]
+        winner = profiles_by_hash[winner_hash]
+        gauntlet_summary = {
+            "kind": "nnue_v45_direct_production_gauntlet",
+            "schema_version": SCHEMA_VERSION,
+            "stage": setting["name"], "setting": setting,
+            "base_ranking": base_ranking,
+            "tiebreak_used": tiebreak_used,
+            "tiebreak_setting": (
+                contract["gauntlet_tiebreak"] if tiebreak_used else None
+            ),
+            "tiebreak_ranking": tiebreak_ranking,
+            "final_ranking": final_ranking,
+            "selected_hashes": [winner_hash],
+            "production_hash": production["config_hash"],
+            "production_protected": True,
+        }
+        write_once_json(
+            args.run_dir / "rounds" / setting["name"] / "summary.json",
+            gauntlet_summary,
+        )
+        round_summaries.append(gauntlet_summary)
+        print(
+            f"r3 complete matches={len(base_ranking)} "
+            f"tiebreak={tiebreak_used} winner={winner_hash[:12]}",
+            flush=True,
+        )
+    else:
+        winner = active[0]
     confirmation_summary = None
-    if contract["confirmation"] is not None and winner["config_hash"] != PRODUCTION_V43_HASH:
+    if contract["confirmation"] is not None:
         setting = contract["confirmation"]
         output = args.run_dir / "confirmation" / "games.jsonl"
         update_status(
@@ -558,18 +782,19 @@ def execute(contract: dict, args: argparse.Namespace) -> dict:
         executed = run_round_process(
             contract, args.run_dir, setting, profiles, output
         )
-        ranking = rank_round(executed["games"], profiles, setting)
-        candidate_row = next(
-            row for row in ranking if row["config_hash"] == winner["config_hash"]
+        candidate_row = infra.paired_summary(
+            output, winner, production, setting["games_per_pair"]
         )
         confirmation_summary = {
             "kind": "nnue_v45_winner_confirmation",
             "winner_hash": winner["config_hash"],
             "production_hash": PRODUCTION_V43_HASH,
-            "candidate_score": candidate_row["score"],
-            "candidate_points": candidate_row["points"],
+            "candidate_score": candidate_row["first_score"],
+            "candidate_points": candidate_row["first_points"],
             "games": candidate_row["games"],
-            "ranking": ranking, "resource": executed["resource"],
+            "ci95": candidate_row["ci95"],
+            "candidate_result": candidate_row,
+            "resource": executed["resource"],
             "artifacts": {
                 "games": fingerprint(output),
                 "manifest": fingerprint(Path(str(output) + ".manifest.json")),
@@ -578,27 +803,34 @@ def execute(contract: dict, args: argparse.Namespace) -> dict:
             "automatic_promotion": False,
         }
         write_once_json(args.run_dir / "confirmation" / "summary.json", confirmation_summary)
+    result_path = args.run_dir / "summary.json"
+    completed_at = (
+        json.loads(result_path.read_text())["completed_at"]
+        if result_path.exists() else utc_now()
+    )
     result = {
         "kind": "nnue_v45_round_robin_summary",
         "schema_version": SCHEMA_VERSION,
         "experiment": EXPERIMENT,
-        "completed_at": utc_now(),
+        "completed_at": completed_at,
         "winner_hash": winner["config_hash"],
         "winner_config": winner["config"],
-        "production_won_tournament": winner["config_hash"] == PRODUCTION_V43_HASH,
+        "production_hash": production["config_hash"],
+        "production_was_protected": True,
         "rounds": [
             {"stage": item["stage"], "selected_hashes": item["selected_hashes"]}
             for item in round_summaries
         ],
         "tournament_games": sum(
-            len(read_complete_games(args.run_dir / "rounds" / item["stage"] / "games.jsonl"))
-            for item in round_summaries
+            len(read_complete_games(path))
+            for path in args.run_dir.glob("rounds/**/*.jsonl")
         ),
+        "gauntlet": gauntlet_summary,
         "confirmation": confirmation_summary,
         "automatic_promotion": False,
         "decision": "complete_for_human_review",
     }
-    write_once_json(args.run_dir / "summary.json", result)
+    write_once_json(result_path, result)
     (args.run_dir / "DONE").write_text("\n")
     update_status(
         args.run_dir, state="complete", stage="done",

@@ -1,7 +1,9 @@
 #include "attacks.hpp"
 #include "game_state.hpp"
 #include "move.hpp"
-#if defined(CHESS_UCI_NNUE_V43)
+#if defined(CHESS_UCI_NNUE_V44)
+#include "nnue_searcher_v44.hpp"
+#elif defined(CHESS_UCI_NNUE_V43)
 #include "nnue_searcher_v43.hpp"
 #elif defined(CHESS_UCI_NNUE_V42)
 #include "nnue_searcher_v42.hpp"
@@ -33,7 +35,10 @@ namespace {
 
 constexpr int DefaultDepth = 8;
 
-#if defined(CHESS_UCI_NNUE_V43)
+#if defined(CHESS_UCI_NNUE_V44)
+using UciSearcher = chess::NnueSearcherV44;
+constexpr const char* EngineName = "ChessNNUEV44";
+#elif defined(CHESS_UCI_NNUE_V43)
 using UciSearcher = chess::NnueSearcherV43;
 constexpr const char* EngineName = "ChessNNUEV43";
 #elif defined(CHESS_UCI_NNUE_V42)
@@ -125,7 +130,7 @@ void set_position(
     }
 
 #if !defined(CHESS_UCI_NNUE_V41) && !defined(CHESS_UCI_NNUE_V42) \
-    && !defined(CHESS_UCI_NNUE_V43)
+    && !defined(CHESS_UCI_NNUE_V43) && !defined(CHESS_UCI_NNUE_V44)
     searcher.clear_tt();
 #endif
     if (token == "moves") {
@@ -302,7 +307,8 @@ void set_option(
             config.main_search_see_max_depth = std::stoi(value);
         else if (name == "MainSeeMarginPerDepth")
             config.main_search_see_margin_per_depth = std::stoi(value);
-#if defined(CHESS_UCI_NNUE_V42) || defined(CHESS_UCI_NNUE_V43)
+#if defined(CHESS_UCI_NNUE_V42) || defined(CHESS_UCI_NNUE_V43) \
+    || defined(CHESS_UCI_NNUE_V44)
         else if (name == "AspirationEnabled")
             aspiration_config.enabled = value == "true";
         else if (name == "AspirationMinDepth")
@@ -326,6 +332,8 @@ void set_option(
 #if defined(CHESS_UCI_NNUE_V43)
         else if (name == "ReuseStaleTtScores")
             searcher.set_reuse_stale_tt_scores(value == "true");
+#endif
+#if defined(CHESS_UCI_NNUE_V43) || defined(CHESS_UCI_NNUE_V44)
         else if (name == "ReuseDeeperTtScores")
             searcher.set_reuse_deeper_tt_scores(value == "true");
 #endif
@@ -418,18 +426,18 @@ public:
             adapter
         ]() mutable {
 #if defined(CHESS_UCI_NNUE_V41) || defined(CHESS_UCI_NNUE_V42) \
-    || defined(CHESS_UCI_NNUE_V43)
+    || defined(CHESS_UCI_NNUE_V43) || defined(CHESS_UCI_NNUE_V44)
             (void)adapter;
 #endif
             chess::SearchResult result =
 #if defined(CHESS_UCI_NNUE_V41) || defined(CHESS_UCI_NNUE_V42) \
-    || defined(CHESS_UCI_NNUE_V43)
+    || defined(CHESS_UCI_NNUE_V43) || defined(CHESS_UCI_NNUE_V44)
                 searcher_.search_best_move(search_pos, limits, search_history);
 #else
                 searcher_.search_best_move(search_pos, limits);
 #endif
 #if !defined(CHESS_UCI_NNUE_V41) && !defined(CHESS_UCI_NNUE_V42) \
-    && !defined(CHESS_UCI_NNUE_V43)
+    && !defined(CHESS_UCI_NNUE_V43) && !defined(CHESS_UCI_NNUE_V44)
             const chess::Move selected = choose_non_drawing_alternative(
                 search_pos, search_history, model_, result, adapter);
             if (selected != result.best_move) {
@@ -552,7 +560,8 @@ int main(int argc, char** argv) {
     UciSearcher searcher(model);
     auto selective_config = searcher.selective_config();
 #if !defined(CHESS_UCI_NNUE_V40) && !defined(CHESS_UCI_NNUE_V41) \
-    && !defined(CHESS_UCI_NNUE_V42) && !defined(CHESS_UCI_NNUE_V43)
+    && !defined(CHESS_UCI_NNUE_V42) && !defined(CHESS_UCI_NNUE_V43) \
+    && !defined(CHESS_UCI_NNUE_V44)
     selective_config.lmr_base = 0.5;
     selective_config.lmr_divisor = 2.45;
     selective_config.lmr_min_depth = 4;
@@ -583,22 +592,28 @@ int main(int argc, char** argv) {
                       << "info string nnue_accumulator_kernel="
                       << model.accumulator_kernel_name()
                       << '\n';
+#if defined(CHESS_UCI_NNUE_V44)
+            output
+                      << "info string tt_lifecycle=clear_each_search\n"
+                      << "info string tt_generation=none\n";
+#endif
 #if !defined(CHESS_UCI_NNUE_V41) && !defined(CHESS_UCI_NNUE_V42) \
-    && !defined(CHESS_UCI_NNUE_V43)
+    && !defined(CHESS_UCI_NNUE_V43) && !defined(CHESS_UCI_NNUE_V44)
             output
                       << "option name AvoidDraw type check default true\n"
                       << "option name AvoidDrawMinCp type spin default 120 min 0 max 2000\n"
                       << "option name AvoidDrawMaxLossCp type spin default 80 min 0 max 1000\n";
 #endif
 #if defined(CHESS_UCI_NNUE_V41) || defined(CHESS_UCI_NNUE_V42) \
-    || defined(CHESS_UCI_NNUE_V43)
+    || defined(CHESS_UCI_NNUE_V43) || defined(CHESS_UCI_NNUE_V44)
             output
                       << "option name TwofoldSearchDraw type check default "
                       << (searcher.twofold_search_draw_enabled()
                             ? "true" : "false")
                       << '\n';
 #endif
-#if defined(CHESS_UCI_NNUE_V42) || defined(CHESS_UCI_NNUE_V43)
+#if defined(CHESS_UCI_NNUE_V42) || defined(CHESS_UCI_NNUE_V43) \
+    || defined(CHESS_UCI_NNUE_V44)
             const auto& aspiration = searcher.aspiration_config();
             output
                       << "option name AspirationEnabled type check default "
@@ -628,7 +643,10 @@ int main(int argc, char** argv) {
             output
                       << "option name ReuseStaleTtScores type check default "
                       << (searcher.reuse_stale_tt_scores() ? "true" : "false")
-                      << '\n'
+                      << '\n';
+#endif
+#if defined(CHESS_UCI_NNUE_V43) || defined(CHESS_UCI_NNUE_V44)
+            output
                       << "option name ReuseDeeperTtScores type check default "
                       << (searcher.reuse_deeper_tt_scores() ? "true" : "false")
                       << '\n';
@@ -684,4 +702,5 @@ int main(int argc, char** argv) {
             break;
         }
     }
+    return 0;
 }

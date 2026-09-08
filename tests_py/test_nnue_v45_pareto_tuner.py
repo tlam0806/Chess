@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from dataclasses import replace
 
 from tools import tune_nnue_v45_pareto as tuner
@@ -92,6 +93,19 @@ def test_generated_batch_is_deterministic_unique_and_frontier_derived() -> None:
     )
 
 
+def test_generated_batch_supports_local_cross_and_restart_mix() -> None:
+    baseline = tuner.deployed_v45_candidate()
+    seen = {tuner.legacy.candidate_behavior_signature(baseline)}
+
+    proposals = tuner.generate_batch(
+        [baseline], seen, 60, 456, 0.60, 0.20
+    )
+    kinds = {item["mutation"].split(":", 1)[0] for item in proposals}
+
+    assert kinds == {"single", "cross", "restart"}
+    assert len({item["config_hash"] for item in proposals}) == 60
+
+
 def test_memory_worker_cap_degrades_without_stopping(monkeypatch) -> None:
     monkeypatch.setattr(tuner, "memory_free_percent", lambda: 9)
     assert tuner.memory_bounded_workers(4) == (1, 9)
@@ -99,3 +113,25 @@ def test_memory_worker_cap_degrades_without_stopping(monkeypatch) -> None:
     assert tuner.memory_bounded_workers(4) == (2, 15)
     monkeypatch.setattr(tuner, "memory_free_percent", lambda: 30)
     assert tuner.memory_bounded_workers(3) == (3, 30)
+
+
+def test_external_v45_candidate_results_extend_cache(tmp_path) -> None:
+    candidate = tuner.deployed_v45_candidate()
+    path = tmp_path / "evaluations" / "tune" / f"{candidate.hash}.json"
+    path.parent.mkdir(parents=True)
+    path.write_text(json.dumps({
+        "kind": "v45_candidate_evaluation",
+        "rung": "tune",
+        "config_hash": candidate.hash,
+        "config": candidate.canonical(),
+        "dataset_sha256": "dataset",
+        "depth": 7,
+        "wall_sec": 12.0,
+        "result": {"mean_wdl_loss": 0.01, "node_ratio": 0.02},
+    }))
+
+    result = tuner.extend_result_index_from_v45_runs({}, [tmp_path])
+
+    cached = result[("dataset", 7, candidate.hash)]
+    assert cached["config"] == candidate.canonical()
+    assert cached["stage"].startswith("external:")
