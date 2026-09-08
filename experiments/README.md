@@ -11,7 +11,14 @@ current engine line.
 | `include/searchers/strict`, `src/searchers/strict` | Classical Strict V15-V35 and NNUE V36-V42 milestone implementations. |
 
 The current V43 production searcher and V44 candidate remain under
-`include/searchers/strict` and `src/searchers/strict`. Historical sources are
-still compiled into `chess_core`, so existing tools, benchmarks, tests, and
-target names continue to work unchanged. A later cleanup may make that history
-an optional build, but this move intentionally does not change build behavior.
+`include/searchers/strict` and `src/searchers/strict`. The default build compiles
+only V43. Enable `CHESS_BUILD_EXPERIMENTS` to compile the retained history, V44,
+research tools, benchmarks, and comparison tests while preserving their target
+names:
+
+```sh
+cmake -S . -B build-experiments -DCHESS_BUILD_EXPERIMENTS=ON
+```
+
+The TT timing, probe-path, and cache-line profilers each require the matching
+`CHESS_TT_PROFILE_MODE` described in [`tools/README.md`](../tools/README.md).

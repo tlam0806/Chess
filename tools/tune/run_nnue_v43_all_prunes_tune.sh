@@ -262,7 +262,8 @@ build_targets() {
       return 1
     fi
   done
-  cmake -S "$REPO_ROOT" -B "$BUILD_DIR" -DCMAKE_BUILD_TYPE=Release
+  cmake -S "$REPO_ROOT" -B "$BUILD_DIR" -DCMAKE_BUILD_TYPE=Release \
+    -DCHESS_BUILD_EXPERIMENTS=ON
   cmake --build "$BUILD_DIR" --clean-first \
     --target evaluate_nnue_v43_selective nnue_v43_time_gauntlet \
     -j "$BUILD_JOBS"

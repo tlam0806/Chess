@@ -81,7 +81,8 @@ if [[ ! -d "$data_dir" || ! -f "$data_manifest" ]]; then
     "$scratch/$data_name.manifest.tmp.json"
   mkdir -p "$scratch/build"
 
-  cmake -S "$repo_root" -B "$scratch/build" -DCMAKE_BUILD_TYPE=Release
+  cmake -S "$repo_root" -B "$scratch/build" -DCMAKE_BUILD_TYPE=Release \
+    -DCHESS_BUILD_EXPERIMENTS=ON
   cmake --build "$scratch/build" \
     --target robotmoon_binpack_to_cbin validate_robotmoon_cbin \
     -j "$(nproc)"

@@ -174,7 +174,8 @@ build_targets() {
     echo "missing or empty tuner source for new snapshot: $TUNER_SOURCE" >&2
     return 1
   fi
-  cmake -S "$REPO_ROOT" -B "$BUILD_DIR" -DCMAKE_BUILD_TYPE=Release
+  cmake -S "$REPO_ROOT" -B "$BUILD_DIR" -DCMAKE_BUILD_TYPE=Release \
+    -DCHESS_BUILD_EXPERIMENTS=ON
   cmake --build "$BUILD_DIR" \
     --clean-first \
     --target evaluate_nnue_v43_selective nnue_v43_time_gauntlet \

@@ -5,21 +5,27 @@ and a standalone neural search engine. This document preserves the commands for
 reconstructing that historical pipeline; it does not describe the production
 NNUE.
 
-Run the commands from the repository root.
+Run the commands from the repository root. The preserved dense-model targets
+are research artifacts, so configure an experiments-enabled build first:
+
+```sh
+cmake -S . -B build-experiments -DCMAKE_BUILD_TYPE=Release \
+  -DCHESS_BUILD_EXPERIMENTS=ON
+```
 
 ## Dataset export
 
 Build the dataset exporter:
 
 ```sh
-cmake --build build --target dataset_export -j
+cmake --build build-experiments --target dataset_export -j
 mkdir -p data
 ```
 
 Generate game states with random opening plies, then engine-selected moves:
 
 ```sh
-build/dataset_export \
+build-experiments/dataset_export \
   --games 1000 \
   --depth 2 \
   --random-plies 4 \
@@ -51,7 +57,7 @@ For large self-play runs, training data should not be fully written to disk.
 Use streaming:
 
 ```sh
-build/dataset_export \
+build-experiments/dataset_export \
   --games 100000 \
   --depth 2 \
   --random-plies 4 \
@@ -91,9 +97,9 @@ Export a trained checkpoint:
 Build and run the C++ parity test:
 
 ```sh
-cmake --build build --target nn_value_tests -j
+cmake --build build-experiments --target nn_value_tests -j
 
-build/nn_value_tests \
+build-experiments/nn_value_tests \
   models/value_net_stream_100k.bin \
   data/nn_value_compare_1000.jsonl
 ```
@@ -106,13 +112,13 @@ samples.
 Build the standalone NN search engine:
 
 ```sh
-cmake --build build --target nn_engine -j
+cmake --build build-experiments --target nn_engine -j
 ```
 
 Search one position:
 
 ```sh
-build/nn_engine \
+build-experiments/nn_engine \
   --model models/value_net_stream_100k.bin \
   --depth 3 \
   --go-once
@@ -121,7 +127,7 @@ build/nn_engine \
 Use a custom FEN:
 
 ```sh
-build/nn_engine \
+build-experiments/nn_engine \
   --model models/value_net_stream_100k.bin \
   --depth 3 \
   --fen "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1" \

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import json
+import os
 import subprocess
 import threading
 from urllib.parse import parse_qs, unquote, urlparse
@@ -10,13 +11,33 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 UI_DIR = Path(__file__).resolve().parent
-ENGINE = ROOT / "build" / "chess_engine_api"
+
+
+def engine_path():
+    configured = os.environ.get("CHESS_ENGINE_API")
+    if configured:
+        path = Path(configured).expanduser()
+        return path if path.is_absolute() else ROOT / path
+
+    candidates = (
+        ROOT / "build-experiments" / "chess_engine_api",
+        ROOT / "build" / "chess_engine_api",
+    )
+    return next((path for path in candidates if path.is_file()), candidates[0])
+
+
+ENGINE = engine_path()
 DATA_DIR = ROOT / "data"
 DEFAULT_DATASET = DATA_DIR / "value_depth8_v6_r12_600games.jsonl"
 
 
 class EngineProcess:
     def __init__(self):
+        if not ENGINE.is_file():
+            raise RuntimeError(
+                f"engine API not found at {ENGINE}; see "
+                "apps/dataset-viewer/README.md for build instructions"
+            )
         self.lock = threading.Lock()
         self.proc = subprocess.Popen(
             [str(ENGINE)],

@@ -14,7 +14,7 @@
 #include <string_view>
 #include <vector>
 
-#include "third_party/nnue_pytorch/binpack.h"
+#include "../third_party/nnue_pytorch/binpack.h"
 
 namespace {
 

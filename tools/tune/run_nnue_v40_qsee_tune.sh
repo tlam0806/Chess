@@ -15,6 +15,9 @@ if command -v caffeinate >/dev/null 2>&1; then
 fi
 
 /opt/homebrew/Cellar/cmake/4.2.0/bin/cmake \
+  -S . -B build-release -DCMAKE_BUILD_TYPE=Release \
+  -DCHESS_BUILD_EXPERIMENTS=ON
+/opt/homebrew/Cellar/cmake/4.2.0/bin/cmake \
   --build build-release --target evaluate_nnue_v40_selective -j8
 
 if [[ ! -f "$DATASET_DIR/manifest.txt" ]]; then

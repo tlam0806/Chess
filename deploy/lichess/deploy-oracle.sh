@@ -70,7 +70,7 @@ rsync -az -e "ssh ${SSH_ARGS[*]}" \
 
 echo "Building ARM Release binary ..."
 ssh "${SSH_ARGS[@]}" "$REMOTE" \
-  "cmake -S '$ENGINE_ROOT' -B '$ENGINE_ROOT/build-release' -DCMAKE_BUILD_TYPE=Release &&
+  "cmake -S '$ENGINE_ROOT' -B '$ENGINE_ROOT/build-release' -DCMAKE_BUILD_TYPE=Release -DCHESS_BUILD_EXPERIMENTS=ON &&
    cmake --build '$ENGINE_ROOT/build-release' --target uci_nnue_v38 -j 2"
 
 echo "Installing lichess-bot ..."

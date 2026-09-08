@@ -164,8 +164,8 @@ class UciPlatformBenchmarkTests(unittest.TestCase):
         options = read_config_uci_options(
             repo_root / "deploy/lichess/config-nnue-v43.yml"
         )
-        self.assertEqual(options["LmrBase"], "0.45")
-        self.assertEqual(options["QseeThreshold"], -25)
+        self.assertEqual(options["LmrBase"], "0.6")
+        self.assertEqual(options["QseeThreshold"], 25)
         self.assertTrue(options["QseeEnabled"])
         self.assertTrue(options["TwofoldSearchDraw"])
         self.assertFalse(options["ReuseStaleTtScores"])

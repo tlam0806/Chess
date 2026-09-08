@@ -194,17 +194,25 @@ target_link_libraries(profile_v32_tt_stats PRIVATE chess_core)
 add_executable(profile_v32_v34_tt_stats tools/benchmark/profile/profile_v32_v34_tt_stats.cpp)
 target_link_libraries(profile_v32_v34_tt_stats PRIVATE chess_core)
 
-add_executable(profile_v32_v34_tt_timing tools/benchmark/profile/profile_v32_v34_tt_timing.cpp)
-target_compile_definitions(profile_v32_v34_tt_timing PRIVATE CHESS_PROFILE_TT_TIMING)
-target_link_libraries(profile_v32_v34_tt_timing PRIVATE chess_core)
-
-add_executable(profile_v32_v34_tt_probe_paths tools/benchmark/profile/profile_v32_v34_tt_probe_paths.cpp)
-target_compile_definitions(profile_v32_v34_tt_probe_paths PRIVATE CHESS_PROFILE_TT_PATH_TIMING)
-target_link_libraries(profile_v32_v34_tt_probe_paths PRIVATE chess_core)
-
-add_executable(profile_v34_tt_cache_lines tools/benchmark/profile/profile_v34_tt_cache_lines.cpp)
-target_compile_definitions(profile_v34_tt_cache_lines PRIVATE CHESS_PROFILE_TT_CACHE_LINES)
-target_link_libraries(profile_v34_tt_cache_lines PRIVATE chess_core)
+if(CHESS_TT_PROFILE_MODE STREQUAL "timing")
+    add_executable(
+        profile_v32_v34_tt_timing
+        tools/benchmark/profile/profile_v32_v34_tt_timing.cpp
+    )
+    target_link_libraries(profile_v32_v34_tt_timing PRIVATE chess_core)
+elseif(CHESS_TT_PROFILE_MODE STREQUAL "probe-paths")
+    add_executable(
+        profile_v32_v34_tt_probe_paths
+        tools/benchmark/profile/profile_v32_v34_tt_probe_paths.cpp
+    )
+    target_link_libraries(profile_v32_v34_tt_probe_paths PRIVATE chess_core)
+elseif(CHESS_TT_PROFILE_MODE STREQUAL "cache-lines")
+    add_executable(
+        profile_v34_tt_cache_lines
+        tools/benchmark/profile/profile_v34_tt_cache_lines.cpp
+    )
+    target_link_libraries(profile_v34_tt_cache_lines PRIVATE chess_core)
+endif()
 
 add_executable(benchmark_tt_probe_cases tools/benchmark/profile/benchmark_tt_probe_cases.cpp)
 target_link_libraries(benchmark_tt_probe_cases PRIVATE chess_core)

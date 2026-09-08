@@ -44,7 +44,9 @@ clamp labels to an arbitrary training-only CP range.
 Build the converter:
 
 ```sh
-/opt/homebrew/Cellar/cmake/4.2.0/bin/cmake -S . -B build
+/opt/homebrew/Cellar/cmake/4.2.0/bin/cmake -S . -B build \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DCHESS_BUILD_EXPERIMENTS=ON
 /opt/homebrew/Cellar/cmake/4.2.0/bin/cmake --build build \
   --target robotmoon_binpack_to_cbin validate_robotmoon_cbin -j 4
 ```

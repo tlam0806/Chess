@@ -531,17 +531,29 @@ a roughly `1.5M` NPS engine, making continuous Lichess hosting viable.
 | `deploy/` | Heroku/Lichess packaging and staging workflows. |
 | `docs/` | Historical notes and curated benchmark reports, protocols and compact evidence manifests. |
 
+For Python training or tests, install the matching optional dependencies from
+the repository root:
+
+```sh
+python -m pip install -e ".[ml]"    # training and export
+python -m pip install -e ".[test]"  # Python test suite
+```
+
+See [`python/README.md`](python/README.md) and
+[`tests/README.md`](tests/README.md) for optional tooling and test requirements.
+
 ## Build
 
-With CMake:
+The default configuration builds the current V43 engine without compiling the
+retained historical searchers and research utilities:
 
 ```sh
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build --target \
-  uci_nnue_v43 \
-  search_tests \
-  nnue_searcher_v43_single_bound_tests \
-  phase_quantized_nnue_tests \
+  production \
+  perft_tests \
+  movegen_regression_tests \
+  v43_single_bound_transposition_table_tests \
   -j
 ```
 
@@ -550,10 +562,10 @@ On this machine, if `cmake` is not on `PATH`, use:
 ```sh
 /opt/homebrew/Cellar/cmake/4.2.0/bin/cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 /opt/homebrew/Cellar/cmake/4.2.0/bin/cmake --build build --target \
-  uci_nnue_v43 \
-  search_tests \
-  nnue_searcher_v43_single_bound_tests \
-  phase_quantized_nnue_tests \
+  production \
+  perft_tests \
+  movegen_regression_tests \
+  v43_single_bound_transposition_table_tests \
   -j
 ```
 
@@ -561,13 +573,23 @@ Run tests:
 
 ```sh
 ctest --test-dir build --output-on-failure \
-  -R '^(search_tests|nnue_searcher_v43_single_bound_tests|phase_quantized_nnue_tests)$'
+  -R '^(perft_tests|movegen_regression_tests|v43_single_bound_transposition_table_tests)$'
 ```
 
-The default all-target build currently also includes optional TT-stat profiling
-executables whose link mode is inconsistent when TT stats are disabled. The
-production and test targets above build normally; fixing the optional-profile
-target wiring remains an explicit build-system cleanup item.
+Historical searchers, the V44 candidate, research tools, benchmarks, and their
+tests are opt-in. Configure a separate tree with
+`CHESS_BUILD_EXPERIMENTS=ON` before requesting those targets:
+
+```sh
+cmake -S . -B build-experiments -DCMAKE_BUILD_TYPE=Release \
+  -DCHESS_BUILD_EXPERIMENTS=ON
+cmake --build build-experiments --target \
+  uci_nnue_v41 uci_nnue_v42 uci_nnue_v44 \
+  search_tests nnue_searcher_v43_single_bound_tests -j
+```
+
+The instrumented TT profilers additionally select a dedicated
+`CHESS_TT_PROFILE_MODE`; see [`tools/README.md`](tools/README.md).
 
 The V36-V41/phase-parity tests also require the production model and parity TSV
 at the documented `models/quantized_scale_grid/.../best/` path. Those large
@@ -582,8 +604,9 @@ Start the current UCI engine with its default model path:
 build/uci_nnue_v43
 ```
 
-The previous V41 and experimental V42 adapters remain available as
-`uci_nnue_v41` and `uci_nnue_v42`.
+The previous V41/V42 adapters and the V44 candidate remain available from an
+experiments-enabled build as `uci_nnue_v41`, `uci_nnue_v42`, and
+`uci_nnue_v44`.
 
 Or pass a model explicitly:
 

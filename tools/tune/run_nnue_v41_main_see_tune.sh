@@ -42,6 +42,8 @@ if [[ ! -f "$MODEL" ]]; then
   exit 1
 fi
 
+cmake -S . -B build-release -DCMAKE_BUILD_TYPE=Release \
+  -DCHESS_BUILD_EXPERIMENTS=ON
 cmake --build build-release --target evaluate_nnue_v41_selective -j8
 
 .venv/bin/python tools/tune/tune_nnue_v41_main_see.py \

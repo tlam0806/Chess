@@ -6,6 +6,25 @@ build-backend = "setuptools.build_meta"
 name = "chess-nnue"
 version = "0.1.0"
 requires-python = ">=3.9"
+dependencies = [
+    "torch",
+]
+
+[project.optional-dependencies]
+ml = [
+    "numpy",
+]
+test = [
+    "numpy",
+    "pytest",
+    "python-chess",
+]
+plot = [
+    "matplotlib",
+]
+runpod = [
+    "boto3",
+]
 
 [tool.setuptools]
 package-dir = {"" = "python"}

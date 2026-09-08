@@ -7,6 +7,8 @@ CMAKE_BIN="/opt/homebrew/Cellar/cmake/4.2.0/bin/cmake"
 OUTPUT="data/tactical_disagreement_depth7_8h_v7.jsonl"
 LOG="data/tactical_disagreement_depth7_8h_v7.log"
 
+"${CMAKE_BIN}" -S . -B build -DCMAKE_BUILD_TYPE=Release \
+  -DCHESS_BUILD_EXPERIMENTS=ON
 "${CMAKE_BIN}" --build build --target tactical_disagreement_export
 
 rm -f "${OUTPUT}"

@@ -19,3 +19,22 @@ relative paths resolve consistently. C++ utilities are exposed as named CMake
 targets in [`cmake/Tools.cmake`](../cmake/Tools.cmake) or
 [`cmake/Experiments.cmake`](../cmake/Experiments.cmake); user-facing UCI
 targets are defined in [`cmake/Production.cmake`](../cmake/Production.cmake).
+These research targets are excluded from the lean production configuration.
+Configure their build tree with `-DCHESS_BUILD_EXPERIMENTS=ON`:
+
+```sh
+cmake -S . -B build-experiments -DCMAKE_BUILD_TYPE=Release \
+  -DCHESS_BUILD_EXPERIMENTS=ON
+```
+
+The three low-level transposition-table profilers alter instrumented class
+layouts, so each must use its own consistently compiled build tree. Select one
+with `CHESS_TT_PROFILE_MODE`: `timing`, `probe-paths`, or `cache-lines`. For
+example:
+
+```sh
+cmake -S . -B build-tt-timing -DCMAKE_BUILD_TYPE=Release \
+  -DCHESS_BUILD_EXPERIMENTS=ON \
+  -DCHESS_TT_PROFILE_MODE=timing
+cmake --build build-tt-timing --target profile_v32_v34_tt_timing -j
+```

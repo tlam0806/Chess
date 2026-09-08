@@ -89,7 +89,8 @@ if (( SELECTION_SAMPLES <= 0 || RANKING_SAMPLES <= 0 \
   exit 1
 fi
 
-cmake -S . -B "$BUILD_DIR" -DCMAKE_BUILD_TYPE=Release >/dev/null
+cmake -S . -B "$BUILD_DIR" -DCMAKE_BUILD_TYPE=Release \
+  -DCHESS_BUILD_EXPERIMENTS=ON >/dev/null
 cmake --build "$BUILD_DIR" \
   --target audit_nnue_mirror_split phase_quantized_nnue_tests \
     benchmark_nnue_horizontal_mirror \

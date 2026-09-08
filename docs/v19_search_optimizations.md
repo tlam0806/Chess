@@ -60,6 +60,9 @@ int static_exchange_eval(
 Commands run:
 
 ```sh
+/opt/homebrew/Cellar/cmake/4.2.0/bin/cmake -S . -B build \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DCHESS_BUILD_EXPERIMENTS=ON
 /opt/homebrew/Cellar/cmake/4.2.0/bin/cmake --build build --target see_tests heuristic_searcher_v19_tests benchmark_v18_v19_bucket_tt -j 8
 /opt/homebrew/Cellar/cmake/4.2.0/bin/ctest --test-dir build -R 'see_tests|heuristic_searcher_v19_tests|castling_tests|movegen_regression_tests|perft_tests' --output-on-failure
 ./build/benchmark_v18_v19_bucket_tt --samples 32 --depth 7 --iterative --seed 20260615 --bucket-size 1

@@ -35,6 +35,9 @@ for output_path in "$eligible_dir" "$eligible_manifest" "$labeled_dir" "$label_m
   fi
 done
 
+/opt/homebrew/Cellar/cmake/4.2.0/bin/cmake -S . -B build \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DCHESS_BUILD_EXPERIMENTS=ON
 /opt/homebrew/Cellar/cmake/4.2.0/bin/cmake --build build \
   --target robotmoon_binpack_to_cbin validate_robotmoon_cbin -j 4
 STOCKFISH_BUILD_JOBS=4 tools/data/build_stockfish_static_nnue_labeler.sh

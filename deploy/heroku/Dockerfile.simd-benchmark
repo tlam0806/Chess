@@ -15,6 +15,7 @@ COPY tools ./tools
 COPY tests ./tests
 RUN cmake -S . -B build-release -DCMAKE_BUILD_TYPE=Release \
         -DCHESS_ENABLE_LTO=ON \
+        -DCHESS_BUILD_EXPERIMENTS=ON \
         -DCHESS_ENABLE_NNUE_STAGE_BENCHMARK=ON \
     && cmake --build build-release \
        --target phase_quantized_nnue_tests uci_nnue_v41 \
