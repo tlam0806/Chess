@@ -63,7 +63,7 @@ the first dyno started. All three dynos reported the same non-null hashes.
 The reusable suite is defined in
 [`benchmarks/uci_platform_v1.json`](../../benchmarks/uci_platform_v1.json), and
 the driver is
-[`tools/benchmark_uci_platform.py`](../../tools/benchmark_uci_platform.py).
+[`tools/benchmark/benchmark_uci_platform.py`](../../tools/benchmark/benchmark_uci_platform.py).
 
 - 12 canonical FENs spanning opening, middlegame, tactics and endgames
 - Production V41 UCI options applied explicitly

@@ -76,7 +76,7 @@ mkdir -p "$STAGE_DIR/lichess-bot" "$STAGE_DIR/$(dirname "$MODEL_REL")"
 # Package the exact committed engine tree, never the surrounding dirty
 # working tree. The ignored production model is copied separately below.
 git -C "$REPO_ROOT" archive --format=tar "$SOURCE_COMMIT" -- \
-  CMakeLists.txt include src tools tests benchmarks \
+  CMakeLists.txt cmake include src tools tests benchmarks \
   deploy/heroku/Dockerfile deploy/heroku/heroku.yml \
   deploy/lichess/config-nnue-v43.yml \
   | tar -xf - -C "$STAGE_DIR"
@@ -92,7 +92,7 @@ git -C "$BOT_SOURCE" archive --format=tar "$BOT_COMMIT" \
 MODEL_SHA256="$(sha256_file "$STAGE_DIR/$MODEL_REL")"
 CONFIG_SHA256="$(sha256_file "$STAGE_DIR/deploy/lichess/config-nnue-v43.yml")"
 SUITE_SHA256="$(sha256_file "$STAGE_DIR/benchmarks/uci_platform_v1.json")"
-python3 "$STAGE_DIR/tools/nnue_v43_production_profile.py" \
+python3 "$STAGE_DIR/tools/benchmark/nnue_v43_production_profile.py" \
   "$STAGE_DIR/deploy/lichess/config-nnue-v43.yml" \
   --expect "$PRODUCTION_CONFIG_HASH" >/dev/null
 python3 - "$STAGE_DIR/release-manifest.json" \

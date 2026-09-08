@@ -139,7 +139,7 @@ if [[ ! -f "$SOURCE_ROOT/$MODEL_REL" || ! -f "$SOURCE_ROOT/$PARITY_REL" ]]; then
   exit 2
 fi
 for required_path in \
-  CMakeLists.txt include src tools tests \
+  CMakeLists.txt cmake include src tools tests \
   benchmarks/uci_platform_v1.json \
   deploy/heroku/benchmark-config-v41.yml; do
   if [[ ! -e "$SOURCE_ROOT/$required_path" ]]; then
@@ -150,9 +150,9 @@ done
 for staging_path in \
   deploy/heroku/Dockerfile.simd-benchmark \
   deploy/heroku/heroku-simd-benchmark.yml \
-  tools/run_heroku_nnue_forward_stages.py \
-  tools/run_local_nnue_forward_stages.py \
-  tools/run_nnue_forward_stages_remote.py; do
+  tools/benchmark/run_heroku_nnue_forward_stages.py \
+  tools/benchmark/run_local_nnue_forward_stages.py \
+  tools/benchmark/run_nnue_forward_stages_remote.py; do
   if [[ ! -f "$REPO_ROOT/$staging_path" ]]; then
     echo "Workspace staging infrastructure is missing: $staging_path" >&2
     exit 2
@@ -183,6 +183,7 @@ mkdir -p \
   "$STAGE_DIR/deploy/heroku" \
   "$STAGE_DIR/$(dirname "$MODEL_REL")"
 cp "$SOURCE_ROOT/CMakeLists.txt" "$STAGE_DIR/"
+rsync -a "$SOURCE_ROOT/cmake/" "$STAGE_DIR/cmake/"
 rsync -a "$SOURCE_ROOT/include/" "$STAGE_DIR/include/"
 rsync -a "$SOURCE_ROOT/src/" "$STAGE_DIR/src/"
 rsync -a "$SOURCE_ROOT/tools/" "$STAGE_DIR/tools/"
@@ -191,8 +192,8 @@ cp "$SOURCE_ROOT/benchmarks/uci_platform_v1.json" "$STAGE_DIR/benchmarks/"
 cp "$SOURCE_ROOT/deploy/heroku/benchmark-config-v41.yml" "$STAGE_DIR/deploy/heroku/"
 cp "$REPO_ROOT/deploy/heroku/Dockerfile.simd-benchmark" "$STAGE_DIR/Dockerfile"
 cp "$REPO_ROOT/deploy/heroku/heroku-simd-benchmark.yml" "$STAGE_DIR/heroku.yml"
-cp "$REPO_ROOT/tools/run_nnue_forward_stages_remote.py" \
-  "$STAGE_DIR/tools/run_nnue_forward_stages_remote.py"
+cp "$REPO_ROOT/tools/benchmark/run_nnue_forward_stages_remote.py" \
+  "$STAGE_DIR/tools/benchmark/run_nnue_forward_stages_remote.py"
 cp "$SOURCE_ROOT/$MODEL_REL" "$STAGE_DIR/$MODEL_REL"
 cp "$SOURCE_ROOT/$PARITY_REL" "$STAGE_DIR/$PARITY_REL"
 
@@ -219,11 +220,11 @@ git -C "$STAGE_DIR" archive --format=tar.gz \
 tar -tzf "$PROVENANCE_DIR/staged-source.tar.gz" >/dev/null
 cp "$STAGE_DIR/Dockerfile" "$PROVENANCE_DIR/Dockerfile"
 cp "$STAGE_DIR/heroku.yml" "$PROVENANCE_DIR/heroku.yml"
-cp "$STAGE_DIR/tools/run_nnue_forward_stages_remote.py" \
+cp "$STAGE_DIR/tools/benchmark/run_nnue_forward_stages_remote.py" \
   "$PROVENANCE_DIR/remote-runner.py"
-cp "$REPO_ROOT/tools/run_heroku_nnue_forward_stages.py" \
+cp "$REPO_ROOT/tools/benchmark/run_heroku_nnue_forward_stages.py" \
   "$PROVENANCE_DIR/local-heroku-runner.py"
-cp "$REPO_ROOT/tools/run_local_nnue_forward_stages.py" \
+cp "$REPO_ROOT/tools/benchmark/run_local_nnue_forward_stages.py" \
   "$PROVENANCE_DIR/local-arm-runner.py"
 cp "$REPO_ROOT/deploy/heroku/run-forward-stage-staging.sh" \
   "$PROVENANCE_DIR/staging-script.sh"
@@ -274,7 +275,7 @@ if [[ "$DEPLOY_ONLY" -eq 1 ]]; then
 fi
 
 RUNNER_COMMAND=(
-  python3 "$REPO_ROOT/tools/run_heroku_nnue_forward_stages.py"
+  python3 "$REPO_ROOT/tools/benchmark/run_heroku_nnue_forward_stages.py"
   --app "$APP_NAME"
   --production-app "$PRODUCTION_APP"
   --process-type benchmark

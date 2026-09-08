@@ -2,7 +2,7 @@
   "schema_version": 1,
   "suite_id": "nnue-v41-platform-12-v1",
   "description": "Deterministic cross-platform UCI throughput suite for the production NNUE V41 engine.",
-  "source": "tools/profile/benchmark_nnue_v40_repetition.cpp",
+  "source": "tools/benchmark/profile/benchmark_nnue_v40_repetition.cpp",
   "expected_engine_name": "ChessNNUEV41",
   "positions": [
     {

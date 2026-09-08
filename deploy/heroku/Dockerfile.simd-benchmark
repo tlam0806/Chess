@@ -7,6 +7,7 @@ RUN apt-get update \
 
 WORKDIR /src
 COPY CMakeLists.txt ./
+COPY cmake ./cmake
 COPY include ./include
 COPY src ./src
 COPY tools ./tools
@@ -36,18 +37,19 @@ COPY models ./models
 COPY benchmarks/uci_platform_v1.json ./benchmarks/uci_platform_v1.json
 COPY deploy/heroku/benchmark-config-v41.yml \
     ./deploy/heroku/benchmark-config-v41.yml
-COPY tools/benchmark_uci_platform.py ./tools/benchmark_uci_platform.py
-COPY tools/run_nnue_backend_matrix_remote.py \
-    ./tools/run_nnue_backend_matrix_remote.py
-COPY tools/run_nnue_forward_stages_remote.py \
-    ./tools/run_nnue_forward_stages_remote.py
+COPY tools/benchmark/benchmark_uci_platform.py \
+    ./tools/benchmark/benchmark_uci_platform.py
+COPY tools/benchmark/run_nnue_backend_matrix_remote.py \
+    ./tools/benchmark/run_nnue_backend_matrix_remote.py
+COPY tools/benchmark/run_nnue_forward_stages_remote.py \
+    ./tools/benchmark/run_nnue_forward_stages_remote.py
 RUN chmod +x \
       ./build-release/phase_quantized_nnue_tests \
       ./build-release/uci_nnue_v41 \
       ./build-release/benchmark_phase_nnue_forward_stages \
-      ./tools/benchmark_uci_platform.py \
-      ./tools/run_nnue_backend_matrix_remote.py \
-      ./tools/run_nnue_forward_stages_remote.py
+      ./tools/benchmark/benchmark_uci_platform.py \
+      ./tools/benchmark/run_nnue_backend_matrix_remote.py \
+      ./tools/benchmark/run_nnue_forward_stages_remote.py
 
 # This image is only a source for explicitly requested one-off dynos.  The
 # corresponding process formation is kept at zero by the staging script.

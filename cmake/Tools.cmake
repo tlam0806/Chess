@@ -1,0 +1,91 @@
+# Dataset, analysis, match, and calibration utilities.
+
+add_executable(dataset_export tools/data/dataset_export.cpp)
+target_link_libraries(dataset_export PRIVATE chess_core)
+
+add_executable(match_engines tools/match/match_engines.cpp)
+target_link_libraries(match_engines PRIVATE chess_core)
+
+add_executable(match_nn_models tools/match/match_nn_models.cpp)
+target_link_libraries(match_nn_models PRIVATE chess_core)
+
+add_executable(material_stress_export tools/data/material_stress_export.cpp)
+target_link_libraries(material_stress_export PRIVATE chess_core)
+
+add_executable(material_imbalance_export tools/data/material_imbalance_export.cpp)
+target_link_libraries(material_imbalance_export PRIVATE chess_core)
+
+add_executable(legal_move_dataset_export tools/data/legal_move_dataset_export.cpp)
+target_link_libraries(legal_move_dataset_export PRIVATE chess_core)
+
+add_executable(legal_move_dataset_view tools/data/legal_move_dataset_view.cpp)
+target_link_libraries(legal_move_dataset_view PRIVATE chess_core)
+
+add_executable(robotmoon_binpack_to_cbin tools/data/robotmoon_binpack_to_cbin.cpp)
+add_executable(validate_robotmoon_cbin tools/data/validate_robotmoon_cbin.cpp)
+add_executable(audit_nnue_mirror_split tools/analyze/audit_nnue_mirror_split.cpp)
+add_executable(robotmoon_binpack_fixture tests/cpp/robotmoon_binpack_fixture.cpp)
+
+add_executable(evaluate_heuristic_on_cbin tools/analyze/evaluate_heuristic_on_cbin.cpp)
+target_link_libraries(evaluate_heuristic_on_cbin PRIVATE chess_core)
+
+add_executable(evaluate_nnue_v38_selective tools/analyze/evaluate_nnue_v38_selective.cpp)
+target_link_libraries(evaluate_nnue_v38_selective PRIVATE chess_core)
+
+add_executable(evaluate_nnue_v39_selective tools/analyze/evaluate_nnue_v38_selective.cpp)
+target_compile_definitions(
+    evaluate_nnue_v39_selective PRIVATE CHESS_EVALUATE_NNUE_V39)
+target_link_libraries(evaluate_nnue_v39_selective PRIVATE chess_core)
+
+add_executable(evaluate_nnue_v40_selective tools/analyze/evaluate_nnue_v38_selective.cpp)
+target_compile_definitions(
+    evaluate_nnue_v40_selective PRIVATE CHESS_EVALUATE_NNUE_V40)
+target_link_libraries(evaluate_nnue_v40_selective PRIVATE chess_core)
+
+add_executable(evaluate_nnue_v41_selective tools/analyze/evaluate_nnue_v38_selective.cpp)
+target_compile_definitions(
+    evaluate_nnue_v41_selective PRIVATE CHESS_EVALUATE_NNUE_V41)
+target_link_libraries(evaluate_nnue_v41_selective PRIVATE chess_core)
+
+add_executable(evaluate_nnue_v42_selective tools/analyze/evaluate_nnue_v38_selective.cpp)
+target_compile_definitions(
+    evaluate_nnue_v42_selective PRIVATE CHESS_EVALUATE_NNUE_V42)
+target_link_libraries(evaluate_nnue_v42_selective PRIVATE chess_core)
+
+add_executable(evaluate_nnue_v43_selective tools/analyze/evaluate_nnue_v38_selective.cpp)
+target_compile_definitions(
+    evaluate_nnue_v43_selective PRIVATE CHESS_EVALUATE_NNUE_V43)
+target_link_libraries(evaluate_nnue_v43_selective PRIVATE chess_core)
+
+add_executable(trace_replay_ply tools/debug/trace_replay_ply.cpp)
+target_link_libraries(trace_replay_ply PRIVATE chess_core)
+
+add_executable(match_searchers tools/match/match_searchers.cpp)
+target_link_libraries(match_searchers PRIVATE chess_core)
+
+add_executable(nn_engine tools/ops/nn_engine.cpp)
+target_link_libraries(nn_engine PRIVATE chess_core)
+
+add_executable(analyze_nn_buckets tools/analyze/analyze_nn_buckets.cpp)
+target_link_libraries(analyze_nn_buckets PRIVATE chess_core)
+
+add_executable(tactical_disagreement_export tools/data/tactical_disagreement_export.cpp)
+target_link_libraries(tactical_disagreement_export PRIVATE chess_core)
+
+add_executable(measure_tt_stats tools/benchmark/measure_tt_stats.cpp)
+target_link_libraries(measure_tt_stats PRIVATE chess_core)
+
+add_executable(generate_magic_bitboards tools/debug/generate_magic_bitboards.cpp)
+target_link_libraries(generate_magic_bitboards PRIVATE chess_core)
+
+add_executable(opening_book_match tools/match/opening_book_match.cpp)
+target_link_libraries(opening_book_match PRIVATE chess_core)
+
+add_executable(nnue_hard_negative_export tools/data/nnue_hard_negative_export.cpp)
+target_link_libraries(nnue_hard_negative_export PRIVATE chess_core)
+
+add_executable(nnue_spectator_gap_export tools/data/nnue_spectator_gap_export.cpp)
+target_link_libraries(nnue_spectator_gap_export PRIVATE chess_core)
+
+add_executable(collect_nnue_wdl_calibration tools/data/collect_nnue_wdl_calibration.cpp)
+target_link_libraries(collect_nnue_wdl_calibration PRIVATE chess_core)

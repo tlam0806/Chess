@@ -150,7 +150,7 @@ The reusable pipeline is:
 ```sh
 GOBIN=/tmp/chess-pprof-bin go install \
   github.com/google/pprof@v0.0.0-20260802141513-ef3492d7dac3
-python3 tools/run_heroku_searcher_profile.py \
+python3 tools/benchmark/run_heroku_searcher_profile.py \
   --blocks 4 \
   --pprof /tmp/chess-pprof-bin/pprof
 ```

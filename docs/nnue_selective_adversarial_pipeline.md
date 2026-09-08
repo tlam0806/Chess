@@ -5,7 +5,7 @@ V38 searcher. Reverse-futility and late-move pruning are explicitly disabled.
 
 ## Safety bank
 
-`tools/build_nnue_selective_safety_bank.py` runs a fixed probe suite containing
+`tools/data/build_nnue_selective_safety_bank.py` runs a fixed probe suite containing
 LMR-only, NMP-only, and joint configurations against historical datasets. It
 asks the strict V36 control to re-search every differing candidate move.
 
@@ -80,7 +80,7 @@ combine one LMR-only frontier parent with one NMP-only frontier parent.
 ## End-to-end runner
 
 ```bash
-tools/run_nnue_lmr_nmp_adversarial_8h.sh RUN_DIR
+tools/tune/run_nnue_lmr_nmp_adversarial_8h.sh RUN_DIR
 ```
 
 The runner first builds the historical safety bank, then creates a fresh

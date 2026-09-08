@@ -363,7 +363,7 @@
       "sha256": "4ecbf086edec1eecf3bc616143e4863b6babe694b2c4ad8f5a018683d22b9e40"
     },
     "analyzer_tests": {
-      "archive_path": "tests_py/test_analyze_cross_host_profile.py",
+      "archive_path": "tests/python/test_analyze_cross_host_profile.py",
       "sha256": "85facf020d044a531eccddaca43439be039d6f866fcacce4c6b4386be60ee59a"
     },
     "heroku_manifest": {

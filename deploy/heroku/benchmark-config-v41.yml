@@ -1,5 +1,5 @@
 # Minimal deployment-independent option snapshot consumed by
-# tools/benchmark_uci_platform.py.  It intentionally contains no Lichess token
+# tools/benchmark/benchmark_uci_platform.py. It intentionally contains no Lichess token
 # or bot configuration.
 uci_options:
   MoveOverhead: 200

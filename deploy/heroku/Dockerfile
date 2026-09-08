@@ -7,6 +7,7 @@ RUN apt-get update \
 
 WORKDIR /src
 COPY CMakeLists.txt ./
+COPY cmake ./cmake
 COPY include ./include
 COPY src ./src
 COPY tools ./tools
@@ -27,12 +28,12 @@ RUN python -m pip install --no-cache-dir -r /app/lichess-bot/requirements.txt
 COPY --from=engine-build /src/build-release/uci_nnue_v43 \
     /app/chess-engine/build-release/uci_nnue_v43
 COPY models /app/chess-engine/models
-COPY tools/benchmark_uci_platform.py \
-    /app/chess-engine/tools/benchmark_uci_platform.py
-COPY tools/nnue_v43_production_profile.py \
-    /app/chess-engine/tools/nnue_v43_production_profile.py
-COPY tools/test_uci_ponder_protocol.py \
-    /app/chess-engine/tools/test_uci_ponder_protocol.py
+COPY tools/benchmark/benchmark_uci_platform.py \
+    /app/chess-engine/tools/benchmark/benchmark_uci_platform.py
+COPY tools/benchmark/nnue_v43_production_profile.py \
+    /app/chess-engine/tools/benchmark/nnue_v43_production_profile.py
+COPY tools/debug/test_uci_ponder_protocol.py \
+    /app/chess-engine/tools/debug/test_uci_ponder_protocol.py
 COPY benchmarks/uci_platform_v1.json \
     /app/chess-engine/benchmarks/uci_platform_v1.json
 COPY release-manifest.json /app/chess-engine/release-manifest.json
@@ -43,9 +44,9 @@ RUN sed 's#__ENGINE_ROOT__#/app/chess-engine#g' \
     && rm /tmp/config-nnue-v43.yml \
     && chmod +x \
       /app/chess-engine/build-release/uci_nnue_v43 \
-      /app/chess-engine/tools/benchmark_uci_platform.py \
-      /app/chess-engine/tools/nnue_v43_production_profile.py \
-      /app/chess-engine/tools/test_uci_ponder_protocol.py
+      /app/chess-engine/tools/benchmark/benchmark_uci_platform.py \
+      /app/chess-engine/tools/benchmark/nnue_v43_production_profile.py \
+      /app/chess-engine/tools/debug/test_uci_ponder_protocol.py
 
 WORKDIR /app/lichess-bot
 CMD ["python", "lichess-bot.py", "--config", "config-nnue-v43.yml"]

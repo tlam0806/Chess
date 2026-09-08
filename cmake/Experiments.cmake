@@ -1,0 +1,270 @@
+# Benchmark, profiling, tuning, and version-comparison executables.
+
+add_executable(benchmark_searchers_on_dataset tools/benchmark/benchmark_searchers_on_dataset.cpp)
+target_link_libraries(benchmark_searchers_on_dataset PRIVATE chess_core)
+
+add_executable(benchmark_v7_v8_on_random_match tools/benchmark/benchmark_v7_v8_on_random_match.cpp)
+target_link_libraries(benchmark_v7_v8_on_random_match PRIVATE chess_core)
+
+add_executable(benchmark_v10_order_profiles tools/benchmark/benchmark_v10_order_profiles.cpp)
+target_link_libraries(benchmark_v10_order_profiles PRIVATE chess_core)
+
+add_executable(benchmark_v9_v10_v11_on_dataset tools/benchmark/benchmark_v9_v10_v11_on_dataset.cpp)
+target_link_libraries(benchmark_v9_v10_v11_on_dataset PRIVATE chess_core)
+
+add_executable(tune_v12_move_order_weights tools/tune/tune_v12_move_order_weights.cpp)
+target_link_libraries(tune_v12_move_order_weights PRIVATE chess_core)
+
+add_executable(measure_v12_ordering_stats tools/benchmark/measure_v12_ordering_stats.cpp)
+target_link_libraries(measure_v12_ordering_stats PRIVATE chess_core)
+
+add_executable(compare_v12_v13_logic tools/debug/compare_v12_v13_logic.cpp)
+target_link_libraries(compare_v12_v13_logic PRIVATE chess_core)
+
+add_executable(benchmark_v14_pvs tools/benchmark/benchmark_v14_pvs.cpp)
+target_link_libraries(benchmark_v14_pvs PRIVATE chess_core)
+
+add_executable(benchmark_v15_pvs_compare tools/benchmark/benchmark_v15_pvs_compare.cpp)
+target_link_libraries(benchmark_v15_pvs_compare PRIVATE chess_core)
+
+add_executable(benchmark_fast_v15_v35 tools/benchmark/profile/benchmark_fast_v15_v35.cpp)
+target_link_libraries(benchmark_fast_v15_v35 PRIVATE chess_core)
+
+add_executable(benchmark_fast_v10_v35 tools/benchmark/profile/benchmark_fast_v10_v35.cpp)
+target_link_libraries(benchmark_fast_v10_v35 PRIVATE chess_core)
+
+add_executable(benchmark_nnue_v36_vs_heuristic_v35 tools/benchmark/profile/benchmark_nnue_v36_vs_heuristic_v35.cpp)
+target_link_libraries(benchmark_nnue_v36_vs_heuristic_v35 PRIVATE chess_core)
+
+add_executable(benchmark_nnue_v36_vs_v37 tools/benchmark/profile/benchmark_nnue_v36_vs_v37.cpp)
+target_link_libraries(benchmark_nnue_v36_vs_v37 PRIVATE chess_core)
+
+if(CHESS_ENABLE_NNUE_STAGE_BENCHMARK)
+    add_executable(
+        benchmark_phase_nnue_forward_stages
+        tools/benchmark/profile/benchmark_phase_nnue_forward_stages.cpp
+    )
+    target_link_libraries(benchmark_phase_nnue_forward_stages PRIVATE chess_core)
+endif()
+
+add_executable(
+    benchmark_nnue_horizontal_mirror
+    tools/benchmark/profile/benchmark_nnue_horizontal_mirror.cpp
+)
+target_link_libraries(benchmark_nnue_horizontal_mirror PRIVATE chess_core)
+
+add_executable(
+    benchmark_nnue_v40_repetition
+    tools/benchmark/profile/benchmark_nnue_v40_repetition.cpp
+)
+target_link_libraries(benchmark_nnue_v40_repetition PRIVATE chess_core)
+
+add_executable(
+    benchmark_nnue_v36_ordering_weights
+    tools/benchmark/profile/benchmark_nnue_v36_ordering_weights.cpp
+)
+target_link_libraries(benchmark_nnue_v36_ordering_weights PRIVATE chess_core)
+
+add_executable(benchmark_nnue_rebuild_perspective tools/benchmark/profile/benchmark_nnue_rebuild_perspective.cpp)
+target_link_libraries(benchmark_nnue_rebuild_perspective PRIVATE chess_core)
+
+add_executable(phase_nnue_strict_paired_match tools/match/phase_nnue_strict_paired_match.cpp)
+target_link_libraries(phase_nnue_strict_paired_match PRIVATE chess_core)
+
+add_executable(measure_nnue_v36_cutoff_stats tools/benchmark/measure_nnue_v36_cutoff_stats.cpp)
+target_link_libraries(measure_nnue_v36_cutoff_stats PRIVATE chess_core)
+
+add_executable(benchmark_strict_v32_fast_v32 tools/benchmark/profile/benchmark_strict_v32_fast_v32.cpp)
+target_link_libraries(benchmark_strict_v32_fast_v32 PRIVATE chess_core)
+
+add_executable(tune_fast_v32_lmr_match tools/tune/tune_fast_v32_lmr_match.cpp)
+target_link_libraries(tune_fast_v32_lmr_match PRIVATE chess_core)
+
+add_executable(render_fast_v32_lmr_win tools/analyze/render_fast_v32_lmr_win.cpp)
+target_link_libraries(render_fast_v32_lmr_win PRIVATE chess_core)
+
+add_executable(benchmark_v15_aspiration tools/benchmark/benchmark_v15_aspiration.cpp)
+target_link_libraries(benchmark_v15_aspiration PRIVATE chess_core)
+
+add_executable(
+    benchmark_nnue_v42_aspiration
+    tools/benchmark/benchmark_nnue_v42_aspiration.cpp
+)
+target_link_libraries(benchmark_nnue_v42_aspiration PRIVATE chess_core)
+
+add_executable(
+    benchmark_nnue_v43_single_bound
+    tools/benchmark/benchmark_nnue_v43_single_bound.cpp
+)
+target_link_libraries(benchmark_nnue_v43_single_bound PRIVATE chess_core)
+
+add_executable(
+    benchmark_nnue_v43_tt_sizes
+    tools/benchmark/benchmark_nnue_v43_tt_sizes.cpp
+)
+target_link_libraries(benchmark_nnue_v43_tt_sizes PRIVATE chess_core)
+
+add_executable(benchmark_v15_v16_history tools/benchmark/benchmark_v15_v16_history.cpp)
+target_link_libraries(benchmark_v15_v16_history PRIVATE chess_core)
+
+add_executable(benchmark_v10_v16_depth_sweep tools/benchmark/benchmark_v10_v16_depth_sweep.cpp)
+target_link_libraries(benchmark_v10_v16_depth_sweep PRIVATE chess_core)
+
+add_executable(benchmark_v10_v24_depth_sweep tools/benchmark/benchmark_v10_v24_depth_sweep.cpp)
+target_link_libraries(benchmark_v10_v24_depth_sweep PRIVATE chess_core)
+
+add_executable(benchmark_v16_v17_counterhistory tools/benchmark/benchmark_v16_v17_counterhistory.cpp)
+target_link_libraries(benchmark_v16_v17_counterhistory PRIVATE chess_core)
+
+add_executable(benchmark_v17_v18 tools/benchmark/benchmark_v17_v18.cpp)
+target_link_libraries(benchmark_v17_v18 PRIVATE chess_core)
+
+add_executable(analyze_v17_v18_move_ordering tools/analyze/analyze_v17_v18_move_ordering.cpp)
+target_link_libraries(analyze_v17_v18_move_ordering PRIVATE chess_core)
+
+add_executable(benchmark_v18_counterhistory_toggle tools/benchmark/benchmark_v18_counterhistory_toggle.cpp)
+target_link_libraries(benchmark_v18_counterhistory_toggle PRIVATE chess_core)
+
+add_executable(benchmark_v18_v19_bucket_tt tools/benchmark/benchmark_v18_v19_bucket_tt.cpp)
+target_link_libraries(benchmark_v18_v19_bucket_tt PRIVATE chess_core)
+
+add_executable(benchmark_v19_v20 tools/benchmark/benchmark_v19_v20.cpp)
+target_link_libraries(benchmark_v19_v20 PRIVATE chess_core)
+
+add_executable(benchmark_v19_v21 tools/benchmark/benchmark_v19_v21.cpp)
+target_link_libraries(benchmark_v19_v21 PRIVATE chess_core)
+
+add_executable(benchmark_v22_v23 tools/benchmark/benchmark_v22_v23.cpp)
+target_link_libraries(benchmark_v22_v23 PRIVATE chess_core)
+
+add_executable(benchmark_v23_v24 tools/benchmark/benchmark_v23_v24.cpp)
+target_link_libraries(benchmark_v23_v24 PRIVATE chess_core)
+
+add_executable(benchmark_v24_v25_depth_sweep tools/benchmark/benchmark_v24_v25_depth_sweep.cpp)
+target_link_libraries(benchmark_v24_v25_depth_sweep PRIVATE chess_core)
+
+add_executable(profile_v25_line tools/benchmark/profile_v25_line.cpp)
+target_link_libraries(profile_v25_line PRIVATE chess_core)
+
+add_executable(benchmark_make_unmake tools/benchmark/benchmark_make_unmake.cpp)
+target_link_libraries(benchmark_make_unmake PRIVATE chess_core)
+
+add_executable(benchmark_v25_v26_v27 tools/benchmark/benchmark_v25_v26_v27.cpp)
+target_link_libraries(benchmark_v25_v26_v27 PRIVATE chess_core)
+
+add_executable(benchmark_v27_v28 tools/benchmark/benchmark_v27_v28.cpp)
+target_link_libraries(benchmark_v27_v28 PRIVATE chess_core)
+
+add_executable(benchmark_v29_v30 tools/benchmark/benchmark_v29_v30.cpp)
+target_link_libraries(benchmark_v29_v30 PRIVATE chess_core)
+
+add_executable(benchmark_v30_v31 tools/benchmark/benchmark_v30_v31.cpp)
+target_link_libraries(benchmark_v30_v31 PRIVATE chess_core)
+
+add_executable(benchmark_v31_v32 tools/benchmark/benchmark_v31_v32.cpp)
+target_link_libraries(benchmark_v31_v32 PRIVATE chess_core)
+
+add_executable(benchmark_v32_v33 tools/benchmark/benchmark_v32_v33.cpp)
+target_link_libraries(benchmark_v32_v33 PRIVATE chess_core)
+
+add_executable(benchmark_v32_v34 tools/benchmark/benchmark_v32_v34.cpp)
+target_link_libraries(benchmark_v32_v34 PRIVATE chess_core)
+
+add_executable(benchmark_v32_v35 tools/benchmark/benchmark_v32_v35.cpp)
+target_link_libraries(benchmark_v32_v35 PRIVATE chess_core)
+
+add_executable(benchmark_strict_milestones tools/benchmark/benchmark_strict_milestones.cpp)
+target_link_libraries(benchmark_strict_milestones PRIVATE chess_core)
+
+add_executable(check_v31_ordering_score tools/debug/check_v31_ordering_score.cpp)
+target_link_libraries(check_v31_ordering_score PRIVATE chess_core)
+
+add_executable(profile_v31_iterative_once tools/benchmark/profile/profile_v31_iterative_once.cpp)
+target_link_libraries(profile_v31_iterative_once PRIVATE chess_core)
+
+add_executable(profile_v32_iterative_once tools/benchmark/profile/profile_v32_iterative_once.cpp)
+target_link_libraries(profile_v32_iterative_once PRIVATE chess_core)
+
+add_executable(profile_v34_iterative_once tools/benchmark/profile/profile_v34_iterative_once.cpp)
+target_link_libraries(profile_v34_iterative_once PRIVATE chess_core)
+
+add_executable(profile_v32_tt_stats tools/benchmark/profile/profile_v32_tt_stats.cpp)
+target_link_libraries(profile_v32_tt_stats PRIVATE chess_core)
+
+add_executable(profile_v32_v34_tt_stats tools/benchmark/profile/profile_v32_v34_tt_stats.cpp)
+target_link_libraries(profile_v32_v34_tt_stats PRIVATE chess_core)
+
+add_executable(profile_v32_v34_tt_timing tools/benchmark/profile/profile_v32_v34_tt_timing.cpp)
+target_compile_definitions(profile_v32_v34_tt_timing PRIVATE CHESS_PROFILE_TT_TIMING)
+target_link_libraries(profile_v32_v34_tt_timing PRIVATE chess_core)
+
+add_executable(profile_v32_v34_tt_probe_paths tools/benchmark/profile/profile_v32_v34_tt_probe_paths.cpp)
+target_compile_definitions(profile_v32_v34_tt_probe_paths PRIVATE CHESS_PROFILE_TT_PATH_TIMING)
+target_link_libraries(profile_v32_v34_tt_probe_paths PRIVATE chess_core)
+
+add_executable(profile_v34_tt_cache_lines tools/benchmark/profile/profile_v34_tt_cache_lines.cpp)
+target_compile_definitions(profile_v34_tt_cache_lines PRIVATE CHESS_PROFILE_TT_CACHE_LINES)
+target_link_libraries(profile_v34_tt_cache_lines PRIVATE chess_core)
+
+add_executable(benchmark_tt_probe_cases tools/benchmark/profile/benchmark_tt_probe_cases.cpp)
+target_link_libraries(benchmark_tt_probe_cases PRIVATE chess_core)
+
+add_executable(
+    benchmark_nnue_v41_tt_probe_cache
+    tools/benchmark/profile/benchmark_nnue_v41_tt_probe_cache.cpp)
+target_link_libraries(benchmark_nnue_v41_tt_probe_cache PRIVATE chess_core)
+
+add_executable(benchmark_v32_v34_tt_functions tools/benchmark/profile/benchmark_v32_v34_tt_functions.cpp)
+target_link_libraries(benchmark_v32_v34_tt_functions PRIVATE chess_core)
+
+add_executable(benchmark_v32_v33_single_fen tools/benchmark/profile/benchmark_v32_v33_single_fen.cpp)
+target_link_libraries(benchmark_v32_v33_single_fen PRIVATE chess_core)
+
+add_executable(benchmark_v32_v34_single_fen tools/benchmark/profile/benchmark_v32_v34_single_fen.cpp)
+target_link_libraries(benchmark_v32_v34_single_fen PRIVATE chess_core)
+
+add_executable(benchmark_v34_bucket_sizes tools/benchmark/profile/benchmark_v34_bucket_sizes.cpp)
+target_link_libraries(benchmark_v34_bucket_sizes PRIVATE chess_core)
+
+add_executable(benchmark_v35_tt_mb tools/benchmark/profile/benchmark_v35_tt_mb.cpp)
+target_link_libraries(benchmark_v35_tt_mb PRIVATE chess_core)
+
+add_executable(benchmark_v32_v34_tt_mb tools/benchmark/profile/benchmark_v32_v34_tt_mb.cpp)
+target_link_libraries(benchmark_v32_v34_tt_mb PRIVATE chess_core)
+
+add_executable(benchmark_incremental_nnue tools/benchmark/profile/benchmark_custom_nnue.cpp)
+target_include_directories(benchmark_incremental_nnue PRIVATE include)
+
+add_executable(nnue_v38_time_gauntlet tools/match/nnue_v38_time_gauntlet.cpp)
+target_link_libraries(nnue_v38_time_gauntlet PRIVATE chess_core)
+
+add_executable(nnue_v39_time_gauntlet tools/match/nnue_v38_time_gauntlet.cpp)
+target_compile_definitions(
+    nnue_v39_time_gauntlet PRIVATE CHESS_NNUE_V39_TIME_GAUNTLET)
+target_link_libraries(nnue_v39_time_gauntlet PRIVATE chess_core)
+
+add_executable(nnue_v40_time_gauntlet tools/match/nnue_v38_time_gauntlet.cpp)
+target_compile_definitions(
+    nnue_v40_time_gauntlet PRIVATE CHESS_NNUE_V40_TIME_GAUNTLET)
+target_link_libraries(nnue_v40_time_gauntlet PRIVATE chess_core)
+
+add_executable(nnue_v41_time_gauntlet tools/match/nnue_v38_time_gauntlet.cpp)
+target_compile_definitions(
+    nnue_v41_time_gauntlet PRIVATE CHESS_NNUE_V41_TIME_GAUNTLET)
+target_link_libraries(nnue_v41_time_gauntlet PRIVATE chess_core)
+
+add_executable(nnue_v42_time_gauntlet tools/match/nnue_v38_time_gauntlet.cpp)
+target_compile_definitions(
+    nnue_v42_time_gauntlet PRIVATE CHESS_NNUE_V42_TIME_GAUNTLET)
+target_link_libraries(nnue_v42_time_gauntlet PRIVATE chess_core)
+
+add_executable(nnue_v43_time_gauntlet tools/match/nnue_v38_time_gauntlet.cpp)
+target_compile_definitions(
+    nnue_v43_time_gauntlet PRIVATE CHESS_NNUE_V43_TIME_GAUNTLET)
+target_link_libraries(nnue_v43_time_gauntlet PRIVATE chess_core)
+
+add_executable(
+    nnue_v43_v44_time_match
+    tools/match/nnue_v43_v44_time_match.cpp
+)
+target_link_libraries(nnue_v43_v44_time_match PRIVATE chess_core)

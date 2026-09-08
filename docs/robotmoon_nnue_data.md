@@ -61,7 +61,7 @@ build/robotmoon_binpack_to_cbin \
 For compressed input/output, use the streaming wrapper:
 
 ```sh
-.venv/bin/python tools/robotmoon_binpack_zst_to_cbin.py \
+.venv/bin/python tools/data/robotmoon_binpack_zst_to_cbin.py \
   --input data/external/robotmoon/source.binpack.zst \
   --output data/robotmoon/source.cbin.zst \
   --converter build/robotmoon_binpack_to_cbin \
@@ -88,7 +88,7 @@ The large-corpus builder performs these stages atomically:
    monolithic payload before publishing the shard directory.
 
 ```sh
-.venv/bin/python tools/build_robotmoon_unique_corpus.py \
+.venv/bin/python tools/data/build_robotmoon_unique_corpus.py \
   --source data/external/robotmoon/source.binpack.zst \
   --output-prefix data/robotmoon_500m_unique_v2 \
   --records 500000000 \
@@ -126,7 +126,7 @@ all CBin fields and square orientation:
 /opt/homebrew/Cellar/cmake/4.2.0/bin/cmake --build build \
   --target robotmoon_binpack_fixture robotmoon_binpack_to_cbin \
   validate_robotmoon_cbin -j 4
-.venv/bin/python -m unittest tests_py.test_robotmoon_converter
+.venv/bin/python -m pytest tests/python/test_robotmoon_converter.py
 ```
 
 ## Stockfish Static-NNUE Distillation Labels
@@ -151,7 +151,7 @@ conversion and is not applied by the labeler.
 Build and smoke-test the pinned official Stockfish labeler:
 
 ```sh
-tools/build_stockfish_static_nnue_labeler.sh
+tools/data/build_stockfish_static_nnue_labeler.sh
 build/stockfish_static_nnue_labeler \
   --input eligible.cbin \
   --output labeled.cbin \
@@ -162,7 +162,7 @@ The complete 200M collection, filtering, relabeling and independent duplicate
 validation pipeline is:
 
 ```sh
-tools/collect_stockfish_static_nnue_200m.sh
+tools/data/collect_stockfish_static_nnue_200m.sh
 ```
 
 The final label manifest pins both the Stockfish commit and NNUE SHA-256.
@@ -186,7 +186,7 @@ An F2 checkpoint can initialize F2M by averaging horizontal weight pairs. The
 optional symmetric F2 reference is useful for exact regression tests:
 
 ```sh
-.venv/bin/python tools/convert_f2_to_f2m_checkpoint.py \
+.venv/bin/python tools/train/convert_f2_to_f2m_checkpoint.py \
   --source SOURCE_F2.pt \
   --output F2M_INIT.pt \
   --symmetric-reference-output F2_SYMMETRIC_REFERENCE.pt
@@ -198,7 +198,7 @@ Pass the converted checkpoint through `--resume-checkpoint` without
 same command as F2 and writes binary format version 2 automatically:
 
 ```sh
-.venv/bin/python tools/export_phase_quantized_nnue.py \
+.venv/bin/python tools/train/export_phase_quantized_nnue.py \
   --checkpoint F2M_CHECKPOINT.pt \
   --output phase_quantized_nnue_f2m.bin
 ```

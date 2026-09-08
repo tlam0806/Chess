@@ -1,19 +1,27 @@
-build/
-build-*/
+# Build outputs
+/build/
+/build-*/
 /build-*.nnue_v*_aspiration.lock
-build-debug/
-build_asan/
-build_debug/
-.venv/
+/build-debug/
+/build_asan/
+/build_debug/
 
-data/
-models/
-logs/
-reports/
-.codex_checkpoints/
+# Large local artifacts
+/artifacts/*
+!/artifacts/README.md
+/data
+/models
+/logs
+/reports
+/.codex_checkpoints/
 
+# Local environments and caches
+/.venv/
 __pycache__/
 *.py[cod]
 .pytest_cache/
 
+# Editor and operating-system files
+/.vscode/
+/compile_flags.txt
 .DS_Store

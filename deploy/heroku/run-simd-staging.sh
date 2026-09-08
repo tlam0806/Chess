@@ -122,6 +122,7 @@ mkdir -p \
   "$STAGE_DIR/deploy/heroku" \
   "$STAGE_DIR/$(dirname "$MODEL_REL")"
 cp "$REPO_ROOT/CMakeLists.txt" "$STAGE_DIR/"
+rsync -a "$REPO_ROOT/cmake/" "$STAGE_DIR/cmake/"
 rsync -a "$REPO_ROOT/include/" "$STAGE_DIR/include/"
 rsync -a "$REPO_ROOT/src/" "$STAGE_DIR/src/"
 rsync -a "$REPO_ROOT/tools/" "$STAGE_DIR/tools/"
@@ -169,7 +170,7 @@ fi
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 OUTPUT_DIR="$REPO_ROOT/logs/nnue_simd_matrix_${PROFILE}_${STAMP}"
 MATRIX_COMMAND=(
-  python3 "$REPO_ROOT/tools/run_heroku_nnue_backend_matrix.py"
+  python3 "$REPO_ROOT/tools/benchmark/run_heroku_nnue_backend_matrix.py"
   --app "$APP_NAME"
   --production-app "$PRODUCTION_APP"
   --process-type benchmark
